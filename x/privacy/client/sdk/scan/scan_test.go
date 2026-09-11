@@ -25,8 +25,10 @@ func mustNoteBytes(t *testing.T, note *privacytypes.Note) []byte {
 func TestParseNoteBytesAndBuildFoundNote(t *testing.T) {
 	rootSeed := []byte("scan-root-seed")
 
-	_, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	_, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	_, spendPubKey, _, err := privacyidentity.DeriveSpendKeys(rootSeed)
+	require.NoError(t, err)
+	_, viewPubKey, _, err := privacyidentity.DeriveViewKeys(rootSeed)
+	require.NoError(t, err)
 
 	note, err := privacytypes.NewNote(
 		pointBigInt(&spendPubKey.X),
@@ -60,8 +62,10 @@ func TestParseNoteBytesAndBuildFoundNote(t *testing.T) {
 
 func TestParseNoteBytesRejectsInvalidNoteV1Key(t *testing.T) {
 	rootSeed := []byte("scan-invalid-note-v1")
-	_, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	_, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	_, spendPubKey, _, err := privacyidentity.DeriveSpendKeys(rootSeed)
+	require.NoError(t, err)
+	_, viewPubKey, _, err := privacyidentity.DeriveViewKeys(rootSeed)
+	require.NoError(t, err)
 	note, err := privacytypes.NewNote(
 		pointBigInt(&spendPubKey.X),
 		pointBigInt(&spendPubKey.Y),
@@ -84,8 +88,10 @@ func TestParseNoteBytesRejectsInvalidNoteV1Key(t *testing.T) {
 func TestProcessScanEventUsesViewTag(t *testing.T) {
 	rootSeed := []byte("scan-view-tag-seed")
 
-	spendScalar, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	viewScalar, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	spendScalar, spendPubKey, _, err := privacyidentity.DeriveSpendKeys(rootSeed)
+	require.NoError(t, err)
+	viewScalar, viewPubKey, _, err := privacyidentity.DeriveViewKeys(rootSeed)
+	require.NoError(t, err)
 
 	note, err := privacytypes.NewNote(
 		pointBigInt(&spendPubKey.X),
@@ -119,24 +125,26 @@ func TestProcessScanEventUsesViewTag(t *testing.T) {
 		},
 	}
 
-	found := ProcessScanEvent(event, rootSeed, spendScalar, viewScalar)
+	found := ProcessScanEvent(event, rootSeed, &spendScalar, &viewScalar)
 	require.Len(t, found, 1)
-	require.Equal(t, "11", found[0].Note.Amount.String())
+	require.Equal(t, uint64(11), found[0].Note.Amount)
 
 	event.Outputs[0].ViewTagHex = "ffff"
-	found = ProcessScanEvent(event, rootSeed, spendScalar, viewScalar)
+	found = ProcessScanEvent(event, rootSeed, &spendScalar, &viewScalar)
 	require.Len(t, found, 1)
-	require.Equal(t, "11", found[0].Note.Amount.String())
+	require.Equal(t, uint64(11), found[0].Note.Amount)
 
-	found = processScanEventWithOptions(event, rootSeed, spendScalar, viewScalar, processOptions{SkipViewTagMismatch: true})
+	found = processScanEventWithOptions(event, rootSeed, &spendScalar, &viewScalar, processOptions{SkipViewTagMismatch: true})
 	require.Empty(t, found)
 }
 
 func TestProcessScanEventRejectsMismatchedCommitment(t *testing.T) {
 	rootSeed := []byte("scan-commitment-match-seed")
 
-	spendScalar, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	viewScalar, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	spendScalar, spendPubKey, _, err := privacyidentity.DeriveSpendKeys(rootSeed)
+	require.NoError(t, err)
+	viewScalar, viewPubKey, _, err := privacyidentity.DeriveViewKeys(rootSeed)
+	require.NoError(t, err)
 
 	note, err := privacytypes.NewNote(
 		pointBigInt(&spendPubKey.X),
@@ -169,10 +177,10 @@ func TestProcessScanEventRejectsMismatchedCommitment(t *testing.T) {
 			},
 		},
 	}
-	require.Len(t, ProcessScanEvent(depositEvent, rootSeed, spendScalar, viewScalar), 1)
+	require.Len(t, ProcessScanEvent(depositEvent, rootSeed, &spendScalar, &viewScalar), 1)
 
 	depositEvent.Outputs[0].CommitmentHex = wrongCommitmentHex
-	require.Empty(t, ProcessScanEvent(depositEvent, rootSeed, spendScalar, viewScalar))
+	require.Empty(t, ProcessScanEvent(depositEvent, rootSeed, &spendScalar, &viewScalar))
 
 	cipherText, err := privacycrypto.AsymEncrypt(mustNoteBytes(t, note), *viewPubKey)
 	require.NoError(t, err)
@@ -191,16 +199,18 @@ func TestProcessScanEventRejectsMismatchedCommitment(t *testing.T) {
 			},
 		},
 	}
-	require.Len(t, ProcessScanEvent(transferEvent, rootSeed, spendScalar, viewScalar), 1)
+	require.Len(t, ProcessScanEvent(transferEvent, rootSeed, &spendScalar, &viewScalar), 1)
 
 	transferEvent.Outputs[0].CommitmentHex = wrongCommitmentHex
-	require.Empty(t, ProcessScanEvent(transferEvent, rootSeed, spendScalar, viewScalar))
+	require.Empty(t, ProcessScanEvent(transferEvent, rootSeed, &spendScalar, &viewScalar))
 }
 
 func TestProcessPrivacyScanBatchOutputDecryptsDespiteMismatchedViewTag(t *testing.T) {
 	rootSeed := []byte("typed-batch-scan")
-	spendScalar, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	viewScalar, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	spendScalar, spendPubKey, _, err := privacyidentity.DeriveSpendKeys(rootSeed)
+	require.NoError(t, err)
+	viewScalar, viewPubKey, _, err := privacyidentity.DeriveViewKeys(rootSeed)
+	require.NoError(t, err)
 	note, err := privacytypes.NewNote(pointBigInt(&spendPubKey.X), pointBigInt(&spendPubKey.Y), pointBigInt(&viewPubKey.X), pointBigInt(&viewPubKey.Y), big.NewInt(31), "uclair", "batch")
 	require.NoError(t, err)
 	commitment, err := privacyfield.CanonicalBytesFromBigInt(note.ComputeCommitment())
@@ -209,11 +219,15 @@ func TestProcessPrivacyScanBatchOutputDecryptsDespiteMismatchedViewTag(t *testin
 	require.NoError(t, err)
 	wrapped := wrapTransferNoteCipherText(t, raw)
 	output := &privacytypes.PrivacyScanOutputV2{Height: 10, GlobalSequence: 8, OutputIndex: 5, EventType: privacytypes.EventTypeBatchTransferV1, Commitment: commitment, Ciphertext: wrapped, ViewTag: []byte{0xff, 0xff}, TxHash: make([]byte, 32)}
-	found, err := ProcessPrivacyScanOutput(output, rootSeed, spendScalar, viewScalar, false)
+	found, err := ProcessPrivacyScanOutput(output, rootSeed, &spendScalar, &viewScalar, false)
 	require.NoError(t, err)
-	require.Equal(t, "31", found.Note.Amount.String())
+	require.Equal(t, uint64(31), found.Note.Amount)
 	require.Equal(t, uint32(5), found.OutputIndex)
-	_, err = ProcessPrivacyScanOutput(output, rootSeed, spendScalar, viewScalar, true)
+	secretFound, err := ProcessSecretPrivacyScanOutput(output, rootSeed, &spendScalar, &viewScalar, false)
+	require.NoError(t, err)
+	require.Equal(t, uint64(31), secretFound.Note.Amount)
+	require.Equal(t, found.Nullifier, secretFound.Nullifier)
+	_, err = ProcessPrivacyScanOutput(output, rootSeed, &spendScalar, &viewScalar, true)
 	require.Error(t, err)
 }
 
@@ -246,4 +260,13 @@ func wrapTransferNoteCipherText(t testing.TB, raw []byte) []byte {
 	wrapped, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeTransferNoteV1, raw)
 	require.NoError(t, err)
 	return wrapped
+}
+
+func mustSecretFoundNoteFromLegacy(t *testing.T, found FoundNote) SecretFoundNote {
+	t.Helper()
+	plain, err := privacytypes.MarshalNotePlaintextV1(&found.Note)
+	require.NoError(t, err)
+	note, err := privacytypes.UnmarshalSecretNotePlaintextV1(plain)
+	require.NoError(t, err)
+	return SecretFoundNote{Note: *note, Nullifier: found.Nullifier, IsSpent: found.IsSpent, TxHash: found.TxHash, Height: found.Height, GlobalSequence: found.GlobalSequence, OutputIndex: found.OutputIndex, Commitment: found.Commitment, AssetDenom: found.AssetDenom}
 }

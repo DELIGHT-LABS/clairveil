@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
@@ -53,14 +54,14 @@ func DecodePublicPayloadHex(payloadHex string) (*Payload, error) {
 }
 
 func DecodePublicPayloadJSON(payloadBytes []byte) (*Payload, error) {
-	fixed, err := privacytypes.UnmarshalDisclosurePlaintextV1(payloadBytes)
+	fixed, err := privacytypes.UnmarshalSecretDisclosurePlaintextV1(payloadBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode DisclosurePlaintextV1: %w", err)
 	}
 	return payloadFromFixedV1(fixed, 0)
 }
 
-func DecryptPayloadHex(cipherTextHex string, disclosureScalar *big.Int) (*Payload, error) {
+func DecryptPayloadHex(cipherTextHex string, disclosureScalar privacycrypto.SecretScalar) (*Payload, error) {
 	cipherText, err := hex.DecodeString(strings.TrimSpace(cipherTextHex))
 	if err != nil {
 		return nil, fmt.Errorf("invalid ciphertext hex: %w", err)
@@ -69,7 +70,7 @@ func DecryptPayloadHex(cipherTextHex string, disclosureScalar *big.Int) (*Payloa
 	return DecryptPayload(cipherText, disclosureScalar)
 }
 
-func DecryptPayload(cipherText []byte, disclosureScalar *big.Int) (*Payload, error) {
+func DecryptPayload(cipherText []byte, disclosureScalar privacycrypto.SecretScalar) (*Payload, error) {
 	kind, rawCipherText, err := privacytypes.DecodeEncryptedEnvelopeV1(cipherText)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode disclosure envelope: %w", err)
@@ -83,7 +84,8 @@ func DecryptPayload(cipherText []byte, disclosureScalar *big.Int) (*Payload, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt disclosure payload: %w", err)
 	}
-	fixed, err := privacytypes.UnmarshalDisclosurePlaintextV1(plainText)
+	defer clear(plainText)
+	fixed, err := privacytypes.UnmarshalSecretDisclosurePlaintextV1(plainText)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode DisclosurePlaintextV1: %w", err)
 	}
@@ -133,81 +135,86 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 	if err != nil {
 		return "", nil, err
 	}
-	blinding := new(big.Int).SetBytes(blindingBytes)
-
-	amount, assetID, err := DisclosureAmountAndAsset(payload)
+	blinding, err := privacycrypto.ParseFieldValueBE32(blindingBytes)
 	if err != nil {
 		return "", nil, err
 	}
-	if amount != nil && strings.TrimSpace(payload.AssetDenom) != "" {
-		verification.AssetDenomVerified = true
-	}
-
-	fromBundle, err := disclosureShieldedAddressBundle(payload.FromShieldedAddress, "from")
+	commitment, err := privacycrypto.ParseFieldValueBE32(commitmentBytes)
 	if err != nil {
 		return "", nil, err
 	}
-	toBundle, err := disclosureShieldedAddressBundle(payload.ToShieldedAddress, "to")
+	assetRaw, err := privacyfield.DecodeCanonicalHex(payload.AssetIDHex, "asset id")
 	if err != nil {
 		return "", nil, err
 	}
-
+	asset, err := privacycrypto.ParseFieldValueBE32(assetRaw)
+	if err != nil {
+		return "", nil, err
+	}
+	var amount uint64
+	if payload.Amount != "" {
+		amount, err = strconv.ParseUint(payload.Amount, 10, 64)
+		if err != nil || strconv.FormatUint(amount, 10) != payload.Amount {
+			return "", nil, fmt.Errorf("disclosure amount must be a canonical non-negative decimal string")
+		}
+	}
+	if strings.TrimSpace(payload.AssetDenom) != "" {
+		if !asset.Equal(privacytypes.ComputeSecretAssetIDV1(payload.AssetDenom)) {
+			return "", nil, fmt.Errorf("asset denom does not match asset_id_hex")
+		}
+		verification.AssetDenomVerified = payload.Amount != ""
+	}
+	from, err := disclosureShieldedAddressBundle(payload.FromShieldedAddress, "from")
+	if err != nil {
+		return "", nil, err
+	}
+	to, err := disclosureShieldedAddressBundle(payload.ToShieldedAddress, "to")
+	if err != nil {
+		return "", nil, err
+	}
+	coords := func(bundle *privacytypes.ShieldedAddressBundle) ([4]privacycrypto.FieldValue, error) {
+		var out [4]privacycrypto.FieldValue
+		if bundle == nil {
+			return out, nil
+		}
+		var e error
+		out[0], out[1], e = privacycrypto.PublicPointFieldValues(*bundle.SpendPubKey)
+		if e != nil {
+			return out, e
+		}
+		out[2], out[3], e = privacycrypto.PublicPointFieldValues(*bundle.ViewPubKey)
+		return out, e
+	}
+	f, err := coords(from)
+	if err != nil {
+		return "", nil, err
+	}
+	t, err := coords(to)
+	if err != nil {
+		return "", nil, err
+	}
+	var digest privacycrypto.FieldValue
 	switch payload.Plane {
-	case PlaneAudit:
-		expectedDigestHex, err := privacytypes.ComputeAuditTransferDisclosureDigestHex(
-			payload.OutputIndex,
-			commitmentBytes,
-			amount,
-			assetID,
-			bundleX(fromBundle, true),
-			bundleY(fromBundle, true),
-			bundleX(fromBundle, false),
-			bundleY(fromBundle, false),
-			bundleX(toBundle, true),
-			bundleY(toBundle, true),
-			bundleX(toBundle, false),
-			bundleY(toBundle, false),
-			blinding,
-		)
-		return expectedDigestHex, verification, err
-	case PlaneSelfView:
-		expectedDigestHex, err := privacytypes.ComputeSelfViewTransferDisclosureDigestHex(
-			payload.OutputIndex,
-			commitmentBytes,
-			amount,
-			assetID,
-			bundleX(fromBundle, true),
-			bundleY(fromBundle, true),
-			bundleX(fromBundle, false),
-			bundleY(fromBundle, false),
-			bundleX(toBundle, true),
-			bundleY(toBundle, true),
-			bundleX(toBundle, false),
-			bundleY(toBundle, false),
-			blinding,
-		)
-		return expectedDigestHex, verification, err
 	case PlaneUser:
-		expectedDigestHex, err := privacytypes.ComputeTransferDisclosureDigestHex(
-			payload.Policy,
-			payload.OutputIndex,
-			commitmentBytes,
-			amount,
-			assetID,
-			bundleX(fromBundle, true),
-			bundleY(fromBundle, true),
-			bundleX(fromBundle, false),
-			bundleY(fromBundle, false),
-			bundleX(toBundle, true),
-			bundleY(toBundle, true),
-			bundleX(toBundle, false),
-			bundleY(toBundle, false),
-			blinding,
-		)
-		return expectedDigestHex, verification, err
+		digest, err = privacytypes.SecretTransferDisclosureDigestV1(privacytypes.SecretTransferDisclosureV1Input{
+			Policy: payload.Policy, OutputIndex: payload.OutputIndex, Commitment: commitment, Amount: amount, AssetID: asset,
+			FromSpendPubKeyX: f[0], FromSpendPubKeyY: f[1], FromViewPubKeyX: f[2], FromViewPubKeyY: f[3],
+			ToSpendPubKeyX: t[0], ToSpendPubKeyY: t[1], ToViewPubKeyX: t[2], ToViewPubKeyY: t[3], Blinding: blinding,
+		})
+	case PlaneAudit, PlaneSelfView:
+		digest, err = privacytypes.SecretFullTransferDisclosureDigestV1(privacytypes.SecretFullTransferDisclosureV1Input{
+			OutputIndex: payload.OutputIndex, Commitment: commitment, Amount: amount, AssetID: asset,
+			FromSpendPubKeyX: f[0], FromSpendPubKeyY: f[1], FromViewPubKeyX: f[2], FromViewPubKeyY: f[3],
+			ToSpendPubKeyX: t[0], ToSpendPubKeyY: t[1], ToViewPubKeyX: t[2], ToViewPubKeyY: t[3], Blinding: blinding,
+		})
 	default:
 		return "", nil, fmt.Errorf("unsupported disclosure payload plane %q", payload.Plane)
 	}
+	if err != nil {
+		return "", nil, err
+	}
+	raw := digest.Bytes()
+	return hex.EncodeToString(raw[:]), verification, nil
 }
 
 func DisclosureAmountAndAsset(payload *Payload) (*big.Int, *big.Int, error) {
@@ -280,7 +287,7 @@ func validatePayloadSemantics(payload *Payload) error {
 	return nil
 }
 
-func payloadFromFixedV1(fixed *privacytypes.DisclosurePlaintextV1, envelopeKind privacytypes.EncryptedEnvelopeKindV1) (*Payload, error) {
+func payloadFromFixedV1(fixed *privacytypes.SecretDisclosurePlaintextV1, envelopeKind privacytypes.EncryptedEnvelopeKindV1) (*Payload, error) {
 	if fixed == nil {
 		return nil, fmt.Errorf("DisclosurePlaintextV1 is required")
 	}
@@ -313,7 +320,7 @@ func payloadFromFixedV1(fixed *privacytypes.DisclosurePlaintextV1, envelopeKind 
 
 	payload.AssetIDHex = fixedFieldHex(fixed.AssetID)
 	if fixed.Plane == privacytypes.DisclosurePlaneFullV1 || fixed.Policy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
-		payload.Amount = fixed.Amount.String()
+		payload.Amount = strconv.FormatUint(fixed.Amount, 10)
 	}
 	var err error
 	if fixed.Plane == privacytypes.DisclosurePlaneFullV1 || fixed.Policy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0 {
@@ -340,19 +347,25 @@ func payloadFromFixedV1(fixed *privacytypes.DisclosurePlaintextV1, envelopeKind 
 	return payload, nil
 }
 
-func fixedFieldHex(value *big.Int) string {
-	if value == nil {
-		return ""
-	}
-	return hex.EncodeToString(value.FillBytes(make([]byte, 32)))
+func fixedFieldHex(value privacycrypto.FieldValue) string {
+	raw := value.Bytes()
+	return hex.EncodeToString(raw[:])
 }
-
-func fixedShieldedAddress(spendX, spendY, viewX, viewY *big.Int) (string, error) {
+func fixedShieldedAddress(spendX, spendY, viewX, viewY privacycrypto.FieldValue) (string, error) {
 	var spend, view crypto_tedwards.PointAffine
-	spend.X.SetBigInt(spendX)
-	spend.Y.SetBigInt(spendY)
-	view.X.SetBigInt(viewX)
-	view.Y.SetBigInt(viewY)
+	sx, sy, vx, vy := spendX.Bytes(), spendY.Bytes(), viewX.Bytes(), viewY.Bytes()
+	if err := spend.X.SetBytesCanonical(sx[:]); err != nil {
+		return "", err
+	}
+	if err := spend.Y.SetBytesCanonical(sy[:]); err != nil {
+		return "", err
+	}
+	if err := view.X.SetBytesCanonical(vx[:]); err != nil {
+		return "", err
+	}
+	if err := view.Y.SetBytesCanonical(vy[:]); err != nil {
+		return "", err
+	}
 	return privacytypes.EncodeShieldedAddressWithView(&spend, &view)
 }
 

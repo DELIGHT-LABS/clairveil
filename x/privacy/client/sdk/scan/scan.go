@@ -1,10 +1,10 @@
 package scan
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmttypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -28,18 +28,33 @@ type FoundNote struct {
 	AssetDenom     string            `json:"asset_denom,omitempty"`
 }
 
+// SecretFoundNote is the typed wallet record for new scan consumers. Unlike
+// FoundNote it never materialises a decrypted note as legacy integer outside an
+// explicit prover adapter.
+type SecretFoundNote struct {
+	Note           privacytypes.SecretNoteV1
+	Nullifier      string
+	IsSpent        bool
+	TxHash         string
+	Height         int64
+	GlobalSequence uint64
+	OutputIndex    uint32
+	Commitment     string
+	AssetDenom     string
+}
+
 type processOptions struct {
 	SkipViewTagMismatch bool
 	EventLimit          uint32
 	MaxEncodedBytes     uint64
 }
 
-func ProcessTx(txRes *cmttypes.ResultTx, rootSeed []byte, spendScalar *big.Int, viewScalar *big.Int) []FoundNote {
+func ProcessTx(txRes *cmttypes.ResultTx, rootSeed []byte, spendScalar *privacycrypto.SecretScalar, viewScalar *privacycrypto.SecretScalar) []SecretFoundNote {
 	return processTxWithOptions(txRes, rootSeed, spendScalar, viewScalar, processOptions{})
 }
 
-func processTxWithOptions(txRes *cmttypes.ResultTx, rootSeed []byte, spendScalar *big.Int, viewScalar *big.Int, opts processOptions) []FoundNote {
-	var found []FoundNote
+func processTxWithOptions(txRes *cmttypes.ResultTx, rootSeed []byte, spendScalar *privacycrypto.SecretScalar, viewScalar *privacycrypto.SecretScalar, opts processOptions) []SecretFoundNote {
+	var found []SecretFoundNote
 
 	for _, event := range txRes.TxResult.Events {
 		if event.Type == "deposit" {
@@ -67,15 +82,20 @@ func processTxWithOptions(txRes *cmttypes.ResultTx, rootSeed []byte, spendScalar
 				continue
 			}
 
-			note, err := ParseNoteBytes(noteBytes)
+			defer clear(noteBytes)
+			note, err := ParseSecretNoteBytes(noteBytes)
 			if err != nil {
 				continue
 			}
-			if !noteCommitmentMatches(note, eventAttributeValue(event.Attributes, privacytypes.AttributeKeyCommitment)) {
+			if !secretNoteCommitmentMatches(note, eventAttributeValue(event.Attributes, privacytypes.AttributeKeyCommitment)) {
 				continue
 			}
 
-			found = append(found, BuildFoundNote(note, txRes))
+			foundNote, err := BuildSecretFoundNote(note, txRes)
+			if err != nil {
+				continue
+			}
+			found = append(found, foundNote)
 		}
 
 		if event.Type == "shielded_transfer" {
@@ -121,15 +141,20 @@ func processTxWithOptions(txRes *cmttypes.ResultTx, rootSeed []byte, spendScalar
 					continue
 				}
 
-				note, err := ParseNoteBytes(noteBytes)
+				defer clear(noteBytes)
+				note, err := ParseSecretNoteBytes(noteBytes)
 				if err != nil {
 					continue
 				}
-				if !noteCommitmentMatches(note, commitmentHex) {
+				if !secretNoteCommitmentMatches(note, commitmentHex) {
 					continue
 				}
 
-				found = append(found, BuildFoundNote(note, txRes))
+				foundNote, err := BuildSecretFoundNote(note, txRes)
+				if err != nil {
+					continue
+				}
+				found = append(found, foundNote)
 			}
 		}
 	}
@@ -137,16 +162,16 @@ func processTxWithOptions(txRes *cmttypes.ResultTx, rootSeed []byte, spendScalar
 	return found
 }
 
-func ProcessScanEvent(event *privacytypes.QueryScanEvent, rootSeed []byte, spendScalar *big.Int, viewScalar *big.Int) []FoundNote {
+func ProcessScanEvent(event *privacytypes.QueryScanEvent, rootSeed []byte, spendScalar *privacycrypto.SecretScalar, viewScalar *privacycrypto.SecretScalar) []SecretFoundNote {
 	return processScanEventWithOptions(event, rootSeed, spendScalar, viewScalar, processOptions{})
 }
 
-func processScanEventWithOptions(event *privacytypes.QueryScanEvent, rootSeed []byte, spendScalar *big.Int, viewScalar *big.Int, opts processOptions) []FoundNote {
+func processScanEventWithOptions(event *privacytypes.QueryScanEvent, rootSeed []byte, spendScalar *privacycrypto.SecretScalar, viewScalar *privacycrypto.SecretScalar, opts processOptions) []SecretFoundNote {
 	if event == nil {
 		return nil
 	}
 
-	found := make([]FoundNote, 0, len(event.Outputs))
+	found := make([]SecretFoundNote, 0, len(event.Outputs))
 	for _, output := range event.Outputs {
 		if output == nil {
 			continue
@@ -169,14 +194,22 @@ func processScanEventWithOptions(event *privacytypes.QueryScanEvent, rootSeed []
 			if err != nil {
 				continue
 			}
-			note, err := ParseNoteBytes(noteBytes)
+			defer clear(noteBytes)
+			note, err := ParseSecretNoteBytes(noteBytes)
 			if err != nil {
 				continue
 			}
-			if !noteCommitmentMatches(note, output.CommitmentHex) {
+			if !secretNoteCommitmentMatches(note, output.CommitmentHex) {
 				continue
 			}
-			found = append(found, BuildFoundNoteFromScanEvent(note, event))
+			foundNote, err := BuildSecretFoundNoteFromScanEvent(note, event)
+			if err != nil {
+				continue
+			}
+			foundNote.GlobalSequence = event.Sequence
+			foundNote.OutputIndex = output.OutputIndex
+			foundNote.Commitment = output.CommitmentHex
+			found = append(found, foundNote)
 		case privacytypes.EventTypeShieldedTransfer:
 			if output.CipherTextHex == "" {
 				continue
@@ -191,28 +224,39 @@ func processScanEventWithOptions(event *privacytypes.QueryScanEvent, rootSeed []
 				continue
 			}
 
-			note, err := ParseNoteBytes(noteBytes)
+			defer clear(noteBytes)
+			note, err := ParseSecretNoteBytes(noteBytes)
 			if err != nil {
 				continue
 			}
-			if !noteCommitmentMatches(note, output.CommitmentHex) {
+			if !secretNoteCommitmentMatches(note, output.CommitmentHex) {
 				continue
 			}
-			found = append(found, BuildFoundNoteFromScanEvent(note, event))
+			foundNote, err := BuildSecretFoundNoteFromScanEvent(note, event)
+			if err != nil {
+				continue
+			}
+			foundNote.GlobalSequence = event.Sequence
+			foundNote.OutputIndex = output.OutputIndex
+			foundNote.Commitment = output.CommitmentHex
+			found = append(found, foundNote)
 		}
 	}
 
 	return found
 }
 
-func decryptTransferOutput(cipherBytes []byte, viewScalar *big.Int, spendScalar *big.Int, commitmentHex string, outputIndex uint32, viewTagHex string, skipViewTagMismatch bool) ([]byte, error) {
+func decryptTransferOutput(cipherBytes []byte, viewScalar *privacycrypto.SecretScalar, spendScalar *privacycrypto.SecretScalar, commitmentHex string, outputIndex uint32, viewTagHex string, skipViewTagMismatch bool) ([]byte, error) {
 	rawCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherBytes, privacytypes.EnvelopeTransferNoteV1)
 	if err != nil {
 		return nil, fmt.Errorf("invalid transfer note envelope: %w", err)
 	}
 	if viewScalar != nil {
 		if commitmentBytes, viewTagBytes, ok := decodeViewTagInputs(commitmentHex, viewTagHex); ok {
-			noteBytes, err := privacycrypto.AsymDecryptWithViewTag(rawCipherText, viewScalar, commitmentBytes, outputIndex, viewTagBytes)
+			noteBytes, err := privacycrypto.AsymDecryptWithViewTag(rawCipherText, *viewScalar, commitmentBytes, outputIndex, viewTagBytes)
+			if errors.Is(err, privacycrypto.ErrUnsupportedSecretProfile) {
+				return nil, err
+			}
 			if err == nil {
 				return noteBytes, nil
 			}
@@ -221,13 +265,19 @@ func decryptTransferOutput(cipherBytes []byte, viewScalar *big.Int, spendScalar 
 			}
 		}
 
-		noteBytes, err := privacycrypto.AsymDecrypt(rawCipherText, viewScalar)
+		noteBytes, err := privacycrypto.AsymDecrypt(rawCipherText, *viewScalar)
+		if errors.Is(err, privacycrypto.ErrUnsupportedSecretProfile) {
+			return nil, err
+		}
 		if err == nil {
 			return noteBytes, nil
 		}
 	}
-	if spendScalar != nil && (viewScalar == nil || spendScalar.Cmp(viewScalar) != 0) {
-		noteBytes, err := privacycrypto.AsymDecrypt(rawCipherText, spendScalar)
+	if spendScalar != nil {
+		noteBytes, err := privacycrypto.AsymDecrypt(rawCipherText, *spendScalar)
+		if errors.Is(err, privacycrypto.ErrUnsupportedSecretProfile) {
+			return nil, err
+		}
 		if err == nil {
 			return noteBytes, nil
 		}
@@ -260,6 +310,27 @@ func ParseNoteBytes(data []byte) (*privacytypes.Note, error) {
 	return note, nil
 }
 
+func ParseSecretNoteBytes(data []byte) (*privacytypes.SecretNoteV1, error) {
+	note, err := privacytypes.UnmarshalSecretNotePlaintextV1(data)
+	if err != nil {
+		return nil, fmt.Errorf("invalid NotePlaintextV1: %w", err)
+	}
+	return note, nil
+}
+
+func secretNoteCommitmentMatches(note *privacytypes.SecretNoteV1, commitmentHex string) bool {
+	if note == nil || commitmentHex == "" {
+		return false
+	}
+	commitment, err := privacytypes.SecretNoteCommitmentV1(*note)
+	if err != nil {
+		return false
+	}
+	expected := commitment.Bytes()
+	actual, err := privacyfield.DecodeCanonicalHex(commitmentHex, "commitment")
+	return err == nil && bytes.Equal(expected[:], actual)
+}
+
 func noteCommitmentMatches(note *privacytypes.Note, commitmentHex string) bool {
 	if note == nil || commitmentHex == "" {
 		return false
@@ -287,27 +358,50 @@ func BuildFoundNoteFromScanEvent(note *privacytypes.Note, event *privacytypes.Qu
 	return buildFoundNote(note, event.TxHashHex, event.Height)
 }
 
-// ProcessPrivacyScanOutput decrypts one ciphertext-bearing V2 record. A view
-// tag mismatch is ignored by default; tag-only skipping is an explicit opt-in.
-func ProcessPrivacyScanOutput(output *privacytypes.PrivacyScanOutputV2, rootSeed []byte, spendScalar, viewScalar *big.Int, tagOnlyFastMode bool) (*FoundNote, error) {
+func BuildSecretFoundNote(note *privacytypes.SecretNoteV1, txRes *cmttypes.ResultTx) (SecretFoundNote, error) {
+	if txRes == nil {
+		return buildSecretFoundNote(note, "", 0)
+	}
+	return buildSecretFoundNote(note, fmt.Sprintf("%X", txRes.Hash), txRes.Height)
+}
+
+func BuildSecretFoundNoteFromScanEvent(note *privacytypes.SecretNoteV1, event *privacytypes.QueryScanEvent) (SecretFoundNote, error) {
+	if event == nil {
+		return buildSecretFoundNote(note, "", 0)
+	}
+	return buildSecretFoundNote(note, event.TxHashHex, event.Height)
+}
+
+// ProcessPrivacyScanOutput routes every decrypted note through the fixed-value
+// parser and hashes. The historical entry point shares the typed scan result.
+func ProcessPrivacyScanOutput(output *privacytypes.PrivacyScanOutputV2, rootSeed []byte, spendScalar, viewScalar *privacycrypto.SecretScalar, tagOnlyFastMode bool) (*SecretFoundNote, error) {
+	return ProcessSecretPrivacyScanOutput(output, rootSeed, spendScalar, viewScalar, tagOnlyFastMode)
+}
+
+// ProcessSecretPrivacyScanOutput is the fixed-value scan path. It is used by
+// typed wallet/prover integrations that keep the decrypted note opaque until
+// witness construction.
+func ProcessSecretPrivacyScanOutput(output *privacytypes.PrivacyScanOutputV2, rootSeed []byte, spendScalar, viewScalar *privacycrypto.SecretScalar, tagOnlyFastMode bool) (*SecretFoundNote, error) {
 	if output == nil {
 		return nil, fmt.Errorf("privacy scan output is required")
 	}
-	if err := privacyfield.ValidateCanonicalBytes32(output.Commitment); err != nil || new(big.Int).SetBytes(output.Commitment).Sign() == 0 {
+	if err := privacyfield.ValidateCanonicalBytes32(output.Commitment); err != nil || bytes.Equal(output.Commitment, make([]byte, len(output.Commitment))) {
 		return nil, fmt.Errorf("privacy scan commitment is not an active canonical field")
 	}
 	var noteBytes []byte
 	var err error
 	switch output.EventType {
 	case privacytypes.EventTypeDeposit:
-		var raw []byte
-		raw, err = privacytypes.UnwrapEncryptedEnvelopeV1(output.EncryptedNote, privacytypes.EnvelopeDepositNoteV1)
-		if err != nil {
-			return nil, fmt.Errorf("invalid deposit note envelope: %w", err)
+		raw, unwrapErr := privacytypes.UnwrapEncryptedEnvelopeV1(output.EncryptedNote, privacytypes.EnvelopeDepositNoteV1)
+		if unwrapErr != nil {
+			return nil, fmt.Errorf("invalid deposit note envelope: %w", unwrapErr)
 		}
 		noteBytes, err = privacycrypto.Decrypt(raw, rootSeed)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrPrivacyScanOutputNotOwned, err)
+			if errors.Is(err, privacycrypto.ErrUnsupportedSecretProfile) {
+				return nil, err
+			}
+			return nil, fmt.Errorf("%w: %w", ErrPrivacyScanOutputNotOwned, err)
 		}
 	case privacytypes.EventTypeShieldedTransfer, privacytypes.EventTypeBatchTransferV1:
 		if len(output.ViewTag) != privacytypes.ViewTagLength {
@@ -320,19 +414,45 @@ func ProcessPrivacyScanOutput(output *privacytypes.PrivacyScanOutputV2, rootSeed
 	if err != nil {
 		return nil, err
 	}
-	note, err := ParseNoteBytes(noteBytes)
+	defer clear(noteBytes)
+	note, err := ParseSecretNoteBytes(noteBytes)
 	if err != nil {
 		return nil, err
 	}
 	commitmentHex := hex.EncodeToString(output.Commitment)
-	if !noteCommitmentMatches(note, commitmentHex) {
+	if !secretNoteCommitmentMatches(note, commitmentHex) {
 		return nil, fmt.Errorf("NoteV1 commitment mismatch")
 	}
-	found := buildFoundNote(note, hex.EncodeToString(output.TxHash), output.Height)
-	found.GlobalSequence = output.GlobalSequence
-	found.OutputIndex = output.OutputIndex
-	found.Commitment = commitmentHex
-	return &found, nil
+	commitment, err := privacytypes.SecretNoteCommitmentV1(*note)
+	if err != nil {
+		return nil, err
+	}
+	nullifier, err := privacytypes.SecretNoteNullifierV1(*note, commitment)
+	if err != nil {
+		return nil, err
+	}
+	nullifierBytes := nullifier.Bytes()
+	return &SecretFoundNote{Note: *note, Nullifier: hex.EncodeToString(nullifierBytes[:]), TxHash: hex.EncodeToString(output.TxHash), Height: output.Height, GlobalSequence: output.GlobalSequence, OutputIndex: output.OutputIndex, Commitment: commitmentHex}, nil
+}
+
+func buildSecretFoundNote(note *privacytypes.SecretNoteV1, txHash string, height int64) (SecretFoundNote, error) {
+	if note == nil {
+		return SecretFoundNote{}, fmt.Errorf("secret note is required")
+	}
+	commitment, err := privacytypes.SecretNoteCommitmentV1(*note)
+	if err != nil {
+		return SecretFoundNote{}, err
+	}
+	nullifier, err := privacytypes.SecretNoteNullifierV1(*note, commitment)
+	if err != nil {
+		return SecretFoundNote{}, err
+	}
+	nullifierBytes := nullifier.Bytes()
+	commitmentBytes := commitment.Bytes()
+	return SecretFoundNote{
+		Note: *note, Nullifier: hex.EncodeToString(nullifierBytes[:]), Commitment: hex.EncodeToString(commitmentBytes[:]),
+		TxHash: txHash, Height: height,
+	}, nil
 }
 
 func buildFoundNote(note *privacytypes.Note, txHash string, height int64) FoundNote {

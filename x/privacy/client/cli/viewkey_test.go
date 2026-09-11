@@ -18,16 +18,20 @@ func TestDeriveViewSeedDeterministic(t *testing.T) {
 
 func TestDeriveViewKeysDistinctFromSpendSeed(t *testing.T) {
 	rootSeed := []byte("another-seed")
-	spendScalar := deriveScalarFromSeed(derivePrivacyDomainSeed(rootSeed, privacySpendDomain))
-	viewScalar, viewPubKey, _ := deriveViewKeys(rootSeed)
+	spendScalar, err := deriveScalarFromSeed(derivePrivacyDomainSeed(rootSeed, privacySpendDomain))
+	require.NoError(t, err)
+	viewScalar, viewPubKey, _, deriveErr := deriveViewKeys(rootSeed)
+	require.NoError(t, deriveErr)
 
-	require.NotZero(t, spendScalar.Cmp(viewScalar))
+	require.NotEqual(t, spendScalar.Bytes(), viewScalar.Bytes())
 	require.NotNil(t, viewPubKey)
 }
 
 func TestScalarToFixedHex(t *testing.T) {
-	hexValue := scalarToFixedHex(deriveScalarFromSeed([]byte("hex-seed")))
+	scalar, err := deriveScalarFromSeed(derivePrivacyDomainSeed([]byte("hex-seed"), privacySpendDomain))
+	require.NoError(t, err)
+	hexValue := scalarToFixedHex(scalar)
 	require.Len(t, hexValue, 64)
-	_, err := hex.DecodeString(hexValue)
+	_, err = hex.DecodeString(hexValue)
 	require.NoError(t, err)
 }

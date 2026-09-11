@@ -42,11 +42,11 @@ func TestSummarizeSpendableNotesByDenom(t *testing.T) {
 		{Note: privacytypes.Note{Amount: big.NewInt(13), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
 	}
 
-	spendable, total := SummarizeSpendableNotesByDenom(notes, "uclair")
+	spendable, total := SummarizeSpendableNotesByDenom(testSecretFoundNotes(t, notes), "uclair")
 
 	require.Len(t, spendable, 2)
-	require.Equal(t, int64(5), spendable[0].Note.Amount.Int64())
-	require.Equal(t, int64(13), spendable[1].Note.Amount.Int64())
+	require.Equal(t, uint64(5), spendable[0].Note.Amount)
+	require.Equal(t, uint64(13), spendable[1].Note.Amount)
 	require.Equal(t, int64(18), total.Int64())
 }
 
@@ -57,10 +57,10 @@ func TestFindExactMatchSpendableNoteByDenomIgnoresDifferentDenom(t *testing.T) {
 		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
 	}
 
-	selected := FindExactMatchSpendableNoteByDenom(notes, "uclair", big.NewInt(10))
+	selected := FindExactMatchSpendableNoteByDenom(testSecretFoundNotes(t, notes), "uclair", big.NewInt(10))
 	require.NotNil(t, selected)
-	require.Equal(t, 0, selected.Note.AssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
-	require.Equal(t, int64(10), selected.Note.Amount.Int64())
+	require.Equal(t, privacytypes.ComputeSecretAssetIDV1("uclair").Bytes(), selected.Note.AssetID.Bytes())
+	require.Equal(t, uint64(10), selected.Note.Amount)
 	require.False(t, selected.IsSpent)
 }
 
@@ -80,7 +80,7 @@ func TestFindExactMatchSpendableNoteByDenomUsesDeterministicOrder(t *testing.T) 
 		},
 	}
 
-	selected := FindExactMatchSpendableNoteByDenom(notes, "uclair", big.NewInt(10))
+	selected := FindExactMatchSpendableNoteByDenom(testSecretFoundNotes(t, notes), "uclair", big.NewInt(10))
 	require.NotNil(t, selected)
 	require.Equal(t, "aa", selected.Nullifier)
 }
@@ -96,7 +96,7 @@ func TestPlannerStateFingerprintUsesSortedSameDenomSpendableNotes(t *testing.T) 
 		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9},
 	}
 
-	require.Equal(t, PlannerStateFingerprint(left, "uclair", big.NewInt(7)), PlannerStateFingerprint(right, "uclair", big.NewInt(7)))
+	require.Equal(t, PlannerStateFingerprint(testSecretFoundNotes(t, left), "uclair", big.NewInt(7)), PlannerStateFingerprint(testSecretFoundNotes(t, right), "uclair", big.NewInt(7)))
 }
 
 func TestSelectInputsFiltersDifferentDenomZeroNote(t *testing.T) {
@@ -105,7 +105,7 @@ func TestSelectInputsFiltersDifferentDenomZeroNote(t *testing.T) {
 		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
 	}
 
-	selection := SelectInputs(notes, "uclair", big.NewInt(10))
+	selection := SelectInputs(testSecretFoundNotes(t, notes), "uclair", big.NewInt(10))
 	require.Equal(t, int64(0), selection.Total.Int64())
 	require.False(t, selection.IsFinal)
 	require.True(t, selection.NeedsZeroDummy)
@@ -118,12 +118,12 @@ func TestSelectInputsUsesSameDenomPairOnly(t *testing.T) {
 		{Note: privacytypes.Note{Amount: big.NewInt(4), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
 	}
 
-	selection := SelectInputs(notes, "uclair", big.NewInt(10))
+	selection := SelectInputs(testSecretFoundNotes(t, notes), "uclair", big.NewInt(10))
 	require.False(t, selection.NeedsZeroDummy)
 	require.True(t, selection.IsFinal)
 	require.Equal(t, int64(11), selection.Total.Int64())
-	require.Equal(t, 0, selection.Inputs[0].Note.AssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
-	require.Equal(t, 0, selection.Inputs[1].Note.AssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
+	require.Equal(t, privacytypes.ComputeSecretAssetIDV1("uclair").Bytes(), selection.Inputs[0].Note.AssetID.Bytes())
+	require.Equal(t, privacytypes.ComputeSecretAssetIDV1("uclair").Bytes(), selection.Inputs[1].Note.AssetID.Bytes())
 }
 
 func TestSelectInputsFallsBackToPositivePairWhenSingleNoteNeedsZero(t *testing.T) {
@@ -132,12 +132,12 @@ func TestSelectInputsFallsBackToPositivePairWhenSingleNoteNeedsZero(t *testing.T
 		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
 	}
 
-	selection := SelectInputs(notes, "uclair", big.NewInt(8))
+	selection := SelectInputs(testSecretFoundNotes(t, notes), "uclair", big.NewInt(8))
 	require.False(t, selection.NeedsZeroDummy)
 	require.True(t, selection.IsFinal)
 	require.Equal(t, int64(21), selection.Total.Int64())
-	require.Equal(t, int64(10), selection.Inputs[0].Note.Amount.Int64())
-	require.Equal(t, int64(11), selection.Inputs[1].Note.Amount.Int64())
+	require.Equal(t, uint64(10), selection.Inputs[0].Note.Amount)
+	require.Equal(t, uint64(11), selection.Inputs[1].Note.Amount)
 }
 
 func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T) {
@@ -147,12 +147,12 @@ func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T
 		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
 	}
 
-	selection := SelectInputs(notes, "uclair", big.NewInt(12))
+	selection := SelectInputs(testSecretFoundNotes(t, notes), "uclair", big.NewInt(12))
 	require.False(t, selection.NeedsZeroDummy)
 	require.True(t, selection.IsFinal)
 	require.Equal(t, int64(12), selection.Total.Int64())
-	require.Equal(t, int64(5), selection.Inputs[0].Note.Amount.Int64())
-	require.Equal(t, int64(7), selection.Inputs[1].Note.Amount.Int64())
+	require.Equal(t, uint64(5), selection.Inputs[0].Note.Amount)
+	require.Equal(t, uint64(7), selection.Inputs[1].Note.Amount)
 }
 
 func TestSelectInputsRequiresDummyWhenPairWouldOverflowOutputAmounts(t *testing.T) {
@@ -162,7 +162,7 @@ func TestSelectInputsRequiresDummyWhenPairWouldOverflowOutputAmounts(t *testing.
 		{Note: privacytypes.Note{Amount: new(big.Int).Set(maxAmount), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
 	}
 
-	selection := SelectInputs(notes, "uclair", big.NewInt(1))
+	selection := SelectInputs(testSecretFoundNotes(t, notes), "uclair", big.NewInt(1))
 	require.True(t, selection.NeedsZeroDummy)
 	require.False(t, selection.IsFinal)
 	require.Equal(t, 0, selection.Total.Sign())
@@ -175,12 +175,12 @@ func TestSelectInputsChoosesLargestMergePairWhenNoFinalPairExists(t *testing.T) 
 		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
 	}
 
-	selection := SelectInputs(notes, "uclair", big.NewInt(20))
+	selection := SelectInputs(testSecretFoundNotes(t, notes), "uclair", big.NewInt(20))
 	require.False(t, selection.NeedsZeroDummy)
 	require.False(t, selection.IsFinal)
 	require.Equal(t, int64(12), selection.Total.Int64())
-	require.Equal(t, int64(3), selection.Inputs[0].Note.Amount.Int64())
-	require.Equal(t, int64(9), selection.Inputs[1].Note.Amount.Int64())
+	require.Equal(t, uint64(3), selection.Inputs[0].Note.Amount)
+	require.Equal(t, uint64(9), selection.Inputs[1].Note.Amount)
 }
 
 func TestSelectInputBatchBacktracksAcrossOriginalOrder(t *testing.T) {
@@ -191,13 +191,13 @@ func TestSelectInputBatchBacktracksAcrossOriginalOrder(t *testing.T) {
 		{Note: privacytypes.Note{Amount: big.NewInt(100), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "hundred", Height: 4, IsSpent: false},
 	}
 
-	selections, err := SelectInputBatch(notes, "uclair", []*big.Int{big.NewInt(5), big.NewInt(100)})
+	selections, err := SelectInputBatch(testSecretFoundNotes(t, notes), "uclair", []*big.Int{big.NewInt(5), big.NewInt(100)})
 	require.NoError(t, err)
 	require.Len(t, selections, 2)
 	require.True(t, selections[0].IsFinal)
 	require.True(t, selections[1].IsFinal)
 	require.Equal(t, int64(5), selections[0].Total.Int64())
-	require.Equal(t, []int64{2, 3}, []int64{selections[0].Inputs[0].Note.Amount.Int64(), selections[0].Inputs[1].Note.Amount.Int64()})
+	require.Equal(t, []uint64{2, 3}, []uint64{selections[0].Inputs[0].Note.Amount, selections[0].Inputs[1].Note.Amount})
 	require.Equal(t, int64(100), selections[1].Total.Int64())
-	require.Equal(t, []int64{100, 0}, []int64{selections[1].Inputs[0].Note.Amount.Int64(), selections[1].Inputs[1].Note.Amount.Int64()})
+	require.Equal(t, []uint64{100, 0}, []uint64{selections[1].Inputs[0].Note.Amount, selections[1].Inputs[1].Note.Amount})
 }

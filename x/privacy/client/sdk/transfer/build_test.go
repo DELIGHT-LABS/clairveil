@@ -77,40 +77,27 @@ func testBuildTransferMessageDeps(
 	auditScalar, auditPubKey := testScalarAndPubKey(83)
 	selfViewScalar, selfViewPubKey := testScalarAndPubKey(89)
 
-	inputs := [2]privacyscan.FoundNote{
+	legacyInputs := [2]privacytypes.Note{
 		{
-			Note: privacytypes.Note{
-				ReceiverSpendPubKeyX: pointCoordinate(senderSpendPubKey, true),
-				ReceiverSpendPubKeyY: pointCoordinate(senderSpendPubKey, false),
-				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
-				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
-				Amount:               big.NewInt(7),
-				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
-				Randomness:           big.NewInt(701),
-				Memo:                 "input-1",
-			},
+			ReceiverSpendPubKeyX: pointCoordinate(senderSpendPubKey, true), ReceiverSpendPubKeyY: pointCoordinate(senderSpendPubKey, false),
+			ReceiverViewPubKeyX: pointCoordinate(senderViewPubKey, true), ReceiverViewPubKeyY: pointCoordinate(senderViewPubKey, false),
+			Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair"), Randomness: big.NewInt(701), Memo: "input-1",
 		},
 		{
-			Note: privacytypes.Note{
-				ReceiverSpendPubKeyX: pointCoordinate(senderSpendPubKey, true),
-				ReceiverSpendPubKeyY: pointCoordinate(senderSpendPubKey, false),
-				ReceiverViewPubKeyX:  pointCoordinate(senderViewPubKey, true),
-				ReceiverViewPubKeyY:  pointCoordinate(senderViewPubKey, false),
-				Amount:               big.NewInt(5),
-				AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
-				Randomness:           big.NewInt(702),
-				Memo:                 "input-2",
-			},
+			ReceiverSpendPubKeyX: pointCoordinate(senderSpendPubKey, true), ReceiverSpendPubKeyY: pointCoordinate(senderSpendPubKey, false),
+			ReceiverViewPubKeyX: pointCoordinate(senderViewPubKey, true), ReceiverViewPubKeyY: pointCoordinate(senderViewPubKey, false),
+			Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair"), Randomness: big.NewInt(702), Memo: "input-2",
 		},
 	}
+
+	inputs := [2]privacyscan.SecretFoundNote{testSecretFoundNote(t, legacyInputs[0]), testSecretFoundNote(t, legacyInputs[1])}
 
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
 	require.NoError(t, err)
 
 	merkleProvider := &stubMerklePathProvider{paths: map[string]*MerklePathResult{}}
 	for _, transferInput := range inputs {
-		commitmentHex, err := privacyfield.CanonicalHexFromBigInt(transferInput.Note.ComputeCommitment())
-		require.NoError(t, err)
+		commitmentHex := secretCommitmentHex(t, transferInput.Note)
 		merkleProvider.paths[commitmentHex] = &MerklePathResult{
 			Root:       rootBytes,
 			Path:       []string{"01", "02"},

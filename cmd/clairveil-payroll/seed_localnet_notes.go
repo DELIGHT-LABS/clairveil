@@ -1,17 +1,19 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 
 	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
-	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
@@ -119,43 +121,49 @@ func runSeedLocalnetNotes(args []string) error {
 	return writeJSONOutput(outPath, report)
 }
 
-func buildSeededPayrollNotes(shieldedAddress string, count int, amount *big.Int, denom string) ([]privacyscan.FoundNote, [][]byte, error) {
+func buildSeededPayrollNotes(shieldedAddress string, count int, amount *big.Int, denom string) ([]privacyscan.SecretFoundNote, [][]byte, error) {
 	bundle, err := privacytypes.DecodeShieldedAddressBundle(strings.TrimSpace(shieldedAddress))
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid -shielded-address: %w", err)
 	}
-	spendX := new(big.Int)
-	spendY := new(big.Int)
-	viewX := new(big.Int)
-	viewY := new(big.Int)
-	bundle.SpendPubKey.X.BigInt(spendX)
-	bundle.SpendPubKey.Y.BigInt(spendY)
-	bundle.ViewPubKey.X.BigInt(viewX)
-	bundle.ViewPubKey.Y.BigInt(viewY)
-
-	notes := make([]privacyscan.FoundNote, 0, count*2)
+	if err := privacytypes.ValidateShieldedAmount("seed amount", amount); err != nil {
+		return nil, nil, err
+	}
+	spendX, spendY, err := privacycrypto.PublicPointFieldValues(*bundle.SpendPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	viewX, viewY, err := privacycrypto.PublicPointFieldValues(*bundle.ViewPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	assetRaw := privacytypes.ComputeAssetIDV1(denom).FillBytes(make([]byte, 32))
+	asset, err := privacycrypto.ParseFieldValueBE32(assetRaw)
+	if err != nil {
+		return nil, nil, err
+	}
+	notes := make([]privacyscan.SecretFoundNote, 0, count*2)
 	commitments := make([][]byte, 0, count*2)
 	for i := 0; i < count; i++ {
-		amountNote, err := privacytypes.NewNote(new(big.Int).Set(spendX), new(big.Int).Set(spendY), new(big.Int).Set(viewX), new(big.Int).Set(viewY), new(big.Int).Set(amount), denom, fmt.Sprintf("localnet payroll amount seed %d", i+1))
-		if err != nil {
-			return nil, nil, err
-		}
-		dummyNote, err := privacytypes.NewNote(new(big.Int).Set(spendX), new(big.Int).Set(spendY), new(big.Int).Set(viewX), new(big.Int).Set(viewY), big.NewInt(0), denom, fmt.Sprintf("localnet payroll dummy seed %d", i+1))
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, note := range []*privacytypes.Note{amountNote, dummyNote} {
-			commitment, err := privacyfield.CanonicalBytesFromBigInt(note.ComputeCommitment())
+		for _, value := range []uint64{amount.Uint64(), 0} {
+			note, err := privacytypes.NewRandomSecretNoteV1(rand.Reader, spendX, spendY, viewX, viewY, value, asset, fmt.Sprintf("localnet payroll seed %d", len(notes)+1))
 			if err != nil {
-				return nil, nil, fmt.Errorf("seed note commitment is not canonical: %w", err)
+				return nil, nil, err
 			}
-			found := privacyscan.BuildFoundNoteFromScanEvent(note, nil)
-			found.TxHash = fmt.Sprintf("LOCALNET-SEED-%06d", len(notes)+1)
-			found.Height = 0
-			notes = append(notes, found)
-			commitments = append(commitments, commitment)
+			c, err := note.CommitmentV1()
+			if err != nil {
+				return nil, nil, err
+			}
+			n, err := note.NullifierV1()
+			if err != nil {
+				return nil, nil, err
+			}
+			cb, nb := c.Bytes(), n.Bytes()
+			notes = append(notes, privacyscan.SecretFoundNote{Note: *note, Nullifier: hex.EncodeToString(nb[:]), Commitment: hex.EncodeToString(cb[:]), TxHash: fmt.Sprintf("LOCALNET-SEED-%06d", len(notes)+1)})
+			commitments = append(commitments, append([]byte(nil), cb[:]...))
 		}
 	}
+
 	return notes, commitments, nil
 }
 
@@ -196,7 +204,7 @@ func appendGenesisCommitments(genesisPath string, commitments [][]byte) (int, er
 	return existingCount, nil
 }
 
-func writeSeededWallet(walletPath string, notes []privacyscan.FoundNote) error {
+func writeSeededWallet(walletPath string, notes []privacyscan.SecretFoundNote) error {
 	if dir := filepath.Dir(walletPath); dir != "." {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
@@ -210,13 +218,13 @@ func writeSeededWallet(walletPath string, notes []privacyscan.FoundNote) error {
 	return privacyscan.SaveLocalWalletFile(walletPath, wallet)
 }
 
-func writeSeededListNotes(path string, notes []privacyscan.FoundNote) error {
+func writeSeededListNotes(path string, notes []privacyscan.SecretFoundNote) error {
 	payload := listNotesFile{Notes: make([]listNotesFileNote, 0, len(notes))}
 	for i, note := range notes {
 		payload.Notes = append(payload.Notes, listNotesFileNote{
 			Index:     i + 1,
 			Status:    "spendable",
-			Amount:    note.Note.Amount.String(),
+			Amount:    fmt.Sprintf("%d", note.Note.Amount),
 			Nullifier: note.Nullifier,
 			TxHash:    note.TxHash,
 			Height:    note.Height,

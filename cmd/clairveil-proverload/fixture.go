@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"hash"
 	"math/big"
@@ -19,6 +20,7 @@ import (
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -54,30 +56,9 @@ func generatedTransferRequest() (requestPayload, error) {
 	auditPub := scalarMulBase(auditScalar)
 	selfViewPub := scalarMulBase(selfViewScalar)
 
-	senderSpendX, senderSpendY := pointBigInts(senderSpendPub)
-	senderViewX, senderViewY := pointBigInts(senderViewPub)
-	assetID := privacytypes.ComputeAssetIDV1(generatedFixtureDenom)
-	inputs := [2]privacyscan.FoundNote{
-		foundNote(privacytypes.Note{
-			ReceiverSpendPubKeyX: new(big.Int).Set(senderSpendX),
-			ReceiverSpendPubKeyY: new(big.Int).Set(senderSpendY),
-			ReceiverViewPubKeyX:  new(big.Int).Set(senderViewX),
-			ReceiverViewPubKeyY:  new(big.Int).Set(senderViewY),
-			Amount:               big.NewInt(7),
-			AssetID:              new(big.Int).Set(assetID),
-			Randomness:           big.NewInt(101),
-			Memo:                 "Generated prover load transfer input 0",
-		}),
-		foundNote(privacytypes.Note{
-			ReceiverSpendPubKeyX: new(big.Int).Set(senderSpendX),
-			ReceiverSpendPubKeyY: new(big.Int).Set(senderSpendY),
-			ReceiverViewPubKeyX:  new(big.Int).Set(senderViewX),
-			ReceiverViewPubKeyY:  new(big.Int).Set(senderViewY),
-			Amount:               big.NewInt(5),
-			AssetID:              new(big.Int).Set(assetID),
-			Randomness:           big.NewInt(103),
-			Memo:                 "Generated prover load transfer input 1",
-		}),
+	inputs := [2]privacyscan.SecretFoundNote{
+		foundNote(fixtureSecretNote(senderSpendPub, senderViewPub, 7, 101, "Generated prover load transfer input 0")),
+		foundNote(fixtureSecretNote(senderSpendPub, senderViewPub, 5, 103, "Generated prover load transfer input 1")),
 	}
 
 	provider, err := newGeneratedTransferMerklePathProvider(inputs)
@@ -125,19 +106,7 @@ func generatedWithdrawRequest(now time.Time) (requestPayload, error) {
 	viewScalar := big.NewInt(43)
 	spendPub := scalarMulBase(spendScalar)
 	viewPub := scalarMulBase(viewScalar)
-	spendX, spendY := pointBigInts(spendPub)
-	viewX, viewY := pointBigInts(viewPub)
-
-	note := foundNote(privacytypes.Note{
-		ReceiverSpendPubKeyX: spendX,
-		ReceiverSpendPubKeyY: spendY,
-		ReceiverViewPubKeyX:  viewX,
-		ReceiverViewPubKeyY:  viewY,
-		Amount:               big.NewInt(10),
-		AssetID:              privacytypes.ComputeAssetIDV1(generatedFixtureDenom),
-		Randomness:           big.NewInt(107),
-		Memo:                 "Generated prover load withdraw input",
-	})
+	note := foundNote(fixtureSecretNote(spendPub, viewPub, 10, 107, "Generated prover load withdraw input"))
 	provider, err := newGeneratedWithdrawMerklePathProvider(note)
 	if err != nil {
 		return requestPayload{}, err
@@ -174,9 +143,9 @@ type generatedTransferMerklePathProvider struct {
 	paths map[string]privacytransfer.MerklePathResult
 }
 
-func newGeneratedTransferMerklePathProvider(inputs [2]privacyscan.FoundNote) (*generatedTransferMerklePathProvider, error) {
-	left := inputs[0].Note.ComputeCommitment()
-	right := inputs[1].Note.ComputeCommitment()
+func newGeneratedTransferMerklePathProvider(inputs [2]privacyscan.SecretFoundNote) (*generatedTransferMerklePathProvider, error) {
+	left := fixtureCommitment(inputs[0].Note)
+	right := fixtureCommitment(inputs[1].Note)
 	root := twoLeafRoot(left, right)
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(root)
 	if err != nil {
@@ -237,8 +206,8 @@ type generatedWithdrawMerklePathProvider struct {
 	result privacywithdraw.MerklePathResult
 }
 
-func newGeneratedWithdrawMerklePathProvider(note privacyscan.FoundNote) (*generatedWithdrawMerklePathProvider, error) {
-	commitment := note.Note.ComputeCommitment()
+func newGeneratedWithdrawMerklePathProvider(note privacyscan.SecretFoundNote) (*generatedWithdrawMerklePathProvider, error) {
+	commitment := fixtureCommitment(note.Note)
 	root := singleLeafRoot(commitment)
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(root)
 	if err != nil {
@@ -291,21 +260,22 @@ func (s generatedWithdrawSigner) SignSpendIntent(msgHash *big.Int) ([]byte, erro
 }
 
 type generatedWithdrawNoteSource struct {
-	note privacyscan.FoundNote
+	note privacyscan.SecretFoundNote
 }
 
-func (s generatedWithdrawNoteSource) LoadFoundNotes(context.Context) ([]privacyscan.FoundNote, error) {
-	return []privacyscan.FoundNote{s.note}, nil
+func (s generatedWithdrawNoteSource) LoadFoundNotes(context.Context) ([]privacyscan.SecretFoundNote, error) {
+	return []privacyscan.SecretFoundNote{s.note}, nil
 }
 
-func foundNote(note privacytypes.Note) privacyscan.FoundNote {
-	nullifierHex, err := privacyfield.CanonicalHexFromBigInt(note.ComputeNullifier())
+func foundNote(note privacytypes.SecretNoteV1) privacyscan.SecretFoundNote {
+	nullifier, err := note.NullifierV1()
 	if err != nil {
-		nullifierHex = note.ComputeNullifier().Text(16)
+		panic(err)
 	}
-	return privacyscan.FoundNote{
+	nullifierBytes := nullifier.Bytes()
+	return privacyscan.SecretFoundNote{
 		Note:      note,
-		Nullifier: nullifierHex,
+		Nullifier: hex.EncodeToString(nullifierBytes[:]),
 		TxHash:    "GENERATED-PROVERLOAD",
 		Height:    1,
 		IsSpent:   false,
@@ -411,4 +381,28 @@ func generatedRecipientAddress() sdk.AccAddress {
 		0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 		0x10, 0x11, 0x12, 0x13, 0x14,
 	})
+}
+
+func fixtureSecretNote(spend, view crypto_tedwards.PointAffine, amount, randomness uint64, memo string) privacytypes.SecretNoteV1 {
+	spendX, spendY, err := privacycrypto.PublicPointFieldValues(spend)
+	if err != nil {
+		panic(err)
+	}
+	viewX, viewY, err := privacycrypto.PublicPointFieldValues(view)
+	if err != nil {
+		panic(err)
+	}
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, amount, privacytypes.ComputeSecretAssetIDV1(generatedFixtureDenom), privacycrypto.FieldValueFromUint64(randomness), memo)
+	if err != nil {
+		panic(err)
+	}
+	return *note
+}
+func fixtureCommitment(note privacytypes.SecretNoteV1) *big.Int {
+	c, err := note.CommitmentV1()
+	if err != nil {
+		panic(err)
+	}
+	raw := c.Bytes()
+	return new(big.Int).SetBytes(raw[:])
 }

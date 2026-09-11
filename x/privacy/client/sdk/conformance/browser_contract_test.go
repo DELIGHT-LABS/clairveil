@@ -366,7 +366,7 @@ func TestBrowserSignerProviderContractFixtureDerivedShieldedAddress(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, contract.RootSigner.ExpectedDerived.ShieldedAddress, shieldedAddress)
 
-	_, disclosurePubKey, _ := privacyidentity.DeriveDisclosureKeys(rootSeed)
+	_, disclosurePubKey, _, _ := privacyidentity.DeriveDisclosureKeys(rootSeed)
 	bz := disclosurePubKey.Bytes()
 	require.Equal(t, contract.RootSigner.ExpectedDerived.DisclosurePubKeyHex, hex.EncodeToString(bz[:]))
 }

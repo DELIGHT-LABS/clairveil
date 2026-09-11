@@ -91,7 +91,7 @@ func TestRemoveTransferBatchInputsRemovesSelectedNullifiers(t *testing.T) {
 
 func TestRemoveTransferBatchInputsFallsBackToCommitmentKey(t *testing.T) {
 	selected := FoundNote{
-		Note: privacytypes.Note{
+		Note: testSecretNoteFixture(privacytypes.Note{
 			ReceiverSpendPubKeyX: big.NewInt(1),
 			ReceiverSpendPubKeyY: big.NewInt(2),
 			ReceiverViewPubKeyX:  big.NewInt(3),
@@ -99,10 +99,10 @@ func TestRemoveTransferBatchInputsFallsBackToCommitmentKey(t *testing.T) {
 			Amount:               big.NewInt(5),
 			AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 			Randomness:           big.NewInt(1),
-		},
+		}),
 	}
 	other := FoundNote{
-		Note: privacytypes.Note{
+		Note: testSecretNoteFixture(privacytypes.Note{
 			ReceiverSpendPubKeyX: big.NewInt(1),
 			ReceiverSpendPubKeyY: big.NewInt(2),
 			ReceiverViewPubKeyX:  big.NewInt(3),
@@ -110,13 +110,13 @@ func TestRemoveTransferBatchInputsFallsBackToCommitmentKey(t *testing.T) {
 			Amount:               big.NewInt(7),
 			AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 			Randomness:           big.NewInt(2),
-		},
+		}),
 	}
 
 	remaining := removeTransferBatchInputs([]FoundNote{selected, other}, [2]FoundNote{selected, selected})
 
 	require.Len(t, remaining, 1)
-	require.Equal(t, int64(7), remaining[0].Note.Amount.Int64())
+	require.Equal(t, int64(7), int64(remaining[0].Note.Amount))
 }
 
 func TestTransferBatchOutputItemsIncludeMessageEvidence(t *testing.T) {
@@ -141,10 +141,10 @@ func TestTransferBatchOutputItemsIncludeMessageEvidence(t *testing.T) {
 
 func testTransferBatchFoundNote(nullifier string, amount int64) FoundNote {
 	return FoundNote{
-		Note: privacytypes.Note{
+		Note: testSecretNoteFixture(privacytypes.Note{
 			Amount:  big.NewInt(amount),
 			AssetID: privacytypes.ComputeAssetIDV1("uclair"),
-		},
+		}),
 		Nullifier: nullifier,
 		IsSpent:   false,
 	}

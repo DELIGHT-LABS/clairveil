@@ -59,7 +59,7 @@ func renderListNotesText(foundNotes []FoundNote) string {
 				continue
 			}
 
-			jsonBytes, _ := json.Marshal(info.Note)
+			jsonBytes, _ := json.Marshal(displayedNote{info.Note})
 			builder.WriteString(fmt.Sprintf(
 				"\n[Note #%02d - amount=%s asset_id=%s]\n%s\n",
 				i+1,
@@ -143,7 +143,12 @@ type spendableAssetTotal struct {
 }
 
 func buildSpendableAssetTotals(foundNotes []FoundNote) []spendableAssetTotal {
-	spendable, _ := privacyscan.SummarizeSpendableNotes(foundNotes)
+	spendable := make([]FoundNote, 0, len(foundNotes))
+	for _, note := range foundNotes {
+		if !note.IsSpent {
+			spendable = append(spendable, note)
+		}
+	}
 	if len(spendable) == 0 {
 		return nil
 	}
@@ -154,7 +159,7 @@ func buildSpendableAssetTotals(foundNotes []FoundNote) []spendableAssetTotal {
 		if _, exists := byAsset[assetIDHex]; !exists {
 			byAsset[assetIDHex] = new(big.Int)
 		}
-		byAsset[assetIDHex].Add(byAsset[assetIDHex], note.Note.Amount)
+		byAsset[assetIDHex].Add(byAsset[assetIDHex], new(big.Int).SetUint64(note.Note.Amount))
 	}
 
 	order := make([]string, 0, len(byAsset))
@@ -174,17 +179,9 @@ func buildSpendableAssetTotals(foundNotes []FoundNote) []spendableAssetTotal {
 	return summaries
 }
 
-func noteAssetIDHex(note privacytypes.Note) string {
-	if note.AssetID == nil {
-		return "unknown"
-	}
-
-	assetIDHex, err := canonicalFieldHexFromBigInt(note.AssetID)
-	if err != nil {
-		return note.AssetID.String()
-	}
-
-	return assetIDHex
+func noteAssetIDHex(note privacytypes.SecretNoteV1) string {
+	raw := note.AssetID.Bytes()
+	return fmt.Sprintf("%x", raw[:])
 }
 
 func shortAssetID(value string) string {

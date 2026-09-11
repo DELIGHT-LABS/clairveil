@@ -8,7 +8,8 @@ import (
 
 func TestEncodePointHex(t *testing.T) {
 	rootSeed := []byte("root-seed-material")
-	_, pubKey, _ := deriveDisclosureKeys(rootSeed)
+	_, pubKey, _, deriveErr := deriveDisclosureKeys(rootSeed)
+	require.NoError(t, deriveErr)
 
 	pubKeyHex := encodePointHex(pubKey)
 	decodedPubKey, _, err := decodeDisclosurePubKeyHex(pubKeyHex)

@@ -36,7 +36,10 @@ you only need --from to select the account.`,
 			if err != nil {
 				return err
 			}
-			_, disclosurePubKey, _ := deriveDisclosureKeys(rootSeed)
+			_, disclosurePubKey, _, err := deriveDisclosureKeys(rootSeed)
+			if err != nil {
+				return err
+			}
 			pubKeyHex := encodePointHex(disclosurePubKey)
 
 			asJSON, err := cmd.Flags().GetBool(flagDisclosureKeyJSON)

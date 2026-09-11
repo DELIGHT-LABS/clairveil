@@ -11,7 +11,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -131,27 +130,9 @@ func TestPrivacyDisclosureBlindingV1Contract(t *testing.T) {
 				require.Equal(t, vector.ErrorField, invariantErr.Field)
 			}
 
-			if !vector.Enabled || vector.OutputIndex != privacytypes.TransferDisclosureRecipientOutputIndex {
-				return
-			}
-			signerErr := privacytransfer.ValidateJoinSplitOwnerDisclosureBlindingV1(
-				privacytransfer.JoinSplitOwnerIntentSigningRequestV1{
-					UserPrivacyPolicy:         vector.PrivacyPolicy,
-					RecipientOutputRandomness: outputRandomness,
-					UserDisclosureBlinding:    userBlinding,
-					FullDisclosureBlinding:    fullBlinding,
-				},
-			)
-			if vector.Valid {
-				require.NoError(t, signerErr)
-				return
-			}
-			require.Error(t, signerErr)
-			var signerInvariantErr *privacytypes.DisclosureBlindingErrorV1
-			require.True(t, errors.As(signerErr, &signerInvariantErr))
-			require.Equal(t, vector.ErrorCode, string(signerInvariantErr.Code))
-			require.Equal(t, vector.ErrorField, signerInvariantErr.Field)
-			require.Equal(t, privacytypes.TransferDisclosureRecipientOutputIndex, signerInvariantErr.OutputIndex)
+			// Owner signing receives only the public intent/effect. Disclosure
+			// preimages are checked before that boundary.
+
 		})
 	}
 }

@@ -13,8 +13,8 @@ import (
 func TestExecuteTransferRunsFinalStepAndReturnsResponse(t *testing.T) {
 	input, merkleProvider, signer, artifacts, runner := testBuildTransferMessageDeps(t)
 	source := &stubRecursiveTransferNoteSource{
-		responses: [][]privacyscan.FoundNote{
-			append([]privacyscan.FoundNote(nil), input.Inputs[:]...),
+		responses: [][]privacyscan.SecretFoundNote{
+			append([]privacyscan.SecretFoundNote(nil), input.Inputs[:]...),
 		},
 	}
 	waiter := &stubRecursiveTransferBlockWaiter{}
@@ -66,8 +66,8 @@ func TestExecuteTransferRunsFinalStepAndReturnsResponse(t *testing.T) {
 func TestExecuteTransferPropagatesBroadcastError(t *testing.T) {
 	input, merkleProvider, signer, artifacts, runner := testBuildTransferMessageDeps(t)
 	source := &stubRecursiveTransferNoteSource{
-		responses: [][]privacyscan.FoundNote{
-			append([]privacyscan.FoundNote(nil), input.Inputs[:]...),
+		responses: [][]privacyscan.SecretFoundNote{
+			append([]privacyscan.SecretFoundNote(nil), input.Inputs[:]...),
 		},
 	}
 	broadcaster := &stubTransferMessageBroadcaster{err: context.DeadlineExceeded}

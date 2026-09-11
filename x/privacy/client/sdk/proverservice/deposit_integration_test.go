@@ -23,6 +23,7 @@ import (
 	privacycircuit "github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacyprovertransport "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provertransport"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
@@ -131,18 +132,22 @@ func TestDepositProofHTTPRoundTripWithRealGroth16Verification(t *testing.T) {
 	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 }
 
-func integrationDepositNote() privacytypes.Note {
+func integrationDepositNote() privacytypes.SecretNoteV1 {
 	curve := crypto_tedwards.GetEdwardsCurve()
 	var spendKey, viewKey crypto_tedwards.PointAffine
 	spendKey.ScalarMultiplication(&curve.Base, big.NewInt(101))
 	viewKey.ScalarMultiplication(&curve.Base, big.NewInt(103))
-	return privacytypes.Note{
-		ReceiverSpendPubKeyX: spendKey.X.BigInt(new(big.Int)),
-		ReceiverSpendPubKeyY: spendKey.Y.BigInt(new(big.Int)),
-		ReceiverViewPubKeyX:  viewKey.X.BigInt(new(big.Int)),
-		ReceiverViewPubKeyY:  viewKey.Y.BigInt(new(big.Int)),
-		Amount:               big.NewInt(7),
-		AssetID:              big.NewInt(11),
-		Randomness:           big.NewInt(13),
+	spendX, spendY, err := privacycrypto.PublicPointFieldValues(spendKey)
+	if err != nil {
+		panic(err)
 	}
+	viewX, viewY, err := privacycrypto.PublicPointFieldValues(viewKey)
+	if err != nil {
+		panic(err)
+	}
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, 7, privacycrypto.FieldValueFromUint64(11), privacycrypto.FieldValueFromUint64(13), "")
+	if err != nil {
+		panic(err)
+	}
+	return *note
 }

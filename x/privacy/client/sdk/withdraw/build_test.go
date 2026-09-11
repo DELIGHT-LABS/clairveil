@@ -24,7 +24,7 @@ func TestBuildWithdrawPayloadBuildsPreparedPayload(t *testing.T) {
 	require.NoError(t, err)
 
 	source := &stubExactMatchNoteSource{
-		responses: [][]privacyscan.FoundNote{{selectedNote}},
+		responses: [][]privacyscan.SecretFoundNote{{selectedNote}},
 	}
 	planner := &stubExactMatchAutoPlanner{}
 	merklePaths := &stubMerklePathProvider{
@@ -62,7 +62,7 @@ func TestBuildWithdrawPayloadBuildsPreparedPayload(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	require.Equal(t, int64(10), result.SelectedNote.Note.Amount.Int64())
+	require.Equal(t, int64(10), int64(result.SelectedNote.Note.Amount))
 	require.NotNil(t, result.Payload)
 	require.Equal(t, "10uclair", result.Payload.Amount)
 	require.Equal(t, recipient.String(), result.Payload.Recipient)
@@ -83,7 +83,7 @@ func TestBuildWithdrawPayloadAutoPlansAndRescans(t *testing.T) {
 	require.NoError(t, err)
 
 	source := &stubExactMatchNoteSource{
-		responses: [][]privacyscan.FoundNote{
+		responses: [][]privacyscan.SecretFoundNote{
 			{initialNote},
 			{selectedNote},
 		},
@@ -121,7 +121,7 @@ func TestBuildWithdrawPayloadAutoPlansAndRescans(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	require.Equal(t, int64(10), result.SelectedNote.Note.Amount.Int64())
+	require.Equal(t, int64(10), int64(result.SelectedNote.Note.Amount))
 	require.Len(t, source.calls, 2)
 	require.Len(t, planner.calls, 1)
 }
@@ -158,7 +158,7 @@ func TestBuildWithdrawPayloadPropagatesProofError(t *testing.T) {
 	_, err = BuildWithdrawPayload(
 		context.Background(),
 		&stubExactMatchNoteSource{
-			responses: [][]privacyscan.FoundNote{{selectedNote}},
+			responses: [][]privacyscan.SecretFoundNote{{selectedNote}},
 		},
 		&stubExactMatchAutoPlanner{},
 		&stubMerklePathProvider{
@@ -188,11 +188,11 @@ func TestBuildWithdrawPayloadPropagatesProofError(t *testing.T) {
 	require.ErrorContains(t, err, "boom")
 }
 
-func testBuildWithdrawFoundNote(amount int64, denom string, randomness int64) privacyscan.FoundNote {
+func testBuildWithdrawFoundNote(amount int64, denom string, randomness int64) privacyscan.SecretFoundNote {
 	spendPubKey := testPubKey(31)
 	viewPubKey := testPubKey(37)
-	return privacyscan.FoundNote{
-		Note: privacytypes.Note{
+	return privacyscan.SecretFoundNote{
+		Note: testSecretNoteFixture(privacytypes.Note{
 			ReceiverSpendPubKeyX: pointCoordinate(spendPubKey, true),
 			ReceiverSpendPubKeyY: pointCoordinate(spendPubKey, false),
 			ReceiverViewPubKeyX:  pointCoordinate(viewPubKey, true),
@@ -200,16 +200,16 @@ func testBuildWithdrawFoundNote(amount int64, denom string, randomness int64) pr
 			Amount:               big.NewInt(amount),
 			AssetID:              privacytypes.ComputeAssetIDV1(denom),
 			Randomness:           big.NewInt(randomness),
-		},
+		}),
 	}
 }
 
-func testBuildWithdrawMerklePath(t *testing.T, note privacyscan.FoundNote) ([]byte, string) {
+func testBuildWithdrawMerklePath(t *testing.T, note privacyscan.SecretFoundNote) ([]byte, string) {
 	t.Helper()
 
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
 	require.NoError(t, err)
-	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(note.Note.ComputeCommitment())
+	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(testSecretCommitment(note.Note))
 	require.NoError(t, err)
 	return rootBytes, commitmentHex
 }

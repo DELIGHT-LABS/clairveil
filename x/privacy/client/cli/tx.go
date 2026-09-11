@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash"
 	"io"
 	"math/big"
 	"os"
@@ -20,8 +19,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
@@ -40,7 +37,7 @@ import (
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
 
-type FoundNote = privacyscan.FoundNote
+type FoundNote = privacyscan.SecretFoundNote
 
 type LocalWalletData = privacyscan.LocalWalletData
 
@@ -64,13 +61,13 @@ type listNotesJSONSummary struct {
 }
 
 type listNotesJSONNote struct {
-	Index     int        `json:"index"`
-	Status    string     `json:"status"`
-	Amount    string     `json:"amount"`
-	Nullifier string     `json:"nullifier"`
-	TxHash    string     `json:"tx_hash"`
-	Height    int64      `json:"height"`
-	Note      types.Note `json:"note"`
+	Index     int           `json:"index"`
+	Status    string        `json:"status"`
+	Amount    string        `json:"amount"`
+	Nullifier string        `json:"nullifier"`
+	TxHash    string        `json:"tx_hash"`
+	Height    int64         `json:"height"`
+	Note      displayedNote `json:"note"`
 }
 
 type shieldedAddressSummary struct {
@@ -244,34 +241,37 @@ func consumeOneShotBool(value *bool) bool {
 	return true
 }
 
-func getExplicitKeys(clientCtx client.Context) (*big.Int, *crypto_tedwards.PointAffine, []byte, error) {
+func getExplicitKeys(clientCtx client.Context) (crypto.SecretScalar, *crypto_tedwards.PointAffine, []byte, error) {
 	rootSeed, _, err := derivePrivacyRootSeed(clientCtx)
 	if err != nil {
-		return nil, nil, nil, err
+		return crypto.SecretScalar{}, nil, nil, err
 	}
 
-	scalar, pubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
+	scalar, pubKey, _, err := privacyidentity.DeriveSpendKeys(rootSeed)
+	if err != nil {
+		return crypto.SecretScalar{}, nil, nil, err
+	}
 
 	return scalar, pubKey, rootSeed, nil
 }
 
-func deriveScalarFromSeed(seed []byte) *big.Int {
+func deriveScalarFromSeed(seed []byte) (crypto.SecretScalar, error) {
 	return privacyidentity.DeriveScalarFromSeed(seed)
 }
 
-func derivePubKeyFromScalar(scalar *big.Int) *crypto_tedwards.PointAffine {
+func derivePubKeyFromScalar(scalar crypto.SecretScalar) (*crypto_tedwards.PointAffine, error) {
 	return privacyidentity.DerivePubKeyFromScalar(scalar)
 }
 
-func deriveViewKeys(rootSeed []byte) (*big.Int, *crypto_tedwards.PointAffine, []byte) {
+func deriveViewKeys(rootSeed []byte) (crypto.SecretScalar, *crypto_tedwards.PointAffine, []byte, error) {
 	return privacyidentity.DeriveViewKeys(rootSeed)
 }
 
-func deriveDisclosureKeys(rootSeed []byte) (*big.Int, *crypto_tedwards.PointAffine, []byte) {
+func deriveDisclosureKeys(rootSeed []byte) (crypto.SecretScalar, *crypto_tedwards.PointAffine, []byte, error) {
 	return privacyidentity.DeriveDisclosureKeys(rootSeed)
 }
 
-func scalarToFixedHex(scalar *big.Int) string {
+func scalarToFixedHex(scalar crypto.SecretScalar) string {
 	return privacyidentity.ScalarToFixedHex(scalar)
 }
 
@@ -295,61 +295,26 @@ func decodeCanonicalFieldHex(value, fieldName string) ([]byte, error) {
 	return privacyfield.DecodeCanonicalHex(value, fieldName)
 }
 
-// writePadded mirrors the circuit's field-element byte encoding before hashing.
-func writePadded(h hash.Hash, i *big.Int) {
-	var elem fr.Element
-	elem.SetBigInt(i)
-	b := elem.Bytes()
-	h.Write(b[:])
-}
-
-func manualSign(msg *big.Int, scalar *big.Int, pubKey *crypto_tedwards.PointAffine) ([]byte, error) {
-	curve := crypto_tedwards.GetEdwardsCurve()
-	frModulus := fr.Modulus()
-
-	for {
-		rBig, _ := rand.Int(rand.Reader, &curve.Order)
-
-		var g crypto_tedwards.PointAffine
-		g.X.Set(&curve.Base.X)
-		g.Y.Set(&curve.Base.Y)
-
-		var pointR crypto_tedwards.PointAffine
-		pointR.ScalarMultiplication(&g, rBig)
-
-		hFunc := mimc.NewMiMC()
-		rx, ry := new(big.Int), new(big.Int)
-		pointR.X.BigInt(rx)
-		pointR.Y.BigInt(ry)
-		writePadded(hFunc, rx)
-		writePadded(hFunc, ry)
-
-		ax, ay := new(big.Int), new(big.Int)
-		pubKey.X.BigInt(ax)
-		pubKey.Y.BigInt(ay)
-		writePadded(hFunc, ax)
-		writePadded(hFunc, ay)
-
-		writePadded(hFunc, msg)
-
-		hRam := hFunc.Sum(nil)
-		hRamInt := new(big.Int).SetBytes(hRam)
-
-		sPart := new(big.Int).Mul(hRamInt, scalar)
-		S := new(big.Int).Add(rBig, sPart)
-		S.Mod(S, &curve.Order)
-
-		if S.Cmp(frModulus) >= 0 {
-			continue
-		}
-
-		rPointBytes := pointR.Bytes()
-		sBytesRaw := S.Bytes()
-		sBytesPadded := make([]byte, 32)
-		copy(sBytesPadded[32-len(sBytesRaw):], sBytesRaw)
-
-		return append(rPointBytes[:], sBytesPadded...), nil
+// manualSign accepts a public intent field and an opaque signing key. The
+// signer derives its own public key and rejects mismatched caller metadata.
+func manualSign(msg *big.Int, scalar crypto.SecretScalar, pubKey *crypto_tedwards.PointAffine) ([]byte, error) {
+	if pubKey == nil {
+		return nil, fmt.Errorf("owner public key is required")
 	}
+	derived, err := crypto.PublicKey(scalar)
+	if err != nil {
+		return nil, err
+	}
+	if !derived.Equal(pubKey) {
+		return nil, fmt.Errorf("owner public key does not match signing key")
+	}
+	raw, err := canonicalFieldBytesFromBigInt(msg)
+	if err != nil {
+		return nil, err
+	}
+	var digest [32]byte
+	copy(digest[:], raw)
+	return crypto.SignOwnerIntent(digest, scalar, nil)
 }
 
 func scanNotes(clientCtx client.Context, seed []byte) ([]FoundNote, error) {
@@ -419,16 +384,18 @@ func scanNotesWithOptions(clientCtx client.Context, seed []byte, opts scanNotesO
 	return result.Notes, nil
 }
 
-func noteAmountString(note types.Note) string {
-	if note.Amount == nil {
-		return "0"
-	}
-
-	return note.Amount.String()
+func noteAmountString(note types.SecretNoteV1) string {
+	return fmt.Sprintf("%d", note.Amount)
 }
 
 func buildListNotesJSONOutput(foundNotes []FoundNote, diagnostics *scanNotesDiagnostics) listNotesJSONOutput {
-	_, totalSpendable := privacyscan.SummarizeSpendableNotes(foundNotes)
+	// This total is deliberately disclosed in the user-requested wallet display.
+	totalSpendable := new(big.Int)
+	for _, note := range foundNotes {
+		if !note.IsSpent {
+			totalSpendable.Add(totalSpendable, new(big.Int).SetUint64(note.Note.Amount))
+		}
+	}
 	output := listNotesJSONOutput{
 		Summary: listNotesJSONSummary{
 			TotalSpendable: totalSpendable.String(),
@@ -454,7 +421,7 @@ func buildListNotesJSONOutput(foundNotes []FoundNote, diagnostics *scanNotesDiag
 			Nullifier: info.Nullifier,
 			TxHash:    info.TxHash,
 			Height:    info.Height,
-			Note:      info.Note,
+			Note:      displayedNote{info.Note},
 		})
 	}
 
@@ -472,30 +439,52 @@ func buildDepositNoteAndMsg(
 	logWriter io.Writer,
 	latencyFlow *privacyLatencyFlow,
 ) (*types.MsgDeposit, error) {
-	viewScalar, viewPubKey, _ := deriveViewKeys(seed)
-	_ = viewScalar
-
-	spendPubKeyX, spendPubKeyY := new(big.Int), new(big.Int)
-	viewPubKeyX, viewPubKeyY := new(big.Int), new(big.Int)
-	pubKey.X.BigInt(spendPubKeyX)
-	pubKey.Y.BigInt(spendPubKeyY)
-	viewPubKey.X.BigInt(viewPubKeyX)
-	viewPubKey.Y.BigInt(viewPubKeyY)
-
-	note, err := types.NewNote(spendPubKeyX, spendPubKeyY, viewPubKeyX, viewPubKeyY, amount, denom, memo)
+	_, viewPubKey, _, err := deriveViewKeys(seed)
 	if err != nil {
 		return nil, err
 	}
 
-	commitment := note.ComputeCommitment()
-	canonicalCommitment, err := canonicalFieldBytesFromBigInt(commitment)
-	if err != nil {
-		return nil, fmt.Errorf("invalid note commitment: %w", err)
+	if err := types.ValidateShieldedAmount("note amount", amount); err != nil {
+		return nil, err
 	}
-	noteBytes, err := types.MarshalNotePlaintextV1(note)
+	if err := sdk.ValidateDenom(denom); err != nil {
+		return nil, err
+	}
+	if pubKey == nil || viewPubKey == nil {
+		return nil, fmt.Errorf("receiver keys are required")
+	}
+	coordinates := [4][32]byte{pubKey.X.Bytes(), pubKey.Y.Bytes(), viewPubKey.X.Bytes(), viewPubKey.Y.Bytes()}
+	var fields [4]crypto.FieldValue
+	for i := range coordinates {
+		fields[i], err = crypto.ParseFieldValueBE32(coordinates[i][:])
+		if err != nil {
+			return nil, err
+		}
+	}
+	// The deposit denom and amount are public transaction inputs.
+	assetBytes, err := canonicalFieldBytesFromBigInt(types.ComputeAssetIDV1(denom))
 	if err != nil {
 		return nil, err
 	}
+	asset, err := crypto.ParseFieldValueBE32(assetBytes)
+	if err != nil {
+		return nil, err
+	}
+	note, err := types.NewRandomSecretNoteV1(rand.Reader, fields[0], fields[1], fields[2], fields[3], amount.Uint64(), asset, memo)
+	if err != nil {
+		return nil, err
+	}
+	commitment, err := types.SecretNoteCommitmentV1(*note)
+	if err != nil {
+		return nil, err
+	}
+	commitmentBytes := commitment.Bytes()
+	canonicalCommitment := commitmentBytes[:]
+	noteBytes, err := types.MarshalSecretNotePlaintextV1(note)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(noteBytes)
 	rawEncryptedNote, err := crypto.Encrypt(noteBytes, seed)
 	if err != nil {
 		return nil, err
@@ -636,7 +625,7 @@ func buildWithdrawPayload(cmd *cobra.Command, clientCtx client.Context, targetCo
 }
 
 type manualSpendIntentSigner struct {
-	scalar *big.Int
+	scalar crypto.SecretScalar
 	pubKey *crypto_tedwards.PointAffine
 }
 
@@ -1145,8 +1134,14 @@ func CmdShowShieldedAddress() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-			_, viewPubKey, _ := deriveViewKeys(rootSeed)
+			_, spendPubKey, _, err := privacyidentity.DeriveSpendKeys(rootSeed)
+			if err != nil {
+				return err
+			}
+			_, viewPubKey, _, err := deriveViewKeys(rootSeed)
+			if err != nil {
+				return err
+			}
 
 			addrStr, err := types.EncodeShieldedAddressWithView(spendPubKey, viewPubKey)
 			if err != nil {
@@ -1187,7 +1182,10 @@ func CmdShowViewingKey() *cobra.Command {
 				return err
 			}
 
-			viewScalar, viewPubKey, _ := deriveViewKeys(rootSeed)
+			viewScalar, viewPubKey, _, err := deriveViewKeys(rootSeed)
+			if err != nil {
+				return err
+			}
 			viewPubKeyHex := encodePointHex(viewPubKey)
 			summary := viewingKeySummary{
 				FromAddress:        fromAddress.String(),

@@ -11,7 +11,7 @@ import (
 )
 
 type RecursiveTransferNoteSource interface {
-	LoadFoundNotes(ctx context.Context) ([]privacyscan.FoundNote, error)
+	LoadFoundNotes(ctx context.Context) ([]privacyscan.SecretFoundNote, error)
 }
 
 type RecursiveTransferDummyPreparer interface {

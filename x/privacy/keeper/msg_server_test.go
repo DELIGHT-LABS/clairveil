@@ -263,7 +263,8 @@ func testDepositMsg(t *testing.T, creator, amountStr string, amount *big.Int, de
 	note, err := privacytypes.NewNote(spendX, spendY, viewX, viewY, amount, denom, "test")
 	require.NoError(t, err)
 
-	proof, err := privacydeposit.BuildDepositProof(*note, keeperDepositArtifactProvider{}, keeperDepositProofRunner{})
+	secretNote := keeperSecretNoteFixture(t, *note)
+	proof, err := privacydeposit.BuildDepositProof(secretNote, keeperDepositArtifactProvider{}, keeperDepositProofRunner{})
 	require.NoError(t, err)
 
 	commitmentBytes := fixedFieldBytesFromBigInt(t, note.ComputeCommitment())
@@ -276,6 +277,15 @@ func testDepositMsg(t *testing.T, creator, amountStr string, amount *big.Int, de
 		require.NoError(t, err)
 	}
 	return privacytypes.NewMsgDeposit(creator, amountStr, commitmentBytes, encryptedNote, proof)
+}
+
+func keeperSecretNoteFixture(t *testing.T, note privacytypes.Note) privacytypes.SecretNoteV1 {
+	t.Helper()
+	raw, err := privacytypes.MarshalNotePlaintextV1(&note)
+	require.NoError(t, err)
+	secret, err := privacytypes.UnmarshalSecretNotePlaintextV1(raw)
+	require.NoError(t, err)
+	return *secret
 }
 
 func testKeeperEnvelope(t *testing.T, kind privacytypes.EncryptedEnvelopeKindV1) []byte {

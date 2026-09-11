@@ -13,11 +13,11 @@ import (
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 )
 
-func FindExactMatchSpendableNoteByDenom(notes []privacyscan.FoundNote, denom string, targetAmount *big.Int) *privacyscan.FoundNote {
+func FindExactMatchSpendableNoteByDenom(notes []privacyscan.SecretFoundNote, denom string, targetAmount *big.Int) *privacyscan.SecretFoundNote {
 	return privacytransfer.FindExactMatchSpendableNoteByDenom(notes, denom, targetAmount)
 }
 
-func BuildExactMatchError(targetCoin sdk.Coin, foundNotes []privacyscan.FoundNote) error {
+func BuildExactMatchError(targetCoin sdk.Coin, foundNotes []privacyscan.SecretFoundNote) error {
 	sameDenomNotes, sameDenomTotal := privacytransfer.SummarizeSpendableNotesByDenom(foundNotes, targetCoin.Denom)
 	if len(sameDenomNotes) == 0 {
 		return fmt.Errorf(
@@ -37,14 +37,14 @@ func BuildExactMatchError(targetCoin sdk.Coin, foundNotes []privacyscan.FoundNot
 	)
 }
 
-func formatSpendableNoteAmounts(notes []privacyscan.FoundNote, denom string, limit int) string {
+func formatSpendableNoteAmounts(notes []privacyscan.SecretFoundNote, denom string, limit int) string {
 	if len(notes) == 0 {
 		return ""
 	}
 
 	amounts := make([]*big.Int, 0, len(notes))
 	for _, note := range notes {
-		amounts = append(amounts, new(big.Int).Set(note.Note.Amount))
+		amounts = append(amounts, new(big.Int).SetUint64(note.Note.Amount))
 	}
 
 	sort.Slice(amounts, func(i, j int) bool {

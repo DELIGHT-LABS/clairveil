@@ -24,38 +24,38 @@ func TestDecodeMerkleProof(t *testing.T) {
 
 func TestSummarizeSpendableNotesByDenom(t *testing.T) {
 	notes := []FoundNote{
-		{Note: types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uatom")}, IsSpent: false},
-		{Note: types.Note{Amount: big.NewInt(11), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: true},
-		{Note: types.Note{Amount: big.NewInt(13), AssetID: types.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")}), IsSpent: false},
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uatom")}), IsSpent: false},
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(11), AssetID: types.ComputeAssetIDV1("uclair")}), IsSpent: true},
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(13), AssetID: types.ComputeAssetIDV1("uclair")}), IsSpent: false},
 	}
 
 	spendable, total := summarizeSpendableNotesByDenom(notes, "uclair")
 
 	require.Len(t, spendable, 2)
-	require.Equal(t, int64(5), spendable[0].Note.Amount.Int64())
-	require.Equal(t, int64(13), spendable[1].Note.Amount.Int64())
+	require.Equal(t, int64(5), int64(spendable[0].Note.Amount))
+	require.Equal(t, int64(13), int64(spendable[1].Note.Amount))
 	require.Equal(t, int64(18), total.Int64())
 }
 
 func TestBuildListNotesJSONOutput(t *testing.T) {
 	notes := []FoundNote{
 		{
-			Note:      types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")},
+			Note:      testSecretNoteFixture(types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")}),
 			Nullifier: "aa",
 			Height:    3,
 			TxHash:    "A1",
 			IsSpent:   false,
 		},
 		{
-			Note:      types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uclair")},
+			Note:      testSecretNoteFixture(types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uclair")}),
 			Nullifier: "bb",
 			Height:    7,
 			TxHash:    "B2",
 			IsSpent:   true,
 		},
 		{
-			Note:      types.Note{Amount: big.NewInt(11), AssetID: types.ComputeAssetIDV1("uclair")},
+			Note:      testSecretNoteFixture(types.Note{Amount: big.NewInt(11), AssetID: types.ComputeAssetIDV1("uclair")}),
 			Nullifier: "cc",
 			Height:    11,
 			TxHash:    "C3",
@@ -93,7 +93,7 @@ func TestBuildListNotesJSONOutput(t *testing.T) {
 	require.Equal(t, "aa", output.Notes[0].Nullifier)
 	require.Equal(t, "A1", output.Notes[0].TxHash)
 	require.Equal(t, int64(3), output.Notes[0].Height)
-	require.Equal(t, int64(5), output.Notes[0].Note.Amount.Int64())
+	require.Equal(t, int64(5), int64(output.Notes[0].Note.Amount))
 	require.Equal(t, "spent", output.Notes[1].Status)
 	require.Equal(t, "7", output.Notes[1].Amount)
 }
@@ -109,13 +109,13 @@ func TestConsumeOneShotBool(t *testing.T) {
 
 func TestPlannerStateFingerprintUsesSortedSameDenomSpendableNotes(t *testing.T) {
 	left := []FoundNote{
-		{Note: types.Note{Amount: big.NewInt(10), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9},
-		{Note: types.Note{Amount: big.NewInt(3), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5},
-		{Note: types.Note{Amount: big.NewInt(9), AssetID: types.ComputeAssetIDV1("uatom")}, Nullifier: "xx", Height: 4},
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(10), AssetID: types.ComputeAssetIDV1("uclair")}), Nullifier: "bb", Height: 9},
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(3), AssetID: types.ComputeAssetIDV1("uclair")}), Nullifier: "aa", Height: 5},
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(9), AssetID: types.ComputeAssetIDV1("uatom")}), Nullifier: "xx", Height: 4},
 	}
 	right := []FoundNote{
-		{Note: types.Note{Amount: big.NewInt(3), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "aa", Height: 5},
-		{Note: types.Note{Amount: big.NewInt(10), AssetID: types.ComputeAssetIDV1("uclair")}, Nullifier: "bb", Height: 9},
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(3), AssetID: types.ComputeAssetIDV1("uclair")}), Nullifier: "aa", Height: 5},
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(10), AssetID: types.ComputeAssetIDV1("uclair")}), Nullifier: "bb", Height: 9},
 	}
 
 	require.Equal(t, plannerStateFingerprint(left, "uclair", big.NewInt(7)), plannerStateFingerprint(right, "uclair", big.NewInt(7)))

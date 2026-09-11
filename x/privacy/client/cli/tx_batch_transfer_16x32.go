@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"io"
 	"math/big"
 	"net/http"
@@ -307,7 +308,10 @@ func prepareBatchTransferFromFlags(cmd *cobra.Command, clientCtx client.Context)
 	}
 	var selfViewTarget *crypto_tedwards.PointAffine
 	if !disableSelfView {
-		_, selfViewTarget, _ = deriveDisclosureKeys(identity.seed)
+		_, selfViewTarget, _, err = deriveDisclosureKeys(identity.seed)
+		if err != nil {
+			return nil, "", err
+		}
 		if selfViewTarget == nil {
 			return nil, "", fmt.Errorf("derive self-view disclosure key: empty public key")
 		}
@@ -512,8 +516,13 @@ func selectBatchTransferInputs(found []FoundNote, denom string, target *big.Int,
 		return nil, fmt.Errorf("batch payment total must be positive")
 	}
 	assetID := privacytypes.ComputeAssetIDV1(denom)
+	assetBytes := assetID.FillBytes(make([]byte, 32))
+	expectedAsset, err := privacycrypto.ParseFieldValueBE32(assetBytes)
+	if err != nil {
+		return nil, err
+	}
 	eligible := func(note FoundNote) bool {
-		if note.IsSpent || note.Note.Amount == nil || note.Note.AssetID == nil || note.Note.AssetID.Cmp(assetID) != 0 {
+		if note.IsSpent || note.Note.AssetID.Bytes() != expectedAsset.Bytes() {
 			return false
 		}
 		return note.AssetDenom == "" || note.AssetDenom == denom
@@ -560,9 +569,9 @@ func selectBatchTransferInputs(found []FoundNote, denom string, target *big.Int,
 		candidates = append(candidates, candidate{found: note, key: key})
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
-		cmp := candidates[i].found.Note.Amount.Cmp(candidates[j].found.Note.Amount)
-		if cmp != 0 {
-			return cmp > 0
+		left, right := candidates[i].found.Note.Amount, candidates[j].found.Note.Amount
+		if left != right {
+			return left > right
 		}
 		return candidates[i].key < candidates[j].key
 	})
@@ -573,7 +582,7 @@ func selectBatchTransferInputs(found []FoundNote, denom string, target *big.Int,
 			break
 		}
 		inputs = append(inputs, privacybatchtransfer.InputNote{Note: candidate.found.Note})
-		total.Add(total, candidate.found.Note.Amount)
+		total.Add(total, new(big.Int).SetUint64(candidate.found.Note.Amount))
 		if total.Cmp(target) >= 0 {
 			return inputs, nil
 		}
@@ -584,9 +593,7 @@ func selectBatchTransferInputs(found []FoundNote, denom string, target *big.Int,
 func sumBatchTransferInputs(inputs []privacybatchtransfer.InputNote) *big.Int {
 	total := new(big.Int)
 	for i := range inputs {
-		if inputs[i].Note.Amount != nil {
-			total.Add(total, inputs[i].Note.Amount)
-		}
+		total.Add(total, new(big.Int).SetUint64(inputs[i].Note.Amount))
 	}
 	return total
 }
@@ -599,7 +606,7 @@ func minInt(left, right int) int {
 }
 
 type structuredBatchTransferSigner struct {
-	scalar *big.Int
+	scalar privacycrypto.SecretScalar
 	pubKey *crypto_tedwards.PointAffine
 }
 
@@ -607,12 +614,13 @@ func (s structuredBatchTransferSigner) SignBatchTransfer(request privacybatchtra
 	if err := privacybatchtransfer.ValidateBatchTransferSigningRequest(request); err != nil {
 		return nil, err
 	}
-	if request.ExpectedIntent == nil || s.scalar == nil || s.pubKey == nil {
+	if request.ExpectedIntent == nil || !s.scalar.IsValid() || s.pubKey == nil {
 		return nil, fmt.Errorf("structured batch signing request and owner key are required")
 	}
-	curve := crypto_tedwards.GetEdwardsCurve()
-	var derived crypto_tedwards.PointAffine
-	derived.ScalarMultiplication(&curve.Base, s.scalar)
+	derived, err := privacycrypto.PublicKey(s.scalar)
+	if err != nil {
+		return nil, err
+	}
 	derivedBytes, configuredBytes := derived.Bytes(), s.pubKey.Bytes()
 	if !bytes.Equal(derivedBytes[:], configuredBytes[:]) || !bytes.Equal(configuredBytes[:], request.OwnerSpendPubKey) {
 		return nil, fmt.Errorf("structured batch signing owner key does not match the canonical request")

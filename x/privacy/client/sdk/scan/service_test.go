@@ -45,9 +45,7 @@ func TestSyncNotesFindsNotesAndMarksSpent(t *testing.T) {
 			RootSeed:    rootSeed,
 			Wallet: &LocalWalletData{
 				LastHeight: 3,
-				Notes: []FoundNote{
-					existingFound,
-				},
+				Notes:      []SecretFoundNote{mustSecretFoundNoteFromLegacy(t, existingFound)},
 			},
 		},
 	)
@@ -58,7 +56,7 @@ func TestSyncNotesFindsNotesAndMarksSpent(t *testing.T) {
 	require.Equal(t, int64(11), result.Wallet.LastHeight)
 	require.Equal(t, ^uint64(0), result.Wallet.LastSequence)
 	require.Len(t, result.Notes, 1)
-	require.Equal(t, "7", result.Notes[0].Note.Amount.String())
+	require.Equal(t, uint64(7), result.Notes[0].Note.Amount)
 	require.True(t, result.Notes[0].IsSpent)
 	require.Equal(t, int64(3), result.Diagnostics.LoadedLastHeight)
 	require.Equal(t, 1, result.Diagnostics.LoadedNoteCount)
@@ -88,9 +86,7 @@ func TestSyncNotesResetsWalletWhenCachedHeightRollsBack(t *testing.T) {
 			Wallet: &LocalWalletData{
 				LastHeight:   8,
 				LastSequence: 3,
-				Notes: []FoundNote{
-					{Nullifier: "aa"},
-				},
+				Notes:        []SecretFoundNote{{Nullifier: "aa"}},
 			},
 		},
 	)
@@ -140,7 +136,7 @@ func TestSyncNotesUsesScanEventsCursorAndBatchNullifiers(t *testing.T) {
 			Wallet: &LocalWalletData{
 				LastHeight:   3,
 				LastSequence: 7,
-				Notes:        []FoundNote{},
+				Notes:        []SecretFoundNote{},
 			},
 		},
 	)
@@ -151,7 +147,7 @@ func TestSyncNotesUsesScanEventsCursorAndBatchNullifiers(t *testing.T) {
 	require.Equal(t, int64(20), result.Wallet.LastHeight)
 	require.Equal(t, ^uint64(0), result.Wallet.LastSequence)
 	require.Len(t, result.Notes, 1)
-	require.Equal(t, "9", result.Notes[0].Note.Amount.String())
+	require.Equal(t, uint64(9), result.Notes[0].Note.Amount)
 	require.True(t, result.Notes[0].IsSpent)
 	require.Equal(t, 1, result.Diagnostics.NewNotesFound)
 	require.Equal(t, []noteFoundEvent{{txHash: "CCDD", count: 1}}, observer.notesFound)
@@ -199,7 +195,7 @@ func TestSyncNotesContinuesAcrossEmptyScanEventPages(t *testing.T) {
 			Wallet: &LocalWalletData{
 				LastHeight:   3,
 				LastSequence: 0,
-				Notes:        []FoundNote{},
+				Notes:        []SecretFoundNote{},
 			},
 		},
 	)
@@ -210,7 +206,7 @@ func TestSyncNotesContinuesAcrossEmptyScanEventPages(t *testing.T) {
 		{afterHeight: 13, afterSequence: 3, limit: 2},
 	}, txSource.scanRequests)
 	require.Len(t, result.Notes, 1)
-	require.Equal(t, note.Amount.String(), result.Notes[0].Note.Amount.String())
+	require.Equal(t, note.Amount.Uint64(), result.Notes[0].Note.Amount)
 	require.Equal(t, int64(20), result.Wallet.LastHeight)
 	require.Equal(t, ^uint64(0), result.Wallet.LastSequence)
 }
@@ -247,14 +243,14 @@ func TestSyncNotesForceRescanIgnoresMismatchedViewTag(t *testing.T) {
 			Wallet: &LocalWalletData{
 				LastHeight:   20,
 				LastSequence: ^uint64(0),
-				Notes:        []FoundNote{},
+				Notes:        []SecretFoundNote{},
 			},
 		},
 	)
 
 	require.NoError(t, err)
 	require.Len(t, result.Notes, 1)
-	require.Equal(t, note.Amount.String(), result.Notes[0].Note.Amount.String())
+	require.Equal(t, note.Amount.Uint64(), result.Notes[0].Note.Amount)
 	require.True(t, result.Diagnostics.ForcedRescan)
 	require.Equal(t, int64(20), result.Wallet.LastHeight)
 	require.Equal(t, ^uint64(0), result.Wallet.LastSequence)
@@ -288,7 +284,7 @@ func TestSyncNotesFallsBackToTxSearchWhenScanEventsUnavailable(t *testing.T) {
 			Wallet: &LocalWalletData{
 				LastHeight:   3,
 				LastSequence: 5,
-				Notes:        []FoundNote{},
+				Notes:        []SecretFoundNote{},
 			},
 		},
 	)
@@ -299,7 +295,7 @@ func TestSyncNotesFallsBackToTxSearchWhenScanEventsUnavailable(t *testing.T) {
 	require.Equal(t, int64(18), result.Wallet.LastHeight)
 	require.Equal(t, ^uint64(0), result.Wallet.LastSequence)
 	require.Len(t, result.Notes, 1)
-	require.Equal(t, "15", result.Notes[0].Note.Amount.String())
+	require.Equal(t, uint64(15), result.Notes[0].Note.Amount)
 	require.False(t, result.Notes[0].IsSpent)
 }
 
@@ -336,7 +332,7 @@ func TestSyncNotesFallsBackToTxSearchWhenScanEventVersionUnsupported(t *testing.
 			Wallet: &LocalWalletData{
 				LastHeight:   3,
 				LastSequence: 5,
-				Notes:        []FoundNote{},
+				Notes:        []SecretFoundNote{},
 			},
 		},
 	)
@@ -347,7 +343,7 @@ func TestSyncNotesFallsBackToTxSearchWhenScanEventVersionUnsupported(t *testing.
 	require.Equal(t, int64(19), result.Wallet.LastHeight)
 	require.Equal(t, ^uint64(0), result.Wallet.LastSequence)
 	require.Len(t, result.Notes, 1)
-	require.Equal(t, txNote.Amount.String(), result.Notes[0].Note.Amount.String())
+	require.Equal(t, txNote.Amount.Uint64(), result.Notes[0].Note.Amount)
 }
 
 func TestSyncNotesFallsBackWhenBatchNullifierResponseIsIncomplete(t *testing.T) {
@@ -520,8 +516,8 @@ func (s *stubSyncObserver) OnNotesFound(txHash string, count int) {
 func newScanServiceDepositTx(t *testing.T, rootSeed []byte, amount *big.Int, denom string, height int64) (*privacytypes.Note, *cmttypes.ResultTx) {
 	t.Helper()
 
-	_, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	_, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	_, spendPubKey, _, _ := privacyidentity.DeriveSpendKeys(rootSeed)
+	_, viewPubKey, _, _ := privacyidentity.DeriveViewKeys(rootSeed)
 
 	note, err := privacytypes.NewNote(
 		pointBigInt(&spendPubKey.X),
@@ -566,8 +562,8 @@ func newScanServiceDepositTx(t *testing.T, rootSeed []byte, amount *big.Int, den
 func newScanServiceDepositScanEvent(t *testing.T, rootSeed []byte, amount *big.Int, denom string, height int64, sequence uint64) (*privacytypes.Note, *privacytypes.QueryScanEvent) {
 	t.Helper()
 
-	_, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	_, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	_, spendPubKey, _, _ := privacyidentity.DeriveSpendKeys(rootSeed)
+	_, viewPubKey, _, _ := privacyidentity.DeriveViewKeys(rootSeed)
 
 	note, err := privacytypes.NewNote(
 		pointBigInt(&spendPubKey.X),
@@ -604,8 +600,8 @@ func newScanServiceDepositScanEvent(t *testing.T, rootSeed []byte, amount *big.I
 func newScanServiceTransferScanEventWithMismatchedViewTag(t *testing.T, rootSeed []byte, amount *big.Int, denom string, height int64, sequence uint64) (*privacytypes.Note, *privacytypes.QueryScanEvent) {
 	t.Helper()
 
-	_, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	_, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	_, spendPubKey, _, _ := privacyidentity.DeriveSpendKeys(rootSeed)
+	_, viewPubKey, _, _ := privacyidentity.DeriveViewKeys(rootSeed)
 
 	note, err := privacytypes.NewNote(
 		pointBigInt(&spendPubKey.X),

@@ -102,7 +102,7 @@ func testJoinSplitAssignment(t *testing.T) *circuit.JoinSplitCircuit {
 		context.Background(),
 		merkleProvider,
 		PrepareJoinSplitInput{
-			Inputs:               inputs,
+			Inputs:               testSecretInputs(t, inputs),
 			RecipientSpendPubKey: recipientSpendPubKey,
 			RecipientViewPubKey:  recipientViewPubKey,
 			TransferAmount:       big.NewInt(8),
@@ -113,9 +113,9 @@ func testJoinSplitAssignment(t *testing.T) *circuit.JoinSplitCircuit {
 	require.NoError(t, err)
 
 	require.NotNil(t, senderSpendScalar)
-	require.NotNil(t, senderViewScalar)
+	require.NotNil(t, testSecretScalar(t, senderViewScalar))
 	require.NotNil(t, recipientSpendScalar)
-	require.NotNil(t, recipientViewScalar)
+	require.NotNil(t, testSecretScalar(t, recipientViewScalar))
 
 	prepared.Assignment.UserPrivacyPolicy = big.NewInt(0)
 	prepared.Assignment.UserDisclosureDigest = big.NewInt(0)

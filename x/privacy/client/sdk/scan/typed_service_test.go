@@ -163,8 +163,10 @@ func TestTypedScannerRejectsBatchSelfViewMismatchAcrossPages(t *testing.T) {
 
 func typedOwnedBatchOutputs(t *testing.T, rootSeed []byte, count int) ([]*privacytypes.PrivacyScanOutputV2, map[string]bool) {
 	t.Helper()
-	spendScalar, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	_, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	spendScalar, spendPubKey, _, err := privacyidentity.DeriveSpendKeys(rootSeed)
+	require.NoError(t, err)
+	_, viewPubKey, _, err := privacyidentity.DeriveViewKeys(rootSeed)
+	require.NoError(t, err)
 	_ = spendScalar
 	outputs := make([]*privacytypes.PrivacyScanOutputV2, count)
 	used := make(map[string]bool, count)
@@ -183,4 +185,61 @@ func typedOwnedBatchOutputs(t *testing.T, rootSeed []byte, count int) ([]*privac
 		used[nullifier] = false
 	}
 	return outputs, used
+}
+
+func TestTypedScannerSkipsForeignDepositAndRecoversOwnedDeposit(t *testing.T) {
+	rootSeed := []byte("owned-deposit-wallet")
+	outputs, used := typedOwnedBatchOutputs(t, rootSeed, 2)
+	view, _, _, err := privacyidentity.DeriveViewKeys(rootSeed)
+	require.NoError(t, err)
+	for i, output := range outputs {
+		ciphertext, err := privacytypes.UnwrapEncryptedEnvelopeV1(output.Ciphertext, privacytypes.EnvelopeTransferNoteV1)
+		require.NoError(t, err)
+		plaintext, err := privacycrypto.AsymDecrypt(ciphertext, view)
+		require.NoError(t, err)
+		encryptionSeed := rootSeed
+		if i == 0 {
+			encryptionSeed = []byte("another-wallet")
+		}
+		raw, err := privacycrypto.Encrypt(plaintext, encryptionSeed)
+		clear(plaintext)
+		require.NoError(t, err)
+		output.EncryptedNote = wrapDepositNoteCipherText(t, raw)
+		output.EventType = privacytypes.EventTypeDeposit
+		output.GlobalSequence = uint64(7 + i)
+		output.OutputIndex = 0
+		output.Ciphertext = nil
+		output.ViewTag = nil
+	}
+	source := &typedPrivacyScanSource{latest: 10, responses: []*privacytypes.QueryPrivacyScanResponse{{Outputs: outputs, NextCursor: &privacytypes.PrivacyScanCursorV1{Height: 10, GlobalSequence: 8, OutputIndex: 0}, ScanSchemaVersion: privacytypes.PrivacyScanSchemaVersionV2}}}
+	result, err := SyncNotes(context.Background(), source, &stubBatchNullifierUsageChecker{batchUsed: used}, nil, SyncInput{UserAddress: "clair1typed", RootSeed: rootSeed, Wallet: &LocalWalletData{}})
+	require.NoError(t, err)
+	require.Len(t, result.Notes, 1)
+	require.Equal(t, uint64(2), result.Notes[0].Note.Amount)
+	require.Equal(t, uint64(8), result.Wallet.LastSequence)
+}
+
+func TestBuildSecretFoundNotePropagatesProfileFailure(t *testing.T) {
+	sx, sy := privacycrypto.FieldValueFromUint64(1), privacycrypto.FieldValueFromUint64(2)
+	note := privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: sx, ReceiverSpendPubKeyY: sy}
+	t.Setenv("GODEBUG", "cpu.all=off")
+	result, err := BuildSecretFoundNote(&note, nil)
+	require.Error(t, err)
+	require.Equal(t, SecretFoundNote{}, result)
+}
+
+func TestTypedScanRejectsMalformedViewTagBeforeDecrypt(t *testing.T) {
+	seed := []byte("strict-view-tag")
+	outputs, _ := typedOwnedBatchOutputs(t, seed, 1)
+	spend, _, _, err := privacyidentity.DeriveSpendKeys(seed)
+	require.NoError(t, err)
+	view, _, _, err := privacyidentity.DeriveViewKeys(seed)
+	require.NoError(t, err)
+	for _, tag := range [][]byte{nil, {1}, {1, 2, 3}} {
+		output := *outputs[0]
+		output.ViewTag = tag
+		note, err := ProcessSecretPrivacyScanOutput(&output, seed, &spend, &view, false)
+		require.ErrorContains(t, err, "view tag has invalid framing")
+		require.Nil(t, note)
+	}
 }

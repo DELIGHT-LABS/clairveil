@@ -42,8 +42,10 @@ func TestDeriveDomainSeedSeparated(t *testing.T) {
 func TestDeriveDisclosureKeysDeterministic(t *testing.T) {
 	rootSeed := []byte("root-seed-material")
 
-	scalar1, pubKey1, seed1 := DeriveDisclosureKeys(rootSeed)
-	scalar2, pubKey2, seed2 := DeriveDisclosureKeys(rootSeed)
+	scalar1, pubKey1, seed1, err := DeriveDisclosureKeys(rootSeed)
+	require.NoError(t, err)
+	scalar2, pubKey2, seed2, err := DeriveDisclosureKeys(rootSeed)
+	require.NoError(t, err)
 
 	require.Equal(t, scalar1, scalar2)
 	require.Equal(t, pubKey1.Bytes(), pubKey2.Bytes())

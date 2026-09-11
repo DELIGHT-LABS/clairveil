@@ -31,7 +31,7 @@ type SpendIntentSigner interface {
 }
 
 type PrepareSpendWithdrawInput struct {
-	Note           privacyscan.FoundNote
+	Note           privacyscan.SecretFoundNote
 	RecipientBytes []byte
 	ChainID        string
 	ExpiresAtUnix  int64
@@ -72,11 +72,17 @@ func PrepareSpendWithdraw(
 	if err := selectedNote.ValidateV1(); err != nil {
 		return nil, fmt.Errorf("invalid selected NoteV1: %w", err)
 	}
-	commitment := selectedNote.ComputeCommitment()
-	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(commitment)
+	commitment, err := privacytypes.SecretNoteCommitmentV1(selectedNote)
 	if err != nil {
-		return nil, fmt.Errorf("invalid selected note commitment: %w", err)
+		return nil, err
 	}
+	nullifier, err := privacytypes.SecretNoteNullifierV1(selectedNote, commitment)
+	if err != nil {
+		return nil, err
+	}
+	commitmentRaw, nullifierRaw := commitment.Bytes(), nullifier.Bytes()
+	commitmentHex := hex.EncodeToString(commitmentRaw[:])
+	nullifierBig := new(big.Int).SetBytes(nullifierRaw[:])
 
 	merklePath, err := provider.LookupMerklePath(ctx, commitmentHex)
 	if err != nil {
@@ -86,11 +92,14 @@ func PrepareSpendWithdraw(
 		return nil, fmt.Errorf("invalid merkle root for the selected note: %w", err)
 	}
 
+	// This is the circuit witness boundary; private note fields stay fixed
+	// throughout scan, storage, commitment/nullifier hashing and selection.
+	witnessNote := selectedNote.ToProverWitnessV1()
 	var assignment circuit.SpendCircuit
 	assignment.MerkleRoot = new(big.Int).SetBytes(merklePath.Root)
-	assignment.Amount = selectedNote.Amount
-	assignment.AssetID = selectedNote.AssetID
-	assignment.Nullifier = selectedNote.ComputeNullifier()
+	assignment.Amount = witnessNote.Amount
+	assignment.AssetID = witnessNote.AssetID
+	assignment.Nullifier = nullifierBig
 	chainDomain, err := privacytypes.ComputeChainDomainV1(input.ChainID, privacytypes.ActiveCircuitSetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute withdraw chain domain: %w", err)
@@ -111,26 +120,26 @@ func PrepareSpendWithdraw(
 		assignment.PathHelper[i] = pathHelpers[i]
 	}
 
-	spendPubKey, err := spendPubKeyFromNote(selectedNote)
+	spendPubKey, err := spendPubKeyFromNote(witnessNote)
 	if err != nil {
 		return nil, fmt.Errorf("invalid receiver spend key in the selected note: %w", err)
 	}
 	assignPubKey(&assignment.ReceiverSpendPubKey, *spendPubKey)
 
-	viewPubKey, err := viewPubKeyFromNote(selectedNote)
+	viewPubKey, err := viewPubKeyFromNote(witnessNote)
 	if err != nil {
 		return nil, fmt.Errorf("invalid receiver view key in the selected note: %w", err)
 	}
 	assignPubKey(&assignment.ReceiverViewPubKey, *viewPubKey)
-	assignment.Randomness = selectedNote.Randomness
+	assignment.Randomness = witnessNote.Randomness
 
 	spendIntent, err := privacytypes.ComputeSpendIntentV2(privacytypes.SpendIntentV2Input{
 		ChainDomainHi:     chainDomain.Hi,
 		ChainDomainLo:     chainDomain.Lo,
 		MerkleRoot:        new(big.Int).SetBytes(merklePath.Root),
-		Nullifier:         selectedNote.ComputeNullifier(),
-		Amount:            selectedNote.Amount,
-		AssetID:           selectedNote.AssetID,
+		Nullifier:         nullifierBig,
+		Amount:            witnessNote.Amount,
+		AssetID:           witnessNote.AssetID,
 		RecipientDigestHi: recipientDigest.Hi,
 		RecipientDigestLo: recipientDigest.Lo,
 		ExpiresAtUnix:     input.ExpiresAtUnix,
@@ -146,11 +155,11 @@ func PrepareSpendWithdraw(
 		return nil, fmt.Errorf("invalid spend intent signature: %w", err)
 	}
 
-	nullifierBig, ok := assignment.Nullifier.(*big.Int)
+	assignmentNullifier, ok := assignment.Nullifier.(*big.Int)
 	if !ok {
 		return nil, fmt.Errorf("invalid nullifier type in the spend assignment")
 	}
-	nullifierBytes, err := privacyfield.CanonicalBytesFromBigInt(nullifierBig)
+	nullifierBytes, err := privacyfield.CanonicalBytesFromBigInt(assignmentNullifier)
 	if err != nil {
 		return nil, fmt.Errorf("invalid nullifier: %w", err)
 	}

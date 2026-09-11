@@ -3,6 +3,7 @@ package batchtransfer
 import (
 	"context"
 	"errors"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"math/big"
 	"time"
 
@@ -42,7 +43,7 @@ const (
 )
 
 type InputNote struct {
-	Note privacytypes.Note `json:"note"`
+	Note privacytypes.SecretNoteV1 `json:"note"`
 }
 
 type Payment struct {
@@ -92,20 +93,20 @@ type MerklePathProvider interface {
 }
 
 type PreparedBatchTransferInput struct {
-	Note             privacytypes.Note `json:"note"`
-	MerklePath       []string          `json:"merkle_path"`
-	MerklePathHelper []uint32          `json:"merkle_path_helper"`
-	Nullifier        []byte            `json:"nullifier"`
+	Note             privacytypes.SecretNoteV1 `json:"note"`
+	MerklePath       []string                  `json:"merkle_path"`
+	MerklePathHelper []uint32                  `json:"merkle_path_helper"`
+	Nullifier        []byte                    `json:"nullifier"`
 }
 
 type PreparedBatchTransferOutput struct {
 	Kind                   OutputKind                      `json:"kind"`
-	Note                   privacytypes.Note               `json:"note"`
+	Note                   privacytypes.SecretNoteV1       `json:"note"`
 	PrivacyPolicy          uint32                          `json:"privacy_policy"`
 	DisclosureMode         privacytypes.UserDisclosureMode `json:"disclosure_mode"`
 	DisclosureTargetPubKey []byte                          `json:"disclosure_target_pubkey,omitempty"`
-	UserDisclosureBlinding *big.Int                        `json:"user_disclosure_blinding"`
-	FullDisclosureBlinding *big.Int                        `json:"full_disclosure_blinding"`
+	UserDisclosureBlinding privacycrypto.FieldValue        `json:"user_disclosure_blinding"`
+	FullDisclosureBlinding privacycrypto.FieldValue        `json:"full_disclosure_blinding"`
 }
 
 type PreparedBatchTransfer struct {
@@ -131,13 +132,13 @@ type BatchTransferSigningOutput struct {
 	Commitment             []byte
 	RecipientSpendPubKey   []byte
 	RecipientViewPubKey    []byte
-	Amount                 *big.Int
-	AssetID                *big.Int
-	Randomness             *big.Int
+	Amount                 uint64
+	AssetID                privacycrypto.FieldValue
+	Randomness             privacycrypto.FieldValue
 	PrivacyPolicy          uint32
 	DisclosureMode         privacytypes.UserDisclosureMode
-	UserDisclosureBlinding *big.Int
-	FullDisclosureBlinding *big.Int
+	UserDisclosureBlinding privacycrypto.FieldValue
+	FullDisclosureBlinding privacycrypto.FieldValue
 	WireOutput             *privacytypes.BatchTransferOutput
 }
 
@@ -146,9 +147,9 @@ type BatchTransferSigningInput struct {
 	Nullifier   []byte
 	SpendPubKey []byte
 	ViewPubKey  []byte
-	Amount      *big.Int
-	AssetID     *big.Int
-	Randomness  *big.Int
+	Amount      uint64
+	AssetID     privacycrypto.FieldValue
+	Randomness  privacycrypto.FieldValue
 }
 
 type BatchTransferSigningRequest struct {

@@ -18,6 +18,7 @@ import (
 
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
 	privacyreservation "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/reservation"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -369,16 +370,15 @@ func batchReconcileTestPoint(scalar int64) *crypto_tedwards.PointAffine {
 	return &point
 }
 
-func batchReconcileTestNote(t *testing.T, spend, view *crypto_tedwards.PointAffine, amount, randomness int64) privacytypes.Note {
+func batchReconcileTestNote(t *testing.T, spend, view *crypto_tedwards.PointAffine, amount, randomness int64) privacytypes.SecretNoteV1 {
 	t.Helper()
-	sx, sy, vx, vy := new(big.Int), new(big.Int), new(big.Int), new(big.Int)
-	spend.X.BigInt(sx)
-	spend.Y.BigInt(sy)
-	view.X.BigInt(vx)
-	view.Y.BigInt(vy)
-	note := privacytypes.Note{ReceiverSpendPubKeyX: sx, ReceiverSpendPubKeyY: sy, ReceiverViewPubKeyX: vx, ReceiverViewPubKeyY: vy, Amount: big.NewInt(amount), AssetID: privacytypes.ComputeAssetIDV1("uclair"), Randomness: big.NewInt(randomness)}
-	require.NoError(t, note.ValidateV1())
-	return note
+	sx, sy, err := privacycrypto.PublicPointFieldValues(*spend)
+	require.NoError(t, err)
+	vx, vy, err := privacycrypto.PublicPointFieldValues(*view)
+	require.NoError(t, err)
+	note, err := privacytypes.NewSecretNoteV1(sx, sy, vx, vy, uint64(amount), privacytypes.ComputeSecretAssetIDV1("uclair"), privacycrypto.FieldValueFromUint64(uint64(randomness)), "")
+	require.NoError(t, err)
+	return *note
 }
 
 func batchReconcileTestGraph(payload *privacybatchtransfer.PreparedBatchTransferPayload, now time.Time) ([]privacyreservation.NoteReservation, privacyreservation.BatchOperationGraph) {
@@ -405,11 +405,20 @@ func batchReconcileTestGraph(payload *privacybatchtransfer.PreparedBatchTransfer
 		Operation: privacyreservation.BatchOperation{SchemaVersion: privacyreservation.BatchOperationSchemaVersionV1, OperationID: operationID, CompanyID: "company", PayrollID: "payroll", BatchID: "batch", OwnerKeyID: "owner", AssetID: assetID, Denom: "uclair", InputCount: 1, OutputCount: len(items), Status: privacyreservation.OperationStatusPlanned, PreparedPayloadCiphertext: []byte("sealed-payload"), PreparedPayloadHash: payload.PayloadHash, CreatedAt: now, UpdatedAt: now},
 		Inputs: []privacyreservation.OperationInputReservation{{
 			SchemaVersion: privacyreservation.BatchOperationSchemaVersionV1, OperationID: operationID, ReservationID: reservationID, InputIndex: 0,
-			Commitment: hex.EncodeToString(payload.Inputs[0].Note.ComputeCommitment().FillBytes(make([]byte, 32))), CreatedAt: now,
+			Commitment: batchReconcileSecretCommitmentHex(payload.Inputs[0].Note), CreatedAt: now,
 		}},
 		Items: items, Evidence: evidence,
 	}
 	return []privacyreservation.NoteReservation{reservation}, graph
+}
+
+func batchReconcileSecretCommitmentHex(note privacytypes.SecretNoteV1) string {
+	commitment, err := note.CommitmentV1()
+	if err != nil {
+		panic(err)
+	}
+	encoded := commitment.Bytes()
+	return hex.EncodeToString(encoded[:])
 }
 
 func batchMatchingObservedOutput(expected privacyreservation.ExpectedOutputEvidence) privacyreservation.ObservedOutputEvidence {

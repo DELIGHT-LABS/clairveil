@@ -3,9 +3,11 @@ package transfer
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"math/bits"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark/std/signature/eddsa"
@@ -28,7 +30,7 @@ type MerklePathProvider interface {
 }
 
 type PrepareJoinSplitInput struct {
-	Inputs               [2]privacyscan.FoundNote
+	Inputs               [2]privacyscan.SecretFoundNote
 	RecipientSpendPubKey *crypto_tedwards.PointAffine
 	RecipientViewPubKey  *crypto_tedwards.PointAffine
 	TransferAmount       *big.Int
@@ -43,9 +45,9 @@ type PreparedJoinSplitTransfer struct {
 	InputMerklePaths  [][]string
 	InputPathHelpers  [][]uint32
 	OutputCommitments [][]byte
-	FromNote          privacytypes.Note
-	RecipientNote     privacytypes.Note
-	ChangeNote        privacytypes.Note
+	FromNote          privacytypes.SecretNoteV1
+	RecipientNote     privacytypes.SecretNoteV1
+	ChangeNote        privacytypes.SecretNoteV1
 }
 
 func PrepareJoinSplitTransfer(
@@ -68,92 +70,77 @@ func PrepareJoinSplitTransfer(
 	if err := privacytypes.ValidateShieldedAmount("transfer amount", input.TransferAmount); err != nil {
 		return nil, err
 	}
-	for i, foundNote := range input.Inputs {
-		if err := foundNote.Note.ValidateV1(); err != nil {
+	for i, found := range input.Inputs {
+		if err := found.Note.ValidateV1(); err != nil {
 			return nil, fmt.Errorf("invalid input NoteV1 %d: %w", i, err)
 		}
 	}
 	if err := validateCommonInputOwnerAndAsset(input.Inputs); err != nil {
 		return nil, err
 	}
-	inputNullifierCandidates := make([][]byte, len(input.Inputs))
-	for i, foundNote := range input.Inputs {
-		nullifierBytes, err := privacyfield.CanonicalBytesFromBigInt(foundNote.Note.ComputeNullifier())
+	inputNullifierCandidates := make([][]byte, 2)
+	for i, found := range input.Inputs {
+		n, err := found.Note.NullifierV1()
 		if err != nil {
-			return nil, fmt.Errorf("invalid nullifier for note %d: %w", i, err)
+			return nil, err
 		}
-		inputNullifierCandidates[i] = nullifierBytes
+		raw := n.Bytes()
+		inputNullifierCandidates[i] = append([]byte(nil), raw[:]...)
 	}
 	if err := privacytypes.ValidateDistinctCanonicalFieldElements("input nullifier", inputNullifierCandidates); err != nil {
 		return nil, fmt.Errorf("joinsplit inputs must be distinct: %w", err)
 	}
-
-	totalInput := new(big.Int).Add(input.Inputs[0].Note.Amount, input.Inputs[1].Note.Amount)
-	changeAmount := new(big.Int).Sub(totalInput, input.TransferAmount)
-	if changeAmount.Sign() < 0 {
+	total, carry := bits.Add64(input.Inputs[0].Note.Amount, input.Inputs[1].Note.Amount, 0)
+	changeAmount, borrow := bits.Sub64(total, input.TransferAmount.Uint64(), 0)
+	if carry < borrow {
 		return nil, fmt.Errorf("transfer amount exceeds selected input total")
 	}
-	if err := privacytypes.ValidateShieldedAmount("change amount", changeAmount); err != nil {
-		return nil, err
+	if carry > borrow {
+		return nil, fmt.Errorf("change amount exceeds 64-bit shielded amount limit")
 	}
 
-	recipientSpendX, recipientSpendY := pointBigInts(*input.RecipientSpendPubKey)
-	recipientViewX, recipientViewY := pointBigInts(*input.RecipientViewPubKey)
-	senderSpendX, senderSpendY := pointBigInts(*input.SenderSpendPubKey)
-	senderViewX, senderViewY := pointBigInts(*input.SenderViewPubKey)
-
-	recipientNoteRandomness, err := privacycrypto.GenerateRandomness()
+	recipientSpendX, recipientSpendY, err := privacycrypto.PublicPointFieldValues(*input.RecipientSpendPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("recipient spend key: %w", err)
+	}
+	recipientViewX, recipientViewY, err := privacycrypto.PublicPointFieldValues(*input.RecipientViewPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("recipient view key: %w", err)
+	}
+	senderSpendX, senderSpendY, err := privacycrypto.PublicPointFieldValues(*input.SenderSpendPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("sender spend key: %w", err)
+	}
+	senderViewX, senderViewY, err := privacycrypto.PublicPointFieldValues(*input.SenderViewPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("sender view key: %w", err)
+	}
+	asset := input.Inputs[0].Note.AssetID
+	secretOutputs, err := PrepareSecretJoinSplitOutputsForAsset(rand.Reader, asset, input.TransferAmount.Uint64(), changeAmount, recipientSpendX, recipientSpendY, recipientViewX, recipientViewY, senderSpendX, senderSpendY, senderViewX, senderViewY)
 	if err != nil {
 		return nil, err
 	}
-	recipientNote := privacytypes.Note{
-		ReceiverSpendPubKeyX: recipientSpendX,
-		ReceiverSpendPubKeyY: recipientSpendY,
-		ReceiverViewPubKeyX:  recipientViewX,
-		ReceiverViewPubKeyY:  recipientViewY,
-		Amount:               new(big.Int).Set(input.TransferAmount),
-		AssetID:              input.Inputs[0].Note.AssetID,
-		Randomness:           recipientNoteRandomness,
-		Memo:                 "Transfer",
-	}
-
-	changeNoteRandomness, err := privacycrypto.GenerateRandomness()
-	if err != nil {
-		return nil, err
-	}
-	changeNote := privacytypes.Note{
-		ReceiverSpendPubKeyX: senderSpendX,
-		ReceiverSpendPubKeyY: senderSpendY,
-		ReceiverViewPubKeyX:  senderViewX,
-		ReceiverViewPubKeyY:  senderViewY,
-		Amount:               changeAmount,
-		AssetID:              input.Inputs[0].Note.AssetID,
-		Randomness:           changeNoteRandomness,
-		Memo:                 "Change",
-	}
-	if err := recipientNote.ValidateV1(); err != nil {
-		return nil, fmt.Errorf("invalid recipient NoteV1: %w", err)
-	}
-	if err := changeNote.ValidateV1(); err != nil {
-		return nil, fmt.Errorf("invalid change NoteV1: %w", err)
-	}
+	recipientNote := secretOutputs.RecipientNote.ToProverWitnessV1()
+	changeNote := secretOutputs.ChangeNote.ToProverWitnessV1()
 
 	var assignment circuit.JoinSplitCircuit
 	inputNullifiers := make([][]byte, 2)
 	inputMerklePaths := make([][]string, len(input.Inputs))
 	inputPathHelpers := make([][]uint32, len(input.Inputs))
-	assetID := input.Inputs[0].Note.AssetID
+	assetRaw := asset.Bytes()
+	assetID := new(big.Int).SetBytes(assetRaw[:])
 	assignment.AssetID = assetID
 
 	var commonRoot []byte
 
 	for i := 0; i < len(input.Inputs); i++ {
 		foundNote := input.Inputs[i]
-		commitment := foundNote.Note.ComputeCommitment()
-		commitmentHex, err := privacyfield.CanonicalHexFromBigInt(commitment)
+		commitment, err := foundNote.Note.CommitmentV1()
 		if err != nil {
-			return nil, fmt.Errorf("invalid commitment for input note %d: %w", i, err)
+			return nil, err
 		}
+		commitmentRaw := commitment.Bytes()
+		commitmentHex := hex.EncodeToString(commitmentRaw[:])
 
 		merklePath, err := provider.LookupMerklePath(ctx, commitmentHex)
 		if err != nil {
@@ -181,41 +168,30 @@ func PrepareJoinSplitTransfer(
 			assignment.InputPathHelpers[i][depth] = pathHelpers[depth]
 		}
 
-		assignment.InputAmounts[i] = foundNote.Note.Amount
-		assignment.InputRandomness[i] = foundNote.Note.Randomness
+		witnessNote := foundNote.Note.ToProverWitnessV1()
+		assignment.InputAmounts[i] = witnessNote.Amount
+		assignment.InputRandomness[i] = witnessNote.Randomness
 
-		spendPubKey, err := spendPubKeyFromNote(foundNote.Note)
+		spendPubKey, err := spendPubKeyFromNote(witnessNote)
 		if err != nil {
 			return nil, fmt.Errorf("invalid spend key for input note %d: %w", i, err)
 		}
 		assignPubKey(&assignment.InputSpendPubKeys[i], *spendPubKey)
 
-		viewPubKey, err := viewPubKeyFromNote(foundNote.Note)
+		viewPubKey, err := viewPubKeyFromNote(witnessNote)
 		if err != nil {
 			return nil, fmt.Errorf("invalid view key for input note %d: %w", i, err)
 		}
 		assignPubKey(&assignment.InputViewPubKeys[i], *viewPubKey)
 
-		nullifier := foundNote.Note.ComputeNullifier()
-		assignment.Nullifiers[i] = nullifier
-		nullifierBytes, err := privacyfield.CanonicalBytesFromBigInt(nullifier)
-		if err != nil {
-			return nil, fmt.Errorf("invalid nullifier for note %d: %w", i, err)
-		}
-		inputNullifiers[i] = nullifierBytes
+		assignment.Nullifiers[i] = new(big.Int).SetBytes(inputNullifierCandidates[i])
+		inputNullifiers[i] = append([]byte(nil), inputNullifierCandidates[i]...)
+
 	}
 
-	recipientCommitment := recipientNote.ComputeCommitment()
-	changeCommitment := changeNote.ComputeCommitment()
-	recipientCommitmentBytes, err := privacyfield.CanonicalBytesFromBigInt(recipientCommitment)
-	if err != nil {
-		return nil, fmt.Errorf("invalid recipient note commitment: %w", err)
-	}
-	changeCommitmentBytes, err := privacyfield.CanonicalBytesFromBigInt(changeCommitment)
-	if err != nil {
-		return nil, fmt.Errorf("invalid change note commitment: %w", err)
-	}
-	outputCommitments := [][]byte{recipientCommitmentBytes, changeCommitmentBytes}
+	recipientCommitmentBytes := secretOutputs.RecipientCommitment.Bytes()
+	changeCommitmentBytes := secretOutputs.ChangeCommitment.Bytes()
+	outputCommitments := [][]byte{append([]byte(nil), recipientCommitmentBytes[:]...), append([]byte(nil), changeCommitmentBytes[:]...)}
 	if err := privacytypes.ValidateDistinctCanonicalFieldElements("output commitment", outputCommitments); err != nil {
 		return nil, fmt.Errorf("joinsplit outputs must be distinct: %w", err)
 	}
@@ -224,13 +200,13 @@ func PrepareJoinSplitTransfer(
 	assignment.OutputRandomness[0] = recipientNote.Randomness
 	assignPubKey(&assignment.OutputSpendPubKeys[0], *input.RecipientSpendPubKey)
 	assignPubKey(&assignment.OutputViewPubKeys[0], *input.RecipientViewPubKey)
-	assignment.Commitments[0] = recipientCommitment
+	assignment.Commitments[0] = new(big.Int).SetBytes(recipientCommitmentBytes[:])
 
 	assignment.OutputAmounts[1] = changeNote.Amount
 	assignment.OutputRandomness[1] = changeNote.Randomness
 	assignPubKey(&assignment.OutputSpendPubKeys[1], *input.SenderSpendPubKey)
 	assignPubKey(&assignment.OutputViewPubKeys[1], *input.SenderViewPubKey)
-	assignment.Commitments[1] = changeCommitment
+	assignment.Commitments[1] = new(big.Int).SetBytes(changeCommitmentBytes[:])
 
 	return &PreparedJoinSplitTransfer{
 		Assignment:        assignment,
@@ -240,17 +216,17 @@ func PrepareJoinSplitTransfer(
 		InputPathHelpers:  inputPathHelpers,
 		OutputCommitments: outputCommitments,
 		FromNote:          input.Inputs[0].Note,
-		RecipientNote:     recipientNote,
-		ChangeNote:        changeNote,
+		RecipientNote:     secretOutputs.RecipientNote,
+		ChangeNote:        secretOutputs.ChangeNote,
 	}, nil
 }
 
-func validateCommonInputOwnerAndAsset(inputs [2]privacyscan.FoundNote) error {
+func validateCommonInputOwnerAndAsset(inputs [2]privacyscan.SecretFoundNote) error {
 	left := inputs[0].Note
 	right := inputs[1].Note
 	for _, field := range []struct {
 		name        string
-		left, right *big.Int
+		left, right privacycrypto.FieldValue
 	}{
 		{"spend public key x", left.ReceiverSpendPubKeyX, right.ReceiverSpendPubKeyX},
 		{"spend public key y", left.ReceiverSpendPubKeyY, right.ReceiverSpendPubKeyY},
@@ -258,7 +234,7 @@ func validateCommonInputOwnerAndAsset(inputs [2]privacyscan.FoundNote) error {
 		{"view public key y", left.ReceiverViewPubKeyY, right.ReceiverViewPubKeyY},
 		{"asset id", left.AssetID, right.AssetID},
 	} {
-		if field.left == nil || field.right == nil || field.left.Cmp(field.right) != 0 {
+		if !field.left.Equal(field.right) {
 			return fmt.Errorf("joinsplit inputs must share the same owner and asset: %s mismatch", field.name)
 		}
 	}

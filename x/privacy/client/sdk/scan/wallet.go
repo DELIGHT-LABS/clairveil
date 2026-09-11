@@ -3,7 +3,7 @@ package scan
 import (
 	"encoding/json"
 	"fmt"
-	"math/big"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,14 +11,14 @@ import (
 	"time"
 
 	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
-	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 type LocalWalletData struct {
-	LastHeight      int64       `json:"last_height"`
-	LastSequence    uint64      `json:"last_sequence,omitempty"`
-	LastOutputIndex uint32      `json:"last_output_index,omitempty"`
-	Notes           []FoundNote `json:"notes"`
+	LastHeight      int64             `json:"last_height"`
+	LastSequence    uint64            `json:"last_sequence,omitempty"`
+	LastOutputIndex uint32            `json:"last_output_index,omitempty"`
+	Notes           []SecretFoundNote `json:"notes"`
 }
 
 type LoadLocalWalletFileResult struct {
@@ -28,9 +28,9 @@ type LoadLocalWalletFileResult struct {
 	CorruptBackupRenameErr error
 }
 
-func SummarizeSpendableNotes(notes []FoundNote) ([]FoundNote, *big.Int) {
-	spendable := make([]FoundNote, 0, len(notes))
-	total := new(big.Int)
+func SummarizeSpendableNotes(notes []SecretFoundNote) ([]SecretFoundNote, uint64, error) {
+	spendable := make([]SecretFoundNote, 0, len(notes))
+	var total uint64
 
 	for _, fn := range notes {
 		if fn.IsSpent {
@@ -38,18 +38,21 @@ func SummarizeSpendableNotes(notes []FoundNote) ([]FoundNote, *big.Int) {
 		}
 
 		spendable = append(spendable, fn)
-		total.Add(total, fn.Note.Amount)
+		if total > math.MaxUint64-fn.Note.Amount {
+			return nil, 0, fmt.Errorf("spendable note total overflows uint64")
+		}
+		total += fn.Note.Amount
 	}
 
-	return spendable, total
+	return spendable, total, nil
 }
 
-func NormalizeFoundNotes(notes []FoundNote) ([]FoundNote, bool) {
+func NormalizeFoundNotes(notes []SecretFoundNote) ([]SecretFoundNote, bool) {
 	if len(notes) == 0 {
-		return []FoundNote{}, false
+		return []SecretFoundNote{}, false
 	}
 
-	seen := make(map[string]FoundNote, len(notes))
+	seen := make(map[string]SecretFoundNote, len(notes))
 	order := make([]string, 0, len(notes))
 	for _, note := range notes {
 		key := foundNoteIdentityKey(note)
@@ -60,7 +63,7 @@ func NormalizeFoundNotes(notes []FoundNote) ([]FoundNote, bool) {
 		order = append(order, key)
 	}
 
-	normalized := make([]FoundNote, 0, len(order))
+	normalized := make([]SecretFoundNote, 0, len(order))
 	for _, key := range order {
 		normalized = append(normalized, seen[key])
 	}
@@ -92,7 +95,7 @@ func LoadLocalWalletFile(homeDir string, userAddress string) (*LoadLocalWalletFi
 		Wallet: &LocalWalletData{
 			LastHeight:   0,
 			LastSequence: 0,
-			Notes:        []FoundNote{},
+			Notes:        []SecretFoundNote{},
 		},
 		Path: dbPath,
 	}
@@ -118,7 +121,7 @@ func LoadLocalWalletFile(homeDir string, userAddress string) (*LoadLocalWalletFi
 		result.Wallet = &LocalWalletData{
 			LastHeight:   0,
 			LastSequence: 0,
-			Notes:        []FoundNote{},
+			Notes:        []SecretFoundNote{},
 		}
 	}
 
@@ -133,25 +136,26 @@ func SaveLocalWalletFile(dbPath string, data *LocalWalletData) error {
 	return privatefile.Write(dbPath, fileBytes)
 }
 
-func foundNoteIdentityKey(note FoundNote) string {
+func foundNoteIdentityKey(note SecretFoundNote) string {
 	if trimmed := strings.ToLower(strings.TrimSpace(note.Nullifier)); trimmed != "" {
 		return "nullifier:" + trimmed
 	}
 
-	commitment := note.Note.ComputeCommitment()
-	if commitmentHex, err := privacyfield.CanonicalHexFromBigInt(commitment); err == nil {
-		return "commitment:" + commitmentHex
+	commitment, err := privacytypes.SecretNoteCommitmentV1(note.Note)
+	if err == nil {
+		commitmentBytes := commitment.Bytes()
+		return "commitment:" + fmt.Sprintf("%x", commitmentBytes[:])
 	}
 
 	return fmt.Sprintf(
 		"fallback:%d:%s:%s",
 		note.Height,
 		strings.ToLower(strings.TrimSpace(note.TxHash)),
-		note.Note.Amount.String(),
+		fmt.Sprintf("%d", note.Note.Amount),
 	)
 }
 
-func foundNoteDisplayLess(left, right FoundNote) bool {
+func foundNoteDisplayLess(left, right SecretFoundNote) bool {
 	if left.Height != right.Height {
 		return left.Height < right.Height
 	}
@@ -168,5 +172,5 @@ func foundNoteDisplayLess(left, right FoundNote) bool {
 		return leftNullifier < rightNullifier
 	}
 
-	return left.Note.Amount.Cmp(right.Note.Amount) < 0
+	return left.Note.Amount < right.Note.Amount
 }

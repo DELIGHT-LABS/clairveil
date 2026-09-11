@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -92,14 +93,14 @@ func TestSelectBatchTransferInputsAutomaticAndExplicit(t *testing.T) {
 	automatic, err := selectBatchTransferInputs(found, "uclair", big.NewInt(12), nil)
 	require.NoError(t, err)
 	require.Len(t, automatic, 2)
-	require.Equal(t, int64(9), automatic[0].Note.Amount.Int64())
-	require.Equal(t, int64(5), automatic[1].Note.Amount.Int64())
+	require.Equal(t, int64(9), int64(automatic[0].Note.Amount))
+	require.Equal(t, int64(5), int64(automatic[1].Note.Amount))
 
 	explicit, err := selectBatchTransferInputs(found, "uclair", big.NewInt(7), []int{1, 5})
 	require.NoError(t, err)
 	require.Len(t, explicit, 2)
-	require.Equal(t, int64(2), explicit[0].Note.Amount.Int64())
-	require.Equal(t, int64(5), explicit[1].Note.Amount.Int64())
+	require.Equal(t, int64(2), int64(explicit[0].Note.Amount))
+	require.Equal(t, int64(5), int64(explicit[1].Note.Amount))
 
 	_, err = selectBatchTransferInputs(found, "uclair", big.NewInt(1), []int{2})
 	require.ErrorContains(t, err, "spent or does not use denom")
@@ -190,10 +191,10 @@ func testBatchPoint(t *testing.T, scalar int64) *crypto_tedwards.PointAffine {
 
 func batchFoundNote(nullifier string, amount int64, denom string, spent bool) FoundNote {
 	return FoundNote{
-		Note: privacytypes.Note{
+		Note: testSecretNoteFixture(privacytypes.Note{
 			Amount:  big.NewInt(amount),
 			AssetID: privacytypes.ComputeAssetIDV1(denom),
-		},
+		}),
 		AssetDenom: denom,
 		Nullifier:  nullifier,
 		IsSpent:    spent,
@@ -202,13 +203,16 @@ func batchFoundNote(nullifier string, amount int64, denom string, spent bool) Fo
 
 func testCLIBatchPayload(t *testing.T) *privacybatchtransfer.PreparedBatchTransferPayload {
 	t.Helper()
-	ownerScalar := big.NewInt(17)
-	owner := testBatchPoint(t, ownerScalar.Int64())
+	var rawScalar [32]byte
+	rawScalar[31] = 17
+	ownerScalar, keyErr := privacycrypto.ImportNonzeroScalarBE32(rawScalar[:])
+	require.NoError(t, keyErr)
+	owner := testBatchPoint(t, 17)
 	view := testBatchPoint(t, 19)
 	note := testCLIBatchNote(owner, view, 7, 23)
 	recipient := testBatchPoint(t, 29)
 	plan, err := privacybatchtransfer.PlanBatchTransfer(privacybatchtransfer.PlanBatchTransferInput{
-		Inputs:           []privacybatchtransfer.InputNote{{Note: note}},
+		Inputs:           []privacybatchtransfer.InputNote{{Note: testSecretNoteFixture(note)}},
 		Payments:         []privacybatchtransfer.Payment{{SpendPubKey: recipient, ViewPubKey: recipient, Amount: big.NewInt(7)}},
 		OwnerSpendPubKey: owner,
 		OwnerViewPubKey:  view,

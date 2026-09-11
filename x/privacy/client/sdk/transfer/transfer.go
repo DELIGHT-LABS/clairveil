@@ -1,6 +1,7 @@
 package transfer
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"sort"
@@ -8,13 +9,12 @@ import (
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
-	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 type InputSelection struct {
-	Inputs         [2]privacyscan.FoundNote
+	Inputs         [2]privacyscan.SecretFoundNote
 	Total          *big.Int
 	IsFinal        bool
 	NeedsZeroDummy bool
@@ -26,6 +26,11 @@ const (
 	exactInputBatchCandidateNoteLimit = 48
 	exactInputBatchCandidatePairLimit = 16
 )
+
+// amountBig is confined to the public planning layer. SecretNoteV1 carries
+// amounts as uint64; the existing planner accepts public user-requested
+// targets as big.Int for Cosmos compatibility.
+func amountBig(amount uint64) *big.Int { return new(big.Int).SetUint64(amount) }
 
 func ResolveRecipient(targetAddr string) (*crypto_tedwards.PointAffine, *crypto_tedwards.PointAffine, error) {
 	targetAddr = strings.TrimSpace(targetAddr)
@@ -41,7 +46,7 @@ func ResolveRecipient(targetAddr string) (*crypto_tedwards.PointAffine, *crypto_
 	return bundle.SpendPubKey, bundle.ViewPubKey, nil
 }
 
-func SelectInputBatch(notes []privacyscan.FoundNote, targetDenom string, targets []*big.Int) ([]InputSelection, error) {
+func SelectInputBatch(notes []privacyscan.SecretFoundNote, targetDenom string, targets []*big.Int) ([]InputSelection, error) {
 	normalizedTargets := make([]*big.Int, len(targets))
 	for i, target := range targets {
 		normalizedTargets[i] = normalizedAmount(target)
@@ -62,7 +67,7 @@ func SelectInputBatch(notes []privacyscan.FoundNote, targetDenom string, targets
 		}
 	}
 
-	available := append([]privacyscan.FoundNote(nil), sameDenomNotes...)
+	available := append([]privacyscan.SecretFoundNote(nil), sameDenomNotes...)
 	selections := make([]InputSelection, len(normalizedTargets))
 	for _, targetIndex := range targetOrder {
 		selection := SelectInputs(available, targetDenom, normalizedTargets[targetIndex])
@@ -75,23 +80,23 @@ func SelectInputBatch(notes []privacyscan.FoundNote, targetDenom string, targets
 	return selections, nil
 }
 
-func SelectInputs(notes []privacyscan.FoundNote, targetDenom string, target *big.Int) InputSelection {
+func SelectInputs(notes []privacyscan.SecretFoundNote, targetDenom string, target *big.Int) InputSelection {
 	target = normalizedAmount(target)
 	maxOutputAmount := privacytypes.MaxShieldedAmount()
 
-	var inputs [2]privacyscan.FoundNote
+	var inputs [2]privacyscan.SecretFoundNote
 	sameDenomNotes := plannerSortedSameDenomSpendableNotes(notes, targetDenom)
 	requiresDummyForSingleNote := false
 
 	for i, note := range sameDenomNotes {
-		if note.Note.Amount.Cmp(target) >= 0 {
+		if amountBig(note.Note.Amount).Cmp(target) >= 0 {
 			zeroNoteIndex := FindZeroNote(sameDenomNotes, i)
 			if zeroNoteIndex != -1 {
 				inputs[0] = note
 				inputs[1] = sameDenomNotes[zeroNoteIndex]
 				return InputSelection{
 					Inputs:  inputs,
-					Total:   new(big.Int).Set(note.Note.Amount),
+					Total:   new(big.Int).Set(amountBig(note.Note.Amount)),
 					IsFinal: true,
 				}
 			}
@@ -100,18 +105,18 @@ func SelectInputs(notes []privacyscan.FoundNote, targetDenom string, target *big
 	}
 
 	bestPairFound := false
-	var bestPair [2]privacyscan.FoundNote
+	var bestPair [2]privacyscan.SecretFoundNote
 	bestPairTotal := big.NewInt(0)
 
 	for i := 0; i < len(sameDenomNotes); i++ {
-		if sameDenomNotes[i].Note.Amount.Sign() == 0 {
+		if amountBig(sameDenomNotes[i].Note.Amount).Sign() == 0 {
 			continue
 		}
 		for j := i + 1; j < len(sameDenomNotes); j++ {
-			if sameDenomNotes[j].Note.Amount.Sign() == 0 {
+			if amountBig(sameDenomNotes[j].Note.Amount).Sign() == 0 {
 				continue
 			}
-			sum := new(big.Int).Add(sameDenomNotes[i].Note.Amount, sameDenomNotes[j].Note.Amount)
+			sum := new(big.Int).Add(amountBig(sameDenomNotes[i].Note.Amount), amountBig(sameDenomNotes[j].Note.Amount))
 			if finalTransferOutputsWithinBound(sum, target, maxOutputAmount) {
 				if !bestPairFound || betterSufficientPairCandidate(sameDenomNotes[i], sameDenomNotes[j], sum, bestPair[0], bestPair[1], bestPairTotal) {
 					bestPairFound = true
@@ -131,18 +136,18 @@ func SelectInputs(notes []privacyscan.FoundNote, targetDenom string, target *big
 	}
 
 	bestMergeFound := false
-	var bestMerge [2]privacyscan.FoundNote
+	var bestMerge [2]privacyscan.SecretFoundNote
 	bestMergeTotal := big.NewInt(0)
 
 	for i := 0; i < len(sameDenomNotes); i++ {
-		if sameDenomNotes[i].Note.Amount.Sign() == 0 {
+		if amountBig(sameDenomNotes[i].Note.Amount).Sign() == 0 {
 			continue
 		}
 		for j := i + 1; j < len(sameDenomNotes); j++ {
-			if sameDenomNotes[j].Note.Amount.Sign() == 0 {
+			if amountBig(sameDenomNotes[j].Note.Amount).Sign() == 0 {
 				continue
 			}
-			sum := new(big.Int).Add(sameDenomNotes[i].Note.Amount, sameDenomNotes[j].Note.Amount)
+			sum := new(big.Int).Add(amountBig(sameDenomNotes[i].Note.Amount), amountBig(sameDenomNotes[j].Note.Amount))
 			if sum.Cmp(maxOutputAmount) > 0 {
 				continue
 			}
@@ -197,7 +202,7 @@ type exactInputPairCandidate struct {
 	total *big.Int
 }
 
-func exactSelectInputBatch(notes []privacyscan.FoundNote, targets []*big.Int, targetOrder []int) ([]InputSelection, bool) {
+func exactSelectInputBatch(notes []privacyscan.SecretFoundNote, targets []*big.Int, targetOrder []int) ([]InputSelection, bool) {
 	if len(notes) > exactInputBatchCandidateNoteLimit {
 		return nil, false
 	}
@@ -239,7 +244,7 @@ func exactSelectInputBatch(notes []privacyscan.FoundNote, targets []*big.Int, ta
 	return cloneInputSelections(selections), true
 }
 
-func exactInputPairCandidates(notes []privacyscan.FoundNote, usedMask uint64, target *big.Int, maxOutputAmount *big.Int) []exactInputPairCandidate {
+func exactInputPairCandidates(notes []privacyscan.SecretFoundNote, usedMask uint64, target *big.Int, maxOutputAmount *big.Int) []exactInputPairCandidate {
 	candidates := make([]exactInputPairCandidate, 0)
 	for i := range notes {
 		if usedMask&(uint64(1)<<i) != 0 {
@@ -249,7 +254,7 @@ func exactInputPairCandidates(notes []privacyscan.FoundNote, usedMask uint64, ta
 			if usedMask&(uint64(1)<<j) != 0 {
 				continue
 			}
-			total := new(big.Int).Add(notes[i].Note.Amount, notes[j].Note.Amount)
+			total := new(big.Int).Add(amountBig(notes[i].Note.Amount), amountBig(notes[j].Note.Amount))
 			if !finalTransferOutputsWithinBound(total, target, maxOutputAmount) {
 				continue
 			}
@@ -260,13 +265,13 @@ func exactInputPairCandidates(notes []privacyscan.FoundNote, usedMask uint64, ta
 	return candidates
 }
 
-func exactInputBatchCandidateNotes(notes []privacyscan.FoundNote, targets []*big.Int, targetOrder []int) []privacyscan.FoundNote {
+func exactInputBatchCandidateNotes(notes []privacyscan.SecretFoundNote, targets []*big.Int, targetOrder []int) []privacyscan.SecretFoundNote {
 	if len(notes) <= exactInputBatchFullNoteLimit {
-		return append([]privacyscan.FoundNote(nil), notes...)
+		return append([]privacyscan.SecretFoundNote(nil), notes...)
 	}
 
 	selected := make(map[int]struct{}, exactInputBatchCandidateNoteLimit)
-	candidates := make([]privacyscan.FoundNote, 0, exactInputBatchCandidateNoteLimit)
+	candidates := make([]privacyscan.SecretFoundNote, 0, exactInputBatchCandidateNoteLimit)
 	addIndex := func(index int) bool {
 		if index < 0 || index >= len(notes) {
 			return true
@@ -307,7 +312,7 @@ func exactInputBatchCandidateNotes(notes []privacyscan.FoundNote, targets []*big
 	sort.Slice(candidates, func(i, j int) bool {
 		return foundNotePlannerLess(candidates[i], candidates[j])
 	})
-	return append([]privacyscan.FoundNote(nil), candidates...)
+	return append([]privacyscan.SecretFoundNote(nil), candidates...)
 }
 
 func inputBatchTargetOrder(targets []*big.Int) []int {
@@ -324,10 +329,10 @@ func inputBatchTargetOrder(targets []*big.Int) []int {
 	return order
 }
 
-func inputBatchZeroCandidateIndexes(notes []privacyscan.FoundNote, limit int) []int {
+func inputBatchZeroCandidateIndexes(notes []privacyscan.SecretFoundNote, limit int) []int {
 	indexes := make([]int, 0, limit)
 	for i, note := range notes {
-		if note.Note.Amount.Sign() > 0 {
+		if amountBig(note.Note.Amount).Sign() > 0 {
 			break
 		}
 		indexes = append(indexes, i)
@@ -338,13 +343,13 @@ func inputBatchZeroCandidateIndexes(notes []privacyscan.FoundNote, limit int) []
 	return indexes
 }
 
-func inputBatchSingleCandidateIndexes(notes []privacyscan.FoundNote, target *big.Int, limit int) []int {
+func inputBatchSingleCandidateIndexes(notes []privacyscan.SecretFoundNote, target *big.Int, limit int) []int {
 	indexes := make([]int, 0, limit)
 	maxOutputAmount := privacytypes.MaxShieldedAmount()
 	for i := sort.Search(len(notes), func(i int) bool {
-		return notes[i].Note.Amount.Cmp(target) >= 0
+		return amountBig(notes[i].Note.Amount).Cmp(target) >= 0
 	}); i < len(notes); i++ {
-		if finalTransferOutputsWithinBound(notes[i].Note.Amount, target, maxOutputAmount) {
+		if finalTransferOutputsWithinBound(amountBig(notes[i].Note.Amount), target, maxOutputAmount) {
 			indexes = append(indexes, i)
 		}
 		if len(indexes) >= limit {
@@ -354,13 +359,13 @@ func inputBatchSingleCandidateIndexes(notes []privacyscan.FoundNote, target *big
 	return indexes
 }
 
-func boundedInputBatchPairCandidates(notes []privacyscan.FoundNote, target *big.Int, limit int) []exactInputPairCandidate {
+func boundedInputBatchPairCandidates(notes []privacyscan.SecretFoundNote, target *big.Int, limit int) []exactInputPairCandidate {
 	if limit <= 0 {
 		return nil
 	}
 	leftIndexes := make([]int, 0, limit*4)
 	positiveFrom := sort.Search(len(notes), func(i int) bool {
-		return notes[i].Note.Amount.Sign() > 0
+		return amountBig(notes[i].Note.Amount).Sign() > 0
 	})
 	for i := positiveFrom; i < len(notes); i++ {
 		leftIndexes = append(leftIndexes, i)
@@ -372,23 +377,23 @@ func boundedInputBatchPairCandidates(notes []privacyscan.FoundNote, target *big.
 	candidates := make([]exactInputPairCandidate, 0, limit)
 	maxOutputAmount := privacytypes.MaxShieldedAmount()
 	for _, left := range leftIndexes {
-		needed := new(big.Int).Sub(target, notes[left].Note.Amount)
+		needed := new(big.Int).Sub(target, amountBig(notes[left].Note.Amount))
 		if needed.Sign() <= 0 {
 			needed = big.NewInt(1)
 		}
 		right := sort.Search(len(notes), func(i int) bool {
-			return notes[i].Note.Amount.Cmp(needed) >= 0
+			return amountBig(notes[i].Note.Amount).Cmp(needed) >= 0
 		})
 		addedForLeft := 0
 		for ; right < len(notes) && addedForLeft < 4; right++ {
-			if right == left || notes[right].Note.Amount.Sign() <= 0 {
+			if right == left || amountBig(notes[right].Note.Amount).Sign() <= 0 {
 				continue
 			}
 			i, j := left, right
 			if i > j {
 				i, j = j, i
 			}
-			total := new(big.Int).Add(notes[i].Note.Amount, notes[j].Note.Amount)
+			total := new(big.Int).Add(amountBig(notes[i].Note.Amount), amountBig(notes[j].Note.Amount))
 			if finalTransferOutputsWithinBound(total, target, maxOutputAmount) {
 				candidates = append(candidates, exactInputPairCandidate{left: i, right: j, total: total})
 				addedForLeft++
@@ -402,19 +407,19 @@ func boundedInputBatchPairCandidates(notes []privacyscan.FoundNote, target *big.
 	return candidates
 }
 
-func sortExactInputPairCandidates(candidates []exactInputPairCandidate, notes []privacyscan.FoundNote) {
+func sortExactInputPairCandidates(candidates []exactInputPairCandidate, notes []privacyscan.SecretFoundNote) {
 	sort.Slice(candidates, func(i, j int) bool {
 		if cmp := candidates[i].total.Cmp(candidates[j].total); cmp != 0 {
 			return cmp < 0
 		}
 		leftI := notes[candidates[i].left]
 		leftJ := notes[candidates[j].left]
-		if cmp := leftI.Note.Amount.Cmp(leftJ.Note.Amount); cmp != 0 {
+		if cmp := amountBig(leftI.Note.Amount).Cmp(amountBig(leftJ.Note.Amount)); cmp != 0 {
 			return cmp < 0
 		}
 		rightI := notes[candidates[i].right]
 		rightJ := notes[candidates[j].right]
-		if cmp := rightI.Note.Amount.Cmp(rightJ.Note.Amount); cmp != 0 {
+		if cmp := amountBig(rightI.Note.Amount).Cmp(amountBig(rightJ.Note.Amount)); cmp != 0 {
 			return cmp < 0
 		}
 		if foundNotePlannerLess(leftI, leftJ) {
@@ -427,11 +432,11 @@ func sortExactInputPairCandidates(candidates []exactInputPairCandidate, notes []
 	})
 }
 
-func orderedFoundInputPair(left privacyscan.FoundNote, right privacyscan.FoundNote) [2]privacyscan.FoundNote {
-	if left.Note.Amount.Sign() == 0 && right.Note.Amount.Sign() > 0 {
-		return [2]privacyscan.FoundNote{right, left}
+func orderedFoundInputPair(left privacyscan.SecretFoundNote, right privacyscan.SecretFoundNote) [2]privacyscan.SecretFoundNote {
+	if amountBig(left.Note.Amount).Sign() == 0 && amountBig(right.Note.Amount).Sign() > 0 {
+		return [2]privacyscan.SecretFoundNote{right, left}
 	}
-	return [2]privacyscan.FoundNote{left, right}
+	return [2]privacyscan.SecretFoundNote{left, right}
 }
 
 func cloneInputSelections(selections []InputSelection) []InputSelection {
@@ -443,7 +448,7 @@ func cloneInputSelections(selections []InputSelection) []InputSelection {
 	return out
 }
 
-func removeSelectedInputNotes(notes []privacyscan.FoundNote, inputs [2]privacyscan.FoundNote) []privacyscan.FoundNote {
+func removeSelectedInputNotes(notes []privacyscan.SecretFoundNote, inputs [2]privacyscan.SecretFoundNote) []privacyscan.SecretFoundNote {
 	used := map[string]int{
 		foundNoteIdentityKey(inputs[0]): 1,
 		foundNoteIdentityKey(inputs[1]): 1,
@@ -451,7 +456,7 @@ func removeSelectedInputNotes(notes []privacyscan.FoundNote, inputs [2]privacysc
 	if key := foundNoteIdentityKey(inputs[0]); key == foundNoteIdentityKey(inputs[1]) {
 		used[key] = 2
 	}
-	out := make([]privacyscan.FoundNote, 0, len(notes))
+	out := make([]privacyscan.SecretFoundNote, 0, len(notes))
 	for _, note := range notes {
 		key := foundNoteIdentityKey(note)
 		if count := used[key]; count > 0 {
@@ -463,27 +468,27 @@ func removeSelectedInputNotes(notes []privacyscan.FoundNote, inputs [2]privacysc
 	return out
 }
 
-func SummarizeSpendableNotesByDenom(notes []privacyscan.FoundNote, denom string) ([]privacyscan.FoundNote, *big.Int) {
-	targetAssetID := privacytypes.ComputeAssetIDV1(denom)
-	spendable := make([]privacyscan.FoundNote, 0, len(notes))
+func SummarizeSpendableNotesByDenom(notes []privacyscan.SecretFoundNote, denom string) ([]privacyscan.SecretFoundNote, *big.Int) {
+	targetAssetID := privacytypes.ComputeSecretAssetIDV1(denom)
+	spendable := make([]privacyscan.SecretFoundNote, 0, len(notes))
 	total := new(big.Int)
 
 	for _, note := range notes {
 		if note.IsSpent {
 			continue
 		}
-		if note.Note.AssetID == nil || note.Note.AssetID.Cmp(targetAssetID) != 0 {
+		if !note.Note.AssetID.Equal(targetAssetID) {
 			continue
 		}
 
 		spendable = append(spendable, note)
-		total.Add(total, note.Note.Amount)
+		total.Add(total, amountBig(note.Note.Amount))
 	}
 
 	return spendable, total
 }
 
-func PlannerStateFingerprint(notes []privacyscan.FoundNote, denom string, targetAmount *big.Int) string {
+func PlannerStateFingerprint(notes []privacyscan.SecretFoundNote, denom string, targetAmount *big.Int) string {
 	sameDenomNotes := plannerSortedSameDenomSpendableNotes(notes, denom)
 
 	var builder strings.Builder
@@ -495,17 +500,17 @@ func PlannerStateFingerprint(notes []privacyscan.FoundNote, denom string, target
 		builder.WriteString("|")
 		builder.WriteString(foundNoteIdentityKey(note))
 		builder.WriteString(":")
-		builder.WriteString(note.Note.Amount.String())
+		builder.WriteString(amountBig(note.Note.Amount).String())
 	}
 
 	return builder.String()
 }
 
-func FindExactMatchSpendableNoteByDenom(notes []privacyscan.FoundNote, denom string, targetAmount *big.Int) *privacyscan.FoundNote {
+func FindExactMatchSpendableNoteByDenom(notes []privacyscan.SecretFoundNote, denom string, targetAmount *big.Int) *privacyscan.SecretFoundNote {
 	targetAmount = normalizedAmount(targetAmount)
 	sameDenomNotes := plannerSortedSameDenomSpendableNotes(notes, denom)
 	for i := range sameDenomNotes {
-		if sameDenomNotes[i].Note.Amount.Cmp(targetAmount) == 0 {
+		if amountBig(sameDenomNotes[i].Note.Amount).Cmp(targetAmount) == 0 {
 			selected := sameDenomNotes[i]
 			return &selected
 		}
@@ -513,12 +518,12 @@ func FindExactMatchSpendableNoteByDenom(notes []privacyscan.FoundNote, denom str
 	return nil
 }
 
-func FindZeroNote(notes []privacyscan.FoundNote, excludeIndex int) int {
+func FindZeroNote(notes []privacyscan.SecretFoundNote, excludeIndex int) int {
 	for i, note := range notes {
 		if i == excludeIndex {
 			continue
 		}
-		if note.Note.Amount.Sign() == 0 {
+		if amountBig(note.Note.Amount).Sign() == 0 {
 			return i
 		}
 	}
@@ -532,7 +537,7 @@ func normalizedAmount(amount *big.Int) *big.Int {
 	return new(big.Int).Set(amount)
 }
 
-func plannerSortedSameDenomSpendableNotes(notes []privacyscan.FoundNote, denom string) []privacyscan.FoundNote {
+func plannerSortedSameDenomSpendableNotes(notes []privacyscan.SecretFoundNote, denom string) []privacyscan.SecretFoundNote {
 	sameDenomNotes, _ := SummarizeSpendableNotesByDenom(notes, denom)
 	sort.Slice(sameDenomNotes, func(i, j int) bool {
 		return foundNotePlannerLess(sameDenomNotes[i], sameDenomNotes[j])
@@ -540,26 +545,26 @@ func plannerSortedSameDenomSpendableNotes(notes []privacyscan.FoundNote, denom s
 	return sameDenomNotes
 }
 
-func foundNoteIdentityKey(note privacyscan.FoundNote) string {
+func foundNoteIdentityKey(note privacyscan.SecretFoundNote) string {
 	if trimmed := strings.ToLower(strings.TrimSpace(note.Nullifier)); trimmed != "" {
 		return "nullifier:" + trimmed
 	}
 
-	commitment := note.Note.ComputeCommitment()
-	if commitmentHex, err := privacyfield.CanonicalHexFromBigInt(commitment); err == nil {
-		return "commitment:" + commitmentHex
+	if commitment, err := note.Note.CommitmentV1(); err == nil {
+		commitmentBytes := commitment.Bytes()
+		return "commitment:" + hex.EncodeToString(commitmentBytes[:])
 	}
 
 	return fmt.Sprintf(
 		"fallback:%d:%s:%s",
 		note.Height,
 		strings.ToLower(strings.TrimSpace(note.TxHash)),
-		note.Note.Amount.String(),
+		amountBig(note.Note.Amount).String(),
 	)
 }
 
-func foundNotePlannerLess(left, right privacyscan.FoundNote) bool {
-	if cmp := left.Note.Amount.Cmp(right.Note.Amount); cmp != 0 {
+func foundNotePlannerLess(left, right privacyscan.SecretFoundNote) bool {
+	if cmp := amountBig(left.Note.Amount).Cmp(amountBig(right.Note.Amount)); cmp != 0 {
 		return cmp < 0
 	}
 
@@ -583,21 +588,21 @@ func foundNotePlannerLess(left, right privacyscan.FoundNote) bool {
 }
 
 func betterSufficientPairCandidate(
-	left privacyscan.FoundNote,
-	right privacyscan.FoundNote,
+	left privacyscan.SecretFoundNote,
+	right privacyscan.SecretFoundNote,
 	total *big.Int,
-	bestLeft privacyscan.FoundNote,
-	bestRight privacyscan.FoundNote,
+	bestLeft privacyscan.SecretFoundNote,
+	bestRight privacyscan.SecretFoundNote,
 	bestTotal *big.Int,
 ) bool {
 	if cmp := total.Cmp(bestTotal); cmp != 0 {
 		return cmp < 0
 	}
 
-	if cmp := right.Note.Amount.Cmp(bestRight.Note.Amount); cmp != 0 {
+	if cmp := amountBig(right.Note.Amount).Cmp(amountBig(bestRight.Note.Amount)); cmp != 0 {
 		return cmp < 0
 	}
-	if cmp := left.Note.Amount.Cmp(bestLeft.Note.Amount); cmp != 0 {
+	if cmp := amountBig(left.Note.Amount).Cmp(amountBig(bestLeft.Note.Amount)); cmp != 0 {
 		return cmp < 0
 	}
 
@@ -612,21 +617,21 @@ func betterSufficientPairCandidate(
 }
 
 func betterMergePairCandidate(
-	left privacyscan.FoundNote,
-	right privacyscan.FoundNote,
+	left privacyscan.SecretFoundNote,
+	right privacyscan.SecretFoundNote,
 	total *big.Int,
-	bestLeft privacyscan.FoundNote,
-	bestRight privacyscan.FoundNote,
+	bestLeft privacyscan.SecretFoundNote,
+	bestRight privacyscan.SecretFoundNote,
 	bestTotal *big.Int,
 ) bool {
 	if cmp := total.Cmp(bestTotal); cmp != 0 {
 		return cmp > 0
 	}
 
-	if cmp := right.Note.Amount.Cmp(bestRight.Note.Amount); cmp != 0 {
+	if cmp := amountBig(right.Note.Amount).Cmp(amountBig(bestRight.Note.Amount)); cmp != 0 {
 		return cmp > 0
 	}
-	if cmp := left.Note.Amount.Cmp(bestLeft.Note.Amount); cmp != 0 {
+	if cmp := amountBig(left.Note.Amount).Cmp(amountBig(bestLeft.Note.Amount)); cmp != 0 {
 		return cmp > 0
 	}
 

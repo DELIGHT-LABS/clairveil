@@ -12,6 +12,7 @@ import (
 
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
 	privacyreservation "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/reservation"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -58,7 +59,12 @@ func buildBatchOperationGraph(ctx context.Context, plan BatchPayrollOperationPla
 	if err := validateBatchPayrollPlanBinding(plan, payload); err != nil {
 		return nil, privacyreservation.BatchOperationGraph{}, err
 	}
-	assetIDHex := hex.EncodeToString(payload.AssetID.FillBytes(make([]byte, 32)))
+	payloadAssetID, err := preparedPayloadAssetID(payload)
+	if err != nil {
+		return nil, privacyreservation.BatchOperationGraph{}, err
+	}
+	assetID := payloadAssetID.Bytes()
+	assetIDHex := hex.EncodeToString(assetID[:])
 	preparedPayloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return nil, privacyreservation.BatchOperationGraph{}, fmt.Errorf("marshal prepared batch payload: %w", err)
@@ -95,7 +101,12 @@ func buildBatchOperationGraph(ctx context.Context, plan BatchPayrollOperationPla
 			NullifierLookupKeyID: note.NullifierLookupKeyID, EncryptedNullifier: encryptedNullifier,
 			Status: privacyreservation.StatusReserved, OperationID: plan.OperationID, CreatedAt: now, UpdatedAt: now,
 		}
-		inputs[i] = privacyreservation.OperationInputReservation{SchemaVersion: privacyreservation.BatchOperationSchemaVersionV1, OperationID: plan.OperationID, ReservationID: reservationID, InputIndex: i, Commitment: hex.EncodeToString(payload.Inputs[i].Note.ComputeCommitment().FillBytes(make([]byte, 32))), EncryptedAmount: encryptedAmount, CreatedAt: now}
+		commitment, err := payload.Inputs[i].Note.CommitmentV1()
+		if err != nil {
+			return nil, privacyreservation.BatchOperationGraph{}, fmt.Errorf("compute input commitment %d: %w", i, err)
+		}
+		commitmentBytes := commitment.Bytes()
+		inputs[i] = privacyreservation.OperationInputReservation{SchemaVersion: privacyreservation.BatchOperationSchemaVersionV1, OperationID: plan.OperationID, ReservationID: reservationID, InputIndex: i, Commitment: hex.EncodeToString(commitmentBytes[:]), EncryptedAmount: encryptedAmount, CreatedAt: now}
 	}
 
 	items := make([]privacyreservation.PayrollItemOutput, len(payload.Outputs))
@@ -161,7 +172,7 @@ func ConfirmBatchPayrollOperation(ctx context.Context, store privacyreservation.
 func payrollOutputRole(plan BatchPayrollOperationPlan, index int, output privacybatchtransfer.PreparedBatchTransferOutput) (privacyreservation.BatchOutputRole, *PayrollPlanItem, error) {
 	if index < len(plan.Items) {
 		item := &plan.Items[index]
-		if output.Kind != privacybatchtransfer.OutputPayment || output.Note.Amount.Cmp(item.Amount) != 0 {
+		if output.Kind != privacybatchtransfer.OutputPayment || item.Amount == nil || !item.Amount.IsUint64() || output.Note.Amount != item.Amount.Uint64() {
 			return "", nil, fmt.Errorf("prepared payment output %d does not match payroll item %s", index, item.ItemID)
 		}
 		bundle, err := privacytypes.DecodeShieldedAddressBundle(item.RecipientAddress)
@@ -188,12 +199,12 @@ func payrollOutputRole(plan BatchPayrollOperationPlan, index int, output privacy
 		return privacyreservation.BatchOutputRolePayment, item, nil
 	}
 	if index == len(plan.Items) && plan.HasChange {
-		if output.Kind != privacybatchtransfer.OutputChange || output.Note.Amount.Cmp(plan.Change) != 0 {
+		if output.Kind != privacybatchtransfer.OutputChange || plan.Change == nil || !plan.Change.IsUint64() || output.Note.Amount != plan.Change.Uint64() {
 			return "", nil, fmt.Errorf("prepared change output does not match payroll plan")
 		}
 		return privacyreservation.BatchOutputRoleChange, nil, nil
 	}
-	if output.Kind != privacybatchtransfer.OutputPadding || output.Note.Amount.Cmp(new(big.Int)) != 0 {
+	if output.Kind != privacybatchtransfer.OutputPadding || output.Note.Amount != 0 {
 		return "", nil, fmt.Errorf("prepared padding output %d is not canonical", index)
 	}
 	return privacyreservation.BatchOutputRolePadding, nil, nil
@@ -208,13 +219,17 @@ func validateBatchPayrollPlanBinding(plan BatchPayrollOperationPlan, payload *pr
 	if strings.TrimSpace(denom) == "" || strings.TrimSpace(companyID) == "" || strings.TrimSpace(payrollID) == "" || strings.TrimSpace(batchID) == "" {
 		return fmt.Errorf("payroll batch identity and denom are required")
 	}
-	if payload.AssetID.Cmp(privacytypes.ComputeAssetIDV1(denom)) != 0 {
+	payloadAssetID, err := preparedPayloadAssetID(payload)
+	if err != nil {
+		return err
+	}
+	if !payloadAssetID.Equal(privacytypes.ComputeSecretAssetIDV1(denom)) {
 		return fmt.Errorf("prepared payload asset does not match payroll denom %q", denom)
 	}
 	inputTotal := new(big.Int)
 	ownerKeyID := plan.InputNotes[0].OwnerKeyID
 	for i, note := range plan.InputNotes {
-		if strings.TrimSpace(ownerKeyID) == "" || note.OwnerKeyID != ownerKeyID || note.Denom != denom || note.Amount == nil || payload.Inputs[i].Note.Amount.Cmp(note.Amount) != 0 || payload.Inputs[i].Note.AssetID.Cmp(payload.AssetID) != 0 {
+		if strings.TrimSpace(ownerKeyID) == "" || note.OwnerKeyID != ownerKeyID || note.Denom != denom || note.Amount == nil || !note.Amount.IsUint64() || payload.Inputs[i].Note.Amount != note.Amount.Uint64() || !payload.Inputs[i].Note.AssetID.Equal(payloadAssetID) {
 			return fmt.Errorf("prepared input %d does not match the reserved treasury note", i)
 		}
 		inputTotal.Add(inputTotal, note.Amount)
@@ -238,14 +253,24 @@ func validateBatchPayrollPlanBinding(plan BatchPayrollOperationPlan, payload *pr
 	return nil
 }
 
-func noteRecipientMatches(note privacytypes.Note, bundle *privacytypes.ShieldedAddressBundle) bool {
+func preparedPayloadAssetID(payload *privacybatchtransfer.PreparedBatchTransferPayload) (privacycrypto.FieldValue, error) {
+	if payload == nil || payload.AssetID == nil {
+		return privacycrypto.FieldValue{}, fmt.Errorf("prepared payload asset ID is required")
+	}
+	return privacycrypto.ParseFieldValueBE32(payload.AssetID.FillBytes(make([]byte, 32)))
+}
+
+func noteRecipientMatches(note privacytypes.SecretNoteV1, bundle *privacytypes.ShieldedAddressBundle) bool {
 	if bundle == nil || bundle.SpendPubKey == nil || bundle.ViewPubKey == nil {
 		return false
 	}
-	sx, sy, vx, vy := new(big.Int), new(big.Int), new(big.Int), new(big.Int)
-	bundle.SpendPubKey.X.BigInt(sx)
-	bundle.SpendPubKey.Y.BigInt(sy)
-	bundle.ViewPubKey.X.BigInt(vx)
-	bundle.ViewPubKey.Y.BigInt(vy)
-	return note.ReceiverSpendPubKeyX.Cmp(sx) == 0 && note.ReceiverSpendPubKeyY.Cmp(sy) == 0 && note.ReceiverViewPubKeyX.Cmp(vx) == 0 && note.ReceiverViewPubKeyY.Cmp(vy) == 0
+	spendX, spendY, err := privacycrypto.PublicPointFieldValues(*bundle.SpendPubKey)
+	if err != nil {
+		return false
+	}
+	viewX, viewY, err := privacycrypto.PublicPointFieldValues(*bundle.ViewPubKey)
+	if err != nil {
+		return false
+	}
+	return note.ReceiverSpendPubKeyX.Equal(spendX) && note.ReceiverSpendPubKeyY.Equal(spendY) && note.ReceiverViewPubKeyX.Equal(viewX) && note.ReceiverViewPubKeyY.Equal(viewY)
 }

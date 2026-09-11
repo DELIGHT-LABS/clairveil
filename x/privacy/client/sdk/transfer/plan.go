@@ -23,7 +23,7 @@ type RecursivePlannerRuntime struct {
 }
 
 type RecursivePlannerInput struct {
-	FoundNotes                []privacyscan.FoundNote
+	FoundNotes                []privacyscan.SecretFoundNote
 	TargetDenom               string
 	TargetAmount              *big.Int
 	Step                      int
@@ -37,7 +37,7 @@ type RecursivePlannerInput struct {
 type RecursivePlannerDecision struct {
 	Action               RecursivePlannerAction
 	Fingerprint          string
-	Inputs               [2]privacyscan.FoundNote
+	Inputs               [2]privacyscan.SecretFoundNote
 	InputsTotal          *big.Int
 	RecipientSpendPubKey *crypto_tedwards.PointAffine
 	RecipientViewPubKey  *crypto_tedwards.PointAffine
@@ -123,7 +123,7 @@ func buildDummyRequiredError(targetDenom string, targetAmount *big.Int) error {
 	)
 }
 
-func buildInsufficientFundsError(foundNotes []privacyscan.FoundNote, targetDenom string, targetAmount *big.Int) error {
+func buildInsufficientFundsError(foundNotes []privacyscan.SecretFoundNote, targetDenom string, targetAmount *big.Int) error {
 	target := formatAmountWithDenom(targetDenom, targetAmount)
 	sameDenomNotes, sameDenomTotal := SummarizeSpendableNotesByDenom(foundNotes, targetDenom)
 	if len(sameDenomNotes) == 0 {

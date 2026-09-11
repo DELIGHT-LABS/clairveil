@@ -3,16 +3,13 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"math/big"
+	"io"
 	"os"
 
-	// 프로젝트 경로에 맞춰 수정해주세요
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
-	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 )
 
 func main() {
@@ -33,12 +30,12 @@ func main() {
 	// Seed = SHA256(AddressString)
 	seed := sha256.Sum256([]byte(*secretStr))
 
-	// Scalar(PrivateKey) 생성
-	scalar := new(big.Int).SetBytes(seed[:])
-	curve := twistededwards.GetEdwardsCurve()
-	scalar.Mod(scalar, &curve.Order) // Curve Order 안으로 맞춤
-
-	fmt.Printf("🔑 Derived Private Key (Scalar): %s...\n", scalar.String()[:10])
+	// Seed derivation is distinct from strict persisted-private-key import.
+	scalar, err := crypto.DeriveIdentityScalarSeed32(seed)
+	if err != nil {
+		fmt.Printf("Key derivation failed: %v\n", err)
+		os.Exit(1)
+	}
 
 	// 2. Base64 Decoding
 	cipherBytes, err := base64.StdEncoding.DecodeString(*encStr)
@@ -57,18 +54,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 4. 결과 출력
-	fmt.Println("✅ Decryption Successful!")
-	fmt.Println("------------------------------------------------")
-	fmt.Printf("📄 Raw JSON: %s\n", string(plaintext))
-
-	// 5. JSON 파싱 확인
-	var note types.Note
-	if err := json.Unmarshal(plaintext, &note); err == nil {
-		fmt.Println("------------------------------------------------")
-		fmt.Printf("💰 Amount:     %s\n", note.Amount.String())
-		fmt.Printf("🎲 Randomness: %s\n", note.Randomness.String())
-		fmt.Printf("📝 Memo:       %s\n", note.Memo)
-		fmt.Println("------------------------------------------------")
+	defer clear(plaintext)
+	if err := writeVerifiedNote(os.Stdout, plaintext); err != nil {
+		fmt.Printf("Invalid NotePlaintextV1: %v\n", err)
+		os.Exit(1)
 	}
+}
+
+// writeVerifiedNote is an explicit display boundary; decrypted recovery
+// fields remain fixed-width and private randomness is not formatted or logged.
+func writeVerifiedNote(w io.Writer, plaintext []byte) error {
+	note, err := types.UnmarshalSecretNotePlaintextV1(plaintext)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "Decryption successful\nAmount: %d\nAsset: %s\nMemo: %s\n", note.Amount, note.AssetIDHex(), note.Memo)
+	return err
 }

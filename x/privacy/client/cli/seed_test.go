@@ -66,8 +66,10 @@ func TestDerivePrivacyDomainSeedSeparated(t *testing.T) {
 func TestDeriveDisclosureKeysDeterministic(t *testing.T) {
 	rootSeed := []byte("root-seed-material")
 
-	scalar1, pubKey1, seed1 := deriveDisclosureKeys(rootSeed)
-	scalar2, pubKey2, seed2 := deriveDisclosureKeys(rootSeed)
+	scalar1, pubKey1, seed1, err := deriveDisclosureKeys(rootSeed)
+	require.NoError(t, err)
+	scalar2, pubKey2, seed2, err := deriveDisclosureKeys(rootSeed)
+	require.NoError(t, err)
 
 	require.Equal(t, scalar1, scalar2)
 	require.Equal(t, pubKey1.Bytes(), pubKey2.Bytes())
@@ -202,7 +204,9 @@ func deriveQualifiedShieldedAddress(t *testing.T, clientCtx client.Context) stri
 	_, spendPubKey, rootSeed, err := getExplicitKeys(clientCtx)
 	require.NoError(t, err)
 
-	_, viewPubKey, _ := deriveViewKeys(rootSeed)
+	_, viewPubKey, _, deriveErr := deriveViewKeys(rootSeed)
+
+	require.NoError(t, deriveErr)
 	shieldedAddress, err := privacytypes.EncodeShieldedAddressWithView(spendPubKey, viewPubKey)
 	require.NoError(t, err)
 
@@ -215,6 +219,8 @@ func deriveQualifiedDisclosurePubKey(t *testing.T, clientCtx client.Context) str
 	rootSeed, _, err := derivePrivacyRootSeed(clientCtx)
 	require.NoError(t, err)
 
-	_, disclosurePubKey, _ := deriveDisclosureKeys(rootSeed)
+	_, disclosurePubKey, _, deriveErr := deriveDisclosureKeys(rootSeed)
+
+	require.NoError(t, deriveErr)
 	return encodePointHex(disclosurePubKey)
 }

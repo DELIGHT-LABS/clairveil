@@ -3,6 +3,7 @@ package field
 import (
 	"encoding/hex"
 	"fmt"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
@@ -15,8 +16,7 @@ func ValidateCanonicalBytes32(bz []byte) error {
 		return fmt.Errorf("field element must be %d bytes", ByteSize)
 	}
 
-	var elem fr.Element
-	if err := elem.SetBytesCanonical(bz); err != nil {
+	if _, err := privacycrypto.ParseFieldValueBE32(bz); err != nil {
 		return fmt.Errorf("field element is not canonical")
 	}
 

@@ -3,12 +3,10 @@ package transfer
 import (
 	"encoding/hex"
 	"fmt"
-	"math/big"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
 	privacydisclosure "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/disclosure"
-	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
@@ -16,10 +14,10 @@ import (
 type DisclosureBuildInput struct {
 	OutputCommitment       []byte
 	TransferDenom          string
-	FromNote               privacytypes.Note
-	RecipientNote          privacytypes.Note
-	UserDisclosureBlinding *big.Int
-	FullDisclosureBlinding *big.Int
+	FromNote               privacytypes.SecretNoteV1
+	RecipientNote          privacytypes.SecretNoteV1
+	UserDisclosureBlinding privacycrypto.FieldValue
+	FullDisclosureBlinding privacycrypto.FieldValue
 }
 
 type DisclosureData struct {
@@ -40,35 +38,14 @@ func BuildUserDisclosureData(
 	}
 
 	commitmentHex := hex.EncodeToString(input.OutputCommitment)
-	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(input.RecipientNote.AssetID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid recipient asset id: %w", err)
-	}
+	assetIDHex := input.RecipientNote.AssetIDHex()
 
-	digest, err := privacytypes.ComputeTransferDisclosureDigestBytes(
-		userPrivacyPolicy,
-		privacytypes.TransferDisclosureRecipientOutputIndex,
-		input.OutputCommitment,
-		input.RecipientNote.Amount,
-		input.RecipientNote.AssetID,
-		input.FromNote.ReceiverSpendPubKeyX,
-		input.FromNote.ReceiverSpendPubKeyY,
-		input.FromNote.ReceiverViewPubKeyX,
-		input.FromNote.ReceiverViewPubKeyY,
-		input.RecipientNote.ReceiverSpendPubKeyX,
-		input.RecipientNote.ReceiverSpendPubKeyY,
-		input.RecipientNote.ReceiverViewPubKeyX,
-		input.RecipientNote.ReceiverViewPubKeyY,
-		input.UserDisclosureBlinding,
-	)
+	digest, err := fixedTransferDigest(input, userPrivacyPolicy)
 	if err != nil {
 		return nil, err
 	}
 	digestHex := hex.EncodeToString(digest)
-	blindingHex, err := privacyfield.CanonicalHexFromBigInt(input.UserDisclosureBlinding)
-	if err != nil {
-		return nil, fmt.Errorf("invalid user disclosure blinding: %w", err)
-	}
+	blindingHex := fixedFieldHex(input.UserDisclosureBlinding)
 
 	fromAddress, toAddress, err := disclosureAddresses(input)
 	if err != nil {
@@ -87,7 +64,7 @@ func BuildUserDisclosureData(
 	}
 
 	if userPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
-		payload.Amount = input.RecipientNote.Amount.String()
+		payload.Amount = fmt.Sprintf("%d", input.RecipientNote.Amount)
 	}
 	if userPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0 {
 		payload.FromShieldedAddress = fromAddress
@@ -137,34 +114,14 @@ func BuildAuditDisclosureData(
 	}
 
 	commitmentHex := hex.EncodeToString(input.OutputCommitment)
-	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(input.RecipientNote.AssetID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid recipient asset id: %w", err)
-	}
+	assetIDHex := input.RecipientNote.AssetIDHex()
 
-	digest, err := privacytypes.ComputeAuditTransferDisclosureDigestBytes(
-		privacytypes.TransferDisclosureRecipientOutputIndex,
-		input.OutputCommitment,
-		input.RecipientNote.Amount,
-		input.RecipientNote.AssetID,
-		input.FromNote.ReceiverSpendPubKeyX,
-		input.FromNote.ReceiverSpendPubKeyY,
-		input.FromNote.ReceiverViewPubKeyX,
-		input.FromNote.ReceiverViewPubKeyY,
-		input.RecipientNote.ReceiverSpendPubKeyX,
-		input.RecipientNote.ReceiverSpendPubKeyY,
-		input.RecipientNote.ReceiverViewPubKeyX,
-		input.RecipientNote.ReceiverViewPubKeyY,
-		input.FullDisclosureBlinding,
-	)
+	digest, err := fixedTransferDigest(input, privacytypes.DisclosureFullMarkerV1)
 	if err != nil {
 		return nil, err
 	}
 	digestHex := hex.EncodeToString(digest)
-	blindingHex, err := privacyfield.CanonicalHexFromBigInt(input.FullDisclosureBlinding)
-	if err != nil {
-		return nil, fmt.Errorf("invalid full disclosure blinding: %w", err)
-	}
+	blindingHex := fixedFieldHex(input.FullDisclosureBlinding)
 
 	fromAddress, toAddress, err := disclosureAddresses(input)
 	if err != nil {
@@ -179,7 +136,7 @@ func BuildAuditDisclosureData(
 		CommitmentHex:       commitmentHex,
 		DisclosureDigestHex: digestHex,
 		BlindingHex:         blindingHex,
-		Amount:              input.RecipientNote.Amount.String(),
+		Amount:              fmt.Sprintf("%d", input.RecipientNote.Amount),
 		AssetIDHex:          assetIDHex,
 		FromShieldedAddress: fromAddress,
 		ToShieldedAddress:   toAddress,
@@ -216,34 +173,14 @@ func BuildSelfViewDisclosureData(
 	}
 
 	commitmentHex := hex.EncodeToString(input.OutputCommitment)
-	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(input.RecipientNote.AssetID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid recipient asset id: %w", err)
-	}
+	assetIDHex := input.RecipientNote.AssetIDHex()
 
-	digest, err := privacytypes.ComputeSelfViewTransferDisclosureDigestBytes(
-		privacytypes.TransferDisclosureRecipientOutputIndex,
-		input.OutputCommitment,
-		input.RecipientNote.Amount,
-		input.RecipientNote.AssetID,
-		input.FromNote.ReceiverSpendPubKeyX,
-		input.FromNote.ReceiverSpendPubKeyY,
-		input.FromNote.ReceiverViewPubKeyX,
-		input.FromNote.ReceiverViewPubKeyY,
-		input.RecipientNote.ReceiverSpendPubKeyX,
-		input.RecipientNote.ReceiverSpendPubKeyY,
-		input.RecipientNote.ReceiverViewPubKeyX,
-		input.RecipientNote.ReceiverViewPubKeyY,
-		input.FullDisclosureBlinding,
-	)
+	digest, err := fixedTransferDigest(input, privacytypes.DisclosureFullMarkerV1)
 	if err != nil {
 		return nil, err
 	}
 	digestHex := hex.EncodeToString(digest)
-	blindingHex, err := privacyfield.CanonicalHexFromBigInt(input.FullDisclosureBlinding)
-	if err != nil {
-		return nil, fmt.Errorf("invalid full disclosure blinding: %w", err)
-	}
+	blindingHex := fixedFieldHex(input.FullDisclosureBlinding)
 
 	fromAddress, toAddress, err := disclosureAddresses(input)
 	if err != nil {
@@ -258,7 +195,7 @@ func BuildSelfViewDisclosureData(
 		CommitmentHex:       commitmentHex,
 		DisclosureDigestHex: digestHex,
 		BlindingHex:         blindingHex,
-		Amount:              input.RecipientNote.Amount.String(),
+		Amount:              fmt.Sprintf("%d", input.RecipientNote.Amount),
 		AssetIDHex:          assetIDHex,
 		FromShieldedAddress: fromAddress,
 		ToShieldedAddress:   toAddress,
@@ -291,69 +228,95 @@ func marshalTransferDisclosurePlaintextV1(
 	plane privacytypes.DisclosurePlaneV1,
 	policy uint32,
 ) ([]byte, error) {
-	payload := &privacytypes.DisclosurePlaintextV1{
+	commitment, err := privacycrypto.ParseFieldValueBE32(input.OutputCommitment)
+	if err != nil {
+		return nil, err
+	}
+	payload := &privacytypes.SecretDisclosurePlaintextV1{
 		Plane:                plane,
 		OutputIndex:          privacytypes.TransferDisclosureRecipientOutputIndex,
 		Policy:               policy,
 		DisclosedFieldBitmap: policy,
-		Commitment:           new(big.Int).SetBytes(input.OutputCommitment),
-		Amount:               new(big.Int),
-		AssetID:              new(big.Int).Set(input.RecipientNote.AssetID),
-		SenderSpendKeyX:      new(big.Int),
-		SenderSpendKeyY:      new(big.Int),
-		SenderViewKeyX:       new(big.Int),
-		SenderViewKeyY:       new(big.Int),
-		RecipientSpendKeyX:   new(big.Int),
-		RecipientSpendKeyY:   new(big.Int),
-		RecipientViewKeyX:    new(big.Int),
-		RecipientViewKeyY:    new(big.Int),
+		Commitment:           commitment,
+		Amount:               0,
+		AssetID:              input.RecipientNote.AssetID,
+		SenderSpendKeyX:      privacycrypto.FieldValue{},
+		SenderSpendKeyY:      privacycrypto.FieldValue{},
+		SenderViewKeyX:       privacycrypto.FieldValue{},
+		SenderViewKeyY:       privacycrypto.FieldValue{},
+		RecipientSpendKeyX:   privacycrypto.FieldValue{},
+		RecipientSpendKeyY:   privacycrypto.FieldValue{},
+		RecipientViewKeyX:    privacycrypto.FieldValue{},
+		RecipientViewKeyY:    privacycrypto.FieldValue{},
 	}
 
 	if plane == privacytypes.DisclosurePlaneFullV1 {
 		payload.DisclosedFieldBitmap = privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom
-		payload.Amount = new(big.Int).Set(input.RecipientNote.Amount)
-		payload.AssetID = new(big.Int).Set(input.RecipientNote.AssetID)
-		payload.SenderSpendKeyX = new(big.Int).Set(input.FromNote.ReceiverSpendPubKeyX)
-		payload.SenderSpendKeyY = new(big.Int).Set(input.FromNote.ReceiverSpendPubKeyY)
-		payload.SenderViewKeyX = new(big.Int).Set(input.FromNote.ReceiverViewPubKeyX)
-		payload.SenderViewKeyY = new(big.Int).Set(input.FromNote.ReceiverViewPubKeyY)
-		payload.RecipientSpendKeyX = new(big.Int).Set(input.RecipientNote.ReceiverSpendPubKeyX)
-		payload.RecipientSpendKeyY = new(big.Int).Set(input.RecipientNote.ReceiverSpendPubKeyY)
-		payload.RecipientViewKeyX = new(big.Int).Set(input.RecipientNote.ReceiverViewPubKeyX)
-		payload.RecipientViewKeyY = new(big.Int).Set(input.RecipientNote.ReceiverViewPubKeyY)
-		payload.DisclosureBlinding = new(big.Int).Set(input.FullDisclosureBlinding)
-		return privacytypes.MarshalDisclosurePlaintextV1(payload)
+		payload.Amount = input.RecipientNote.Amount
+		payload.AssetID = input.RecipientNote.AssetID
+		payload.SenderSpendKeyX = input.FromNote.ReceiverSpendPubKeyX
+		payload.SenderSpendKeyY = input.FromNote.ReceiverSpendPubKeyY
+		payload.SenderViewKeyX = input.FromNote.ReceiverViewPubKeyX
+		payload.SenderViewKeyY = input.FromNote.ReceiverViewPubKeyY
+		payload.RecipientSpendKeyX = input.RecipientNote.ReceiverSpendPubKeyX
+		payload.RecipientSpendKeyY = input.RecipientNote.ReceiverSpendPubKeyY
+		payload.RecipientViewKeyX = input.RecipientNote.ReceiverViewPubKeyX
+		payload.RecipientViewKeyY = input.RecipientNote.ReceiverViewPubKeyY
+		payload.DisclosureBlinding = input.FullDisclosureBlinding
+		return privacytypes.MarshalSecretDisclosurePlaintextV1(payload)
 	}
 
 	if policy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
-		payload.Amount = new(big.Int).Set(input.RecipientNote.Amount)
+		payload.Amount = input.RecipientNote.Amount
 	}
 	if policy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0 {
-		payload.SenderSpendKeyX = new(big.Int).Set(input.FromNote.ReceiverSpendPubKeyX)
-		payload.SenderSpendKeyY = new(big.Int).Set(input.FromNote.ReceiverSpendPubKeyY)
-		payload.SenderViewKeyX = new(big.Int).Set(input.FromNote.ReceiverViewPubKeyX)
-		payload.SenderViewKeyY = new(big.Int).Set(input.FromNote.ReceiverViewPubKeyY)
+		payload.SenderSpendKeyX = input.FromNote.ReceiverSpendPubKeyX
+		payload.SenderSpendKeyY = input.FromNote.ReceiverSpendPubKeyY
+		payload.SenderViewKeyX = input.FromNote.ReceiverViewPubKeyX
+		payload.SenderViewKeyY = input.FromNote.ReceiverViewPubKeyY
 	}
 	if policy&privacytypes.TransferPrivacyPolicyDiscloseTo != 0 {
-		payload.RecipientSpendKeyX = new(big.Int).Set(input.RecipientNote.ReceiverSpendPubKeyX)
-		payload.RecipientSpendKeyY = new(big.Int).Set(input.RecipientNote.ReceiverSpendPubKeyY)
-		payload.RecipientViewKeyX = new(big.Int).Set(input.RecipientNote.ReceiverViewPubKeyX)
-		payload.RecipientViewKeyY = new(big.Int).Set(input.RecipientNote.ReceiverViewPubKeyY)
+		payload.RecipientSpendKeyX = input.RecipientNote.ReceiverSpendPubKeyX
+		payload.RecipientSpendKeyY = input.RecipientNote.ReceiverSpendPubKeyY
+		payload.RecipientViewKeyX = input.RecipientNote.ReceiverViewPubKeyX
+		payload.RecipientViewKeyY = input.RecipientNote.ReceiverViewPubKeyY
 	}
-	payload.DisclosureBlinding = new(big.Int).Set(input.UserDisclosureBlinding)
-	return privacytypes.MarshalDisclosurePlaintextV1(payload)
+	payload.DisclosureBlinding = input.UserDisclosureBlinding
+	return privacytypes.MarshalSecretDisclosurePlaintextV1(payload)
 }
 
 func disclosureAddresses(input DisclosureBuildInput) (string, string, error) {
-	fromAddress, err := input.FromNote.ReceiverShieldedAddress()
+	fromAddress, err := secretNoteAddress(input.FromNote)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to encode sender shielded address: %w", err)
 	}
 
-	toAddress, err := input.RecipientNote.ReceiverShieldedAddress()
+	toAddress, err := secretNoteAddress(input.RecipientNote)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to encode recipient shielded address: %w", err)
 	}
 
 	return fromAddress, toAddress, nil
+}
+
+func fixedFieldHex(value privacycrypto.FieldValue) string {
+	raw := value.Bytes()
+	return hex.EncodeToString(raw[:])
+}
+func fixedTransferDigest(input DisclosureBuildInput, policy uint32) ([]byte, error) {
+	c, err := privacycrypto.ParseFieldValueBE32(input.OutputCommitment)
+	if err != nil {
+		return nil, err
+	}
+	var digest privacycrypto.FieldValue
+	if policy == privacytypes.DisclosureFullMarkerV1 {
+		digest, err = privacytypes.SecretFullTransferDisclosureDigestV1(privacytypes.SecretFullTransferDisclosureV1Input{OutputIndex: privacytypes.TransferDisclosureRecipientOutputIndex, Commitment: c, Amount: input.RecipientNote.Amount, AssetID: input.RecipientNote.AssetID, FromSpendPubKeyX: input.FromNote.ReceiverSpendPubKeyX, FromSpendPubKeyY: input.FromNote.ReceiverSpendPubKeyY, FromViewPubKeyX: input.FromNote.ReceiverViewPubKeyX, FromViewPubKeyY: input.FromNote.ReceiverViewPubKeyY, ToSpendPubKeyX: input.RecipientNote.ReceiverSpendPubKeyX, ToSpendPubKeyY: input.RecipientNote.ReceiverSpendPubKeyY, ToViewPubKeyX: input.RecipientNote.ReceiverViewPubKeyX, ToViewPubKeyY: input.RecipientNote.ReceiverViewPubKeyY, Blinding: input.FullDisclosureBlinding})
+	} else {
+		digest, err = privacytypes.SecretTransferDisclosureDigestV1(privacytypes.SecretTransferDisclosureV1Input{Policy: policy, OutputIndex: privacytypes.TransferDisclosureRecipientOutputIndex, Commitment: c, Amount: input.RecipientNote.Amount, AssetID: input.RecipientNote.AssetID, FromSpendPubKeyX: input.FromNote.ReceiverSpendPubKeyX, FromSpendPubKeyY: input.FromNote.ReceiverSpendPubKeyY, FromViewPubKeyX: input.FromNote.ReceiverViewPubKeyX, FromViewPubKeyY: input.FromNote.ReceiverViewPubKeyY, ToSpendPubKeyX: input.RecipientNote.ReceiverSpendPubKeyX, ToSpendPubKeyY: input.RecipientNote.ReceiverSpendPubKeyY, ToViewPubKeyX: input.RecipientNote.ReceiverViewPubKeyX, ToViewPubKeyY: input.RecipientNote.ReceiverViewPubKeyY, Blinding: input.UserDisclosureBlinding})
+	}
+	if err != nil {
+		return nil, err
+	}
+	raw := digest.Bytes()
+	return append([]byte(nil), raw[:]...), nil
 }

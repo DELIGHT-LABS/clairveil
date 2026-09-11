@@ -3,6 +3,7 @@ package deposit
 import (
 	"bytes"
 	"fmt"
+	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
@@ -23,21 +24,27 @@ type DepositProofRunner interface {
 	ProveDeposit(r1cs constraint.ConstraintSystem, provingKey groth16.ProvingKey, witness witness.Witness) (groth16.Proof, error)
 }
 
-func BuildDepositAssignment(note privacytypes.Note) (*circuit.DepositCircuit, error) {
+func BuildDepositAssignment(note privacytypes.SecretNoteV1) (*circuit.DepositCircuit, error) {
 	if err := note.ValidateV1(); err != nil {
 		return nil, fmt.Errorf("invalid deposit NoteV1: %w", err)
 	}
+	commitment, err := note.CommitmentV1()
+	if err != nil {
+		return nil, fmt.Errorf("compute deposit note commitment: %w", err)
+	}
+	commitmentBytes := commitment.Bytes()
+	witness := note.ToProverWitnessV1()
 
 	assignment := &circuit.DepositCircuit{
-		Commitment: note.ComputeCommitment(),
-		Amount:     note.Amount,
-		AssetID:    note.AssetID,
-		Randomness: note.Randomness,
+		Commitment: new(big.Int).SetBytes(commitmentBytes[:]),
+		Amount:     witness.Amount,
+		AssetID:    witness.AssetID,
+		Randomness: witness.Randomness,
 	}
-	assignment.ReceiverSpendPubKey.X = note.ReceiverSpendPubKeyX
-	assignment.ReceiverSpendPubKey.Y = note.ReceiverSpendPubKeyY
-	assignment.ReceiverViewPubKey.X = note.ReceiverViewPubKeyX
-	assignment.ReceiverViewPubKey.Y = note.ReceiverViewPubKeyY
+	assignment.ReceiverSpendPubKey.X = witness.ReceiverSpendPubKeyX
+	assignment.ReceiverSpendPubKey.Y = witness.ReceiverSpendPubKeyY
+	assignment.ReceiverViewPubKey.X = witness.ReceiverViewPubKeyX
+	assignment.ReceiverViewPubKey.Y = witness.ReceiverViewPubKeyY
 	return assignment, nil
 }
 
@@ -85,7 +92,7 @@ func ProveDepositAssignment(
 }
 
 func BuildDepositProof(
-	note privacytypes.Note,
+	note privacytypes.SecretNoteV1,
 	artifacts DepositArtifactProvider,
 	runner DepositProofRunner,
 ) ([]byte, error) {

@@ -10,7 +10,7 @@ import (
 )
 
 type ExactMatchNoteSource interface {
-	LoadFoundNotes(ctx context.Context) ([]privacyscan.FoundNote, error)
+	LoadFoundNotes(ctx context.Context) ([]privacyscan.SecretFoundNote, error)
 }
 
 type ExactMatchAutoPlanner interface {
@@ -23,7 +23,7 @@ func ResolveExactMatchSpendableNote(
 	planner ExactMatchAutoPlanner,
 	targetCoin sdk.Coin,
 	autoPlan bool,
-) (*privacyscan.FoundNote, error) {
+) (*privacyscan.SecretFoundNote, error) {
 	if source == nil {
 		return nil, fmt.Errorf("an exact-match note source is required")
 	}

@@ -71,31 +71,41 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 	if err != nil {
 		return fmt.Errorf("structured owner view key: %w", err)
 	}
-	ownerSpendX, ownerSpendY := pointCoordinates(ownerSpend)
-	ownerViewX, ownerViewY := pointCoordinates(ownerView)
+	ownerSpendX, ownerSpendY, err := privacycrypto.PublicPointFieldValues(*ownerSpend)
+	if err != nil {
+		return err
+	}
+	ownerViewX, ownerViewY, err := privacycrypto.PublicPointFieldValues(*ownerView)
+	if err != nil {
+		return err
+	}
 	computedInputTotal := new(big.Int)
-	inputRandomness := make([]*big.Int, len(req.OrderedInputs))
+	inputRandomness := make([]privacycrypto.FieldValue, len(req.OrderedInputs))
 	for i := range req.OrderedInputNullifiers {
 		input := req.OrderedInputs[i]
 		if !bytes.Equal(input.Nullifier, req.OrderedInputNullifiers[i]) || !bytes.Equal(req.OrderedInputNullifiers[i], req.CanonicalEffect.Nullifiers[i]) {
 			return fmt.Errorf("ordered nullifier %d mismatch", i)
 		}
-		if !bytes.Equal(input.SpendPubKey, req.OwnerSpendPubKey) || !bytes.Equal(input.ViewPubKey, req.OwnerViewPubKey) || input.Amount == nil || input.Randomness == nil || input.AssetID == nil || input.AssetID.Cmp(req.AssetID) != 0 {
+		if !bytes.Equal(input.SpendPubKey, req.OwnerSpendPubKey) || !bytes.Equal(input.ViewPubKey, req.OwnerViewPubKey) || !fixedMatchesPublic(input.AssetID, req.AssetID) {
 			return fmt.Errorf("structured input %d owner/amount/asset is invalid", i)
 		}
-		if err := privacytypes.ValidateShieldedAmount(fmt.Sprintf("structured input %d amount", i), input.Amount); err != nil {
+		inputNote := privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: ownerSpendX, ReceiverSpendPubKeyY: ownerSpendY, ReceiverViewPubKeyX: ownerViewX, ReceiverViewPubKeyY: ownerViewY, Amount: input.Amount, AssetID: input.AssetID, Randomness: input.Randomness}
+		commitment, err := inputNote.CommitmentV1()
+		if err != nil {
 			return err
 		}
-		commitment := privacytypes.ComputeNoteCommitmentV1(ownerSpendX, ownerSpendY, ownerViewX, ownerViewY, input.Amount, input.AssetID, input.Randomness)
-		if !bytes.Equal(fieldBytes(commitment), input.Commitment) {
+		if !bytes.Equal(fixedBytes(commitment), input.Commitment) {
 			return fmt.Errorf("structured input %d commitment mismatch", i)
 		}
-		nullifier := privacytypes.ComputeNoteNullifierV1(commitment, input.Randomness, ownerSpendX, ownerSpendY)
-		if !bytes.Equal(fieldBytes(nullifier), input.Nullifier) {
+		nullifier, err := inputNote.NullifierV1()
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(fixedBytes(nullifier), input.Nullifier) {
 			return fmt.Errorf("structured input %d nullifier recomputation mismatch", i)
 		}
 		inputRandomness[i] = input.Randomness
-		computedInputTotal.Add(computedInputTotal, input.Amount)
+		computedInputTotal.Add(computedInputTotal, new(big.Int).SetUint64(input.Amount))
 	}
 	if computedInputTotal.Cmp(req.InputTotal) != 0 {
 		return fmt.Errorf("structured input total mismatch")
@@ -116,18 +126,15 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 	seenPayment := false
 	seenChange := false
 	seenPadding := false
-	ownerTemplate := privacytypes.Note{ReceiverSpendPubKeyX: ownerSpendX, ReceiverSpendPubKeyY: ownerSpendY, ReceiverViewPubKeyX: ownerViewX, ReceiverViewPubKeyY: ownerViewY, AssetID: req.AssetID}
+	ownerTemplate := privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: ownerSpendX, ReceiverSpendPubKeyY: ownerSpendY, ReceiverViewPubKeyX: ownerViewX, ReceiverViewPubKeyY: ownerViewY, AssetID: req.OrderedInputs[0].AssetID}
 	for i := range req.OrderedOutputs {
 		o := req.OrderedOutputs[i]
 		wire := req.CanonicalEffect.Outputs[i]
 		if o.WireOutput == nil || !batchWireOutputsEqual(o.WireOutput, wire) || !bytes.Equal(o.Commitment, wire.Commitment) || o.PrivacyPolicy != wire.UserPrivacyPolicy || o.DisclosureMode != wire.UserDisclosureMode {
 			return fmt.Errorf("structured output %d mismatch", i)
 		}
-		if o.Amount == nil || o.Randomness == nil || o.AssetID == nil || o.AssetID.Cmp(req.AssetID) != 0 || o.UserDisclosureBlinding == nil || o.FullDisclosureBlinding == nil {
+		if !fixedMatchesPublic(o.AssetID, req.AssetID) {
 			return fmt.Errorf("structured output %d amount/asset mismatch", i)
-		}
-		if err := privacytypes.ValidateShieldedAmount(fmt.Sprintf("structured output %d amount", i), o.Amount); err != nil {
-			return err
 		}
 		recipientSpend, err := privacycrypto.DecodeCanonicalPoint(o.RecipientSpendPubKey)
 		if err != nil {
@@ -137,13 +144,23 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 		if err != nil {
 			return fmt.Errorf("structured output %d view key: %w", i, err)
 		}
-		recipientSpendX, recipientSpendY := pointCoordinates(recipientSpend)
-		recipientViewX, recipientViewY := pointCoordinates(recipientView)
-		commitment := privacytypes.ComputeNoteCommitmentV1(recipientSpendX, recipientSpendY, recipientViewX, recipientViewY, o.Amount, o.AssetID, o.Randomness)
-		if !bytes.Equal(fieldBytes(commitment), o.Commitment) {
+		recipientSpendX, recipientSpendY, err := privacycrypto.PublicPointFieldValues(*recipientSpend)
+		if err != nil {
+			return err
+		}
+		recipientViewX, recipientViewY, err := privacycrypto.PublicPointFieldValues(*recipientView)
+		if err != nil {
+			return err
+		}
+		outputNote := privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: recipientSpendX, ReceiverSpendPubKeyY: recipientSpendY, ReceiverViewPubKeyX: recipientViewX, ReceiverViewPubKeyY: recipientViewY, Amount: o.Amount, AssetID: o.AssetID, Randomness: o.Randomness}
+		commitment, err := outputNote.CommitmentV1()
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(fixedBytes(commitment), o.Commitment) {
 			return fmt.Errorf("structured output %d commitment recomputation mismatch", i)
 		}
-		outputNote := privacytypes.Note{ReceiverSpendPubKeyX: recipientSpendX, ReceiverSpendPubKeyY: recipientSpendY, ReceiverViewPubKeyX: recipientViewX, ReceiverViewPubKeyY: recipientViewY, Amount: o.Amount, AssetID: o.AssetID, Randomness: o.Randomness}
+
 		_, userDigest, err := disclosurePlaintext(uint32(i), false, ownerTemplate, PreparedBatchTransferOutput{Kind: o.Kind, Note: outputNote, PrivacyPolicy: o.PrivacyPolicy, DisclosureMode: o.DisclosureMode, UserDisclosureBlinding: o.UserDisclosureBlinding, FullDisclosureBlinding: o.FullDisclosureBlinding})
 		if err != nil {
 			return err
@@ -153,7 +170,7 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 			return err
 		}
 		if o.PrivacyPolicy == privacytypes.TransferPrivacyPolicyAllPrivate {
-			if o.UserDisclosureBlinding.Sign() != 0 || len(wire.UserDisclosureDigest) != 0 {
+			if !o.UserDisclosureBlinding.IsZero() || len(wire.UserDisclosureDigest) != 0 {
 				return fmt.Errorf("structured all-private output %d must use user disclosure sentinels", i)
 			}
 		} else if !bytes.Equal(fieldBytes(userDigest), wire.UserDisclosureDigest) {
@@ -164,24 +181,24 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 		}
 		switch o.Kind {
 		case OutputPayment:
-			if seenChange || seenPadding || o.Amount.Sign() <= 0 {
+			if seenChange || seenPadding || o.Amount == 0 {
 				return fmt.Errorf("payment outputs must be a positive canonical prefix")
 			}
 			seenPayment = true
 		case OutputChange:
-			if seenChange || seenPadding || o.Amount.Sign() <= 0 || o.PrivacyPolicy != 0 || !bytes.Equal(o.RecipientSpendPubKey, req.OwnerSpendPubKey) || !bytes.Equal(o.RecipientViewPubKey, req.OwnerViewPubKey) {
+			if seenChange || seenPadding || o.Amount == 0 || o.PrivacyPolicy != 0 || !bytes.Equal(o.RecipientSpendPubKey, req.OwnerSpendPubKey) || !bytes.Equal(o.RecipientViewPubKey, req.OwnerViewPubKey) {
 				return fmt.Errorf("change output is not canonical")
 			}
 			seenChange = true
 		case OutputPadding:
-			if o.Amount.Sign() != 0 || o.PrivacyPolicy != 0 || !bytes.Equal(o.RecipientSpendPubKey, req.OwnerSpendPubKey) || !bytes.Equal(o.RecipientViewPubKey, req.OwnerViewPubKey) {
+			if o.Amount != 0 || o.PrivacyPolicy != 0 || !bytes.Equal(o.RecipientSpendPubKey, req.OwnerSpendPubKey) || !bytes.Equal(o.RecipientViewPubKey, req.OwnerViewPubKey) {
 				return fmt.Errorf("padding output is not canonical")
 			}
 			seenPadding = true
 		default:
 			return fmt.Errorf("unsupported structured output kind %q", o.Kind)
 		}
-		computedOutputTotal.Add(computedOutputTotal, o.Amount)
+		computedOutputTotal.Add(computedOutputTotal, new(big.Int).SetUint64(o.Amount))
 		selfViewPresent := len(wire.SelfViewDisclosurePayload) > 0
 		if selfViewPresent != req.SelfViewEnabled {
 			return fmt.Errorf("structured self-view all-or-none mismatch at output %d", i)
@@ -306,12 +323,16 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 		}
 	}
 	inputTotal := new(big.Int)
-	inputRandomness := make([]*big.Int, len(p.Inputs))
+	inputRandomness := make([]privacycrypto.FieldValue, len(p.Inputs))
 	for i, in := range p.Inputs {
 		if err := in.Note.ValidateV1(); err != nil {
 			return fmt.Errorf("input %d: %w", i, err)
 		}
-		if !bytes.Equal(fieldBytes(in.Note.ComputeNullifier()), in.Nullifier) {
+		n, err := in.Note.NullifierV1()
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(fixedBytes(n), in.Nullifier) {
 			return fmt.Errorf("input %d nullifier mismatch", i)
 		}
 		if err := privacyfield.ValidateCanonicalBytes32(in.Nullifier); err != nil {
@@ -320,7 +341,11 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 		if len(in.MerklePath) != 32 || len(in.MerklePath) != len(in.MerklePathHelper) {
 			return fmt.Errorf("input %d path shape mismatch", i)
 		}
-		cur := in.Note.ComputeCommitment()
+		c, err := in.Note.CommitmentV1()
+		if err != nil {
+			return err
+		}
+		cur := fixedPublicBig(c)
 		for level, raw := range in.MerklePath {
 			if len(raw) != 64 || raw != strings.ToLower(raw) {
 				return fmt.Errorf("input %d path %d is not canonical 32-byte lowercase hex", i, level)
@@ -343,13 +368,13 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 		if cur.Cmp(new(big.Int).SetBytes(p.Root)) != 0 {
 			return fmt.Errorf("input %d root mismatch", i)
 		}
-		if in.Note.AssetID.Cmp(p.AssetID) != 0 {
+		if !fixedMatchesPublic(in.Note.AssetID, p.AssetID) {
 			return fmt.Errorf("input %d asset mismatch", i)
 		}
 		if i > 0 && (!sameOwner(p.Inputs[0].Note, in.Note)) {
 			return fmt.Errorf("input %d owner mismatch", i)
 		}
-		inputTotal.Add(inputTotal, in.Note.Amount)
+		inputTotal.Add(inputTotal, new(big.Int).SetUint64(in.Note.Amount))
 		inputRandomness[i] = in.Note.Randomness
 	}
 	outputSecrets := make([]batchTransferOutputSecrets, len(p.Outputs))
@@ -369,10 +394,14 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 		if err := out.Note.ValidateV1(); err != nil {
 			return fmt.Errorf("output %d: %w", i, err)
 		}
-		if !bytes.Equal(fieldBytes(out.Note.ComputeCommitment()), p.MessageOutputs[i].Commitment) {
+		c, err := out.Note.CommitmentV1()
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(fixedBytes(c), p.MessageOutputs[i].Commitment) {
 			return fmt.Errorf("output %d commitment mismatch", i)
 		}
-		if out.Note.AssetID.Cmp(p.AssetID) != 0 {
+		if !fixedMatchesPublic(out.Note.AssetID, p.AssetID) {
 			return fmt.Errorf("output %d asset mismatch", i)
 		}
 		userPlain, userDigest, err := disclosurePlaintext(uint32(i), false, p.Inputs[0].Note, out)
@@ -396,7 +425,7 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 		if out.DisclosureMode == privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC && !bytes.Equal(userPlain, p.MessageOutputs[i].UserDisclosurePayload) {
 			return fmt.Errorf("output %d public disclosure plaintext mismatch", i)
 		}
-		outputTotal.Add(outputTotal, out.Note.Amount)
+		outputTotal.Add(outputTotal, new(big.Int).SetUint64(out.Note.Amount))
 	}
 	if inputTotal.Cmp(outputTotal) != 0 {
 		return fmt.Errorf("prepared batch input/output conservation mismatch")
@@ -408,13 +437,17 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 	if err != nil {
 		return err
 	}
-	if err := ValidateBatchTransferSigningRequest(signingRequest(p, canonical)); err != nil {
+	req, err := signingRequest(p, canonical)
+	if err != nil {
+		return err
+	}
+	if err := ValidateBatchTransferSigningRequest(req); err != nil {
 		return err
 	}
 	if _, err := privacycrypto.DecodeCanonicalEdDSASignature(p.OwnerSignature); err != nil {
 		return err
 	}
-	ownerKey, err := pointFromCoordinates(p.Inputs[0].Note.ReceiverSpendPubKeyX, p.Inputs[0].Note.ReceiverSpendPubKeyY)
+	ownerKey, err := fixedPoint(p.Inputs[0].Note.ReceiverSpendPubKeyX, p.Inputs[0].Note.ReceiverSpendPubKeyY)
 	if err != nil {
 		return err
 	}
@@ -440,55 +473,44 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 }
 
 type batchTransferOutputSecrets struct {
-	Randomness             *big.Int
-	UserDisclosureBlinding *big.Int
-	FullDisclosureBlinding *big.Int
-	PrivacyPolicy          uint32
+	Randomness, UserDisclosureBlinding, FullDisclosureBlinding privacycrypto.FieldValue
+	PrivacyPolicy                                              uint32
 }
 
-func validateBatchTransferGlobalSecretReuse(inputRandomness []*big.Int, outputs []batchTransferOutputSecrets) error {
-	seen := make(map[string]string, len(inputRandomness)+len(outputs)*3)
-	for i, randomness := range inputRandomness {
-		if randomness == nil {
-			return fmt.Errorf("input %d randomness is required", i)
+func validateBatchTransferGlobalSecretReuse(inputs []privacycrypto.FieldValue, outputs []batchTransferOutputSecrets) error {
+	seen := make([]privacycrypto.FieldValue, 0, len(inputs)+3*len(outputs))
+	register := func(value privacycrypto.FieldValue, label string, nonzero bool) error {
+		if nonzero && value.IsZero() {
+			return fmt.Errorf("%s must be non-zero", label)
 		}
-		encoded, err := privacyfield.CanonicalBytesFromBigInt(randomness)
-		if err != nil {
-			return fmt.Errorf("input %d randomness must be a canonical BN254 field element: %w", i, err)
+		duplicate := false
+		for _, old := range seen {
+			equal := old.Equal(value)
+			duplicate = equal || duplicate
 		}
-		key := string(encoded)
-		if previous, ok := seen[key]; ok {
-			return fmt.Errorf("input %d randomness reuses %s; input/output randomness and output disclosure blindings must be fresh and independent", i, previous)
+		if duplicate {
+			return fmt.Errorf("%s reuses a previous secret; randomness and disclosure blindings must be fresh and independent", label)
 		}
-		seen[key] = fmt.Sprintf("input %d randomness", i)
-	}
-	register := func(outputIndex int, label string, secret *big.Int) error {
-		if secret == nil || secret.Sign() == 0 {
-			return fmt.Errorf("output %d %s must be non-zero", outputIndex, label)
-		}
-		encoded, err := privacyfield.CanonicalBytesFromBigInt(secret)
-		if err != nil {
-			return fmt.Errorf("output %d %s must be a canonical BN254 field element: %w", outputIndex, label, err)
-		}
-		key := string(encoded)
-		if previous, ok := seen[key]; ok {
-			return fmt.Errorf("output %d %s reuses %s; input/output randomness and output disclosure blindings must be fresh and independent", outputIndex, label, previous)
-		}
-		seen[key] = fmt.Sprintf("output %d %s", outputIndex, label)
+		seen = append(seen, value)
 		return nil
 	}
-	for i, output := range outputs {
-		if err := register(i, "randomness", output.Randomness); err != nil {
+	for i, value := range inputs {
+		if err := register(value, fmt.Sprintf("input %d randomness", i), false); err != nil {
 			return err
 		}
-		if err := register(i, "full disclosure blinding", output.FullDisclosureBlinding); err != nil {
+	}
+	for i, o := range outputs {
+		if err := register(o.Randomness, fmt.Sprintf("output %d randomness", i), true); err != nil {
 			return err
 		}
-		if output.PrivacyPolicy != privacytypes.TransferPrivacyPolicyAllPrivate {
-			if err := register(i, "user disclosure blinding", output.UserDisclosureBlinding); err != nil {
+		if err := register(o.FullDisclosureBlinding, fmt.Sprintf("output %d full disclosure blinding", i), true); err != nil {
+			return err
+		}
+		if o.PrivacyPolicy != 0 {
+			if err := register(o.UserDisclosureBlinding, fmt.Sprintf("output %d user disclosure blinding", i), true); err != nil {
 				return err
 			}
-		} else if output.UserDisclosureBlinding == nil || output.UserDisclosureBlinding.Sign() != 0 {
+		} else if !o.UserDisclosureBlinding.IsZero() {
 			return fmt.Errorf("output %d all-private user blinding must use the zero sentinel", i)
 		}
 	}
@@ -510,8 +532,8 @@ func validateCanonicalBatchTransferField(name string, value *big.Int) error {
 	return nil
 }
 
-func sameOwner(a, b privacytypes.Note) bool {
-	return a.ReceiverSpendPubKeyX.Cmp(b.ReceiverSpendPubKeyX) == 0 && a.ReceiverSpendPubKeyY.Cmp(b.ReceiverSpendPubKeyY) == 0 && a.ReceiverViewPubKeyX.Cmp(b.ReceiverViewPubKeyX) == 0 && a.ReceiverViewPubKeyY.Cmp(b.ReceiverViewPubKeyY) == 0
+func sameOwner(a, b privacytypes.SecretNoteV1) bool {
+	return a.ReceiverSpendPubKeyX.Equal(b.ReceiverSpendPubKeyX) && a.ReceiverSpendPubKeyY.Equal(b.ReceiverSpendPubKeyY) && a.ReceiverViewPubKeyX.Equal(b.ReceiverViewPubKeyX) && a.ReceiverViewPubKeyY.Equal(b.ReceiverViewPubKeyY)
 }
 
 func digestCanonicalPayload(canonical []byte) (*big.Int, *big.Int) {

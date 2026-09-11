@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/stretchr/testify/require"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
 	privacyreservation "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/reservation"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -342,15 +342,15 @@ func TestBuildBatchOperationGraphBindsRecipientAndDisclosurePlan(t *testing.T) {
 		items[i] = PayrollPlanItem{
 			CompanyID: "company", PayrollID: "payroll", BatchID: "batch", ItemID: "item-" + string(rune('a'+i)),
 			EmployeeID: "employee", OperationID: "bound-operation", RecipientAddress: address,
-			ExpectedRecipientHash: HashRecipient(address), Amount: new(big.Int).Set(output.Note.Amount),
-			ExpectedAmountHash: HashAmount("uclair", output.Note.Amount), Denom: "uclair",
+			ExpectedRecipientHash: HashRecipient(address), Amount: new(big.Int).SetUint64(output.Note.Amount),
+			ExpectedAmountHash: HashAmount("uclair", new(big.Int).SetUint64(output.Note.Amount)), Denom: "uclair",
 			DisclosurePolicy: PayrollDisclosurePolicy{UserPrivacyPolicy: output.PrivacyPolicy, UserDisclosureMode: output.DisclosureMode, UserDisclosureTargetPubKeyHex: hex.EncodeToString(output.DisclosureTargetPubKey)},
 		}
 	}
 	plan := BatchPayrollOperationPlan{
 		OperationID: "bound-operation", Items: items,
-		InputNotes: []TreasuryNote{{NoteID: "note-a", OwnerKeyID: "owner", NullifierLookupKey: "lookup", NullifierLookupKeyID: "lookup-v1", Denom: "uclair", Amount: new(big.Int).Set(payload.Inputs[0].Note.Amount)}},
-		InputTotal: new(big.Int).Set(payload.Inputs[0].Note.Amount), PaymentTotal: new(big.Int).Set(payload.Inputs[0].Note.Amount),
+		InputNotes: []TreasuryNote{{NoteID: "note-a", OwnerKeyID: "owner", NullifierLookupKey: "lookup", NullifierLookupKeyID: "lookup-v1", Denom: "uclair", Amount: new(big.Int).SetUint64(payload.Inputs[0].Note.Amount)}},
+		InputTotal: new(big.Int).SetUint64(payload.Inputs[0].Note.Amount), PaymentTotal: new(big.Int).SetUint64(payload.Inputs[0].Note.Amount),
 		Change: new(big.Int), OutputCount: len(items), HasChange: false,
 	}
 	derivedLookupKey, err := testPayrollCipher{}.PayrollNullifierLookupKey(context.Background(), plan.InputNotes[0].NullifierLookupKeyID, payload.Inputs[0].Nullifier)
@@ -522,14 +522,16 @@ func (s *failingBatchProvingClaimStore) CompareAndSetBatchOperationStatus(contex
 	return nil, s.err
 }
 
-func shieldedAddressForBatchNote(t *testing.T, note privacytypes.Note) string {
+func shieldedAddressForBatchNote(t *testing.T, note privacytypes.SecretNoteV1) string {
 	t.Helper()
-	spend := &crypto_tedwards.PointAffine{}
-	view := &crypto_tedwards.PointAffine{}
-	spend.X.SetBigInt(note.ReceiverSpendPubKeyX)
-	spend.Y.SetBigInt(note.ReceiverSpendPubKeyY)
-	view.X.SetBigInt(note.ReceiverViewPubKeyX)
-	view.Y.SetBigInt(note.ReceiverViewPubKeyY)
+	spendBytes, err := privacycrypto.LegacyCompressedPointFromFieldValues(note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY)
+	require.NoError(t, err)
+	spend, err := privacycrypto.DecodeCanonicalPoint(spendBytes[:])
+	require.NoError(t, err)
+	viewBytes, err := privacycrypto.LegacyCompressedPointFromFieldValues(note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY)
+	require.NoError(t, err)
+	view, err := privacycrypto.DecodeCanonicalPoint(viewBytes[:])
+	require.NoError(t, err)
 	address, err := privacytypes.EncodeShieldedAddressWithView(spend, view)
 	require.NoError(t, err)
 	return address

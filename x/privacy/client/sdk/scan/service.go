@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 
 	cmttypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -12,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	privacyidentity "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/identity"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -68,7 +68,7 @@ type SyncDiagnostics struct {
 
 type SyncResult struct {
 	Wallet        *LocalWalletData
-	Notes         []FoundNote
+	Notes         []SecretFoundNote
 	Diagnostics   SyncDiagnostics
 	WalletChanged bool
 }
@@ -108,7 +108,7 @@ func SyncNotes(
 		wallet = &LocalWalletData{
 			LastHeight:   0,
 			LastSequence: 0,
-			Notes:        []FoundNote{},
+			Notes:        []SecretFoundNote{},
 		}
 	}
 
@@ -117,8 +117,14 @@ func SyncNotes(
 		LoadedNoteCount:  len(wallet.Notes),
 	}
 	walletChanged := false
-	spendScalar, _, _ := privacyidentity.DeriveSpendKeys(input.RootSeed)
-	viewScalar, _, _ := privacyidentity.DeriveViewKeys(input.RootSeed)
+	spendScalar, _, _, err := privacyidentity.DeriveSpendKeys(input.RootSeed)
+	if err != nil {
+		return nil, fmt.Errorf("derive spend key: %w", err)
+	}
+	viewScalar, _, _, err := privacyidentity.DeriveViewKeys(input.RootSeed)
+	if err != nil {
+		return nil, fmt.Errorf("derive view key: %w", err)
+	}
 	scanOptions := processOptions{
 		SkipViewTagMismatch: input.SkipViewTagMismatch && !input.ForceRescan,
 		EventLimit:          input.PrivacyScanEventLimit,
@@ -142,7 +148,7 @@ func SyncNotes(
 		wallet.LastHeight = 0
 		wallet.LastSequence = 0
 		wallet.LastOutputIndex = 0
-		wallet.Notes = []FoundNote{}
+		wallet.Notes = []SecretFoundNote{}
 		walletChanged = true
 		diagnostics.ForcedRescan = true
 	}
@@ -154,7 +160,7 @@ func SyncNotes(
 		wallet.LastHeight = 0
 		wallet.LastSequence = 0
 		wallet.LastOutputIndex = 0
-		wallet.Notes = []FoundNote{}
+		wallet.Notes = []SecretFoundNote{}
 		walletChanged = true
 		diagnostics.RollbackReset = true
 	}
@@ -166,7 +172,7 @@ func SyncNotes(
 			observer.OnSyncRange(wallet.LastHeight+1, currentHeight)
 		}
 
-		newNotes, changed, err := syncNewNotes(ctx, source, observer, input.RootSeed, spendScalar, viewScalar, wallet, pageLimit, scanOptions)
+		newNotes, changed, err := syncNewNotes(ctx, source, observer, input.RootSeed, &spendScalar, &viewScalar, wallet, pageLimit, scanOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -187,7 +193,7 @@ func SyncNotes(
 		diagnostics.NormalizedCache = true
 	}
 
-	finalResults := make([]FoundNote, len(wallet.Notes))
+	finalResults := make([]SecretFoundNote, len(wallet.Notes))
 	copy(finalResults, wallet.Notes)
 
 	markSpentStatuses(ctx, checker, finalResults)
@@ -207,8 +213,8 @@ func syncNewNotes(
 	source PrivacyTxSource,
 	observer SyncObserver,
 	rootSeed []byte,
-	spendScalar *big.Int,
-	viewScalar *big.Int,
+	spendScalar *privacycrypto.SecretScalar,
+	viewScalar *privacycrypto.SecretScalar,
 	wallet *LocalWalletData,
 	pageLimit int,
 	scanOptions processOptions,
@@ -231,12 +237,12 @@ func syncNewNotes(
 	return syncNewNotesFromTxSearch(ctx, source, observer, rootSeed, spendScalar, viewScalar, wallet, pageLimit, scanOptions)
 }
 
-func syncNewNotesFromPrivacyScanV2(ctx context.Context, source PrivacyScanV2Source, observer SyncObserver, rootSeed []byte, spendScalar, viewScalar *big.Int, wallet *LocalWalletData, pageLimit int, scanOptions processOptions) (int, bool, error) {
+func syncNewNotesFromPrivacyScanV2(ctx context.Context, source PrivacyScanV2Source, observer SyncObserver, rootSeed []byte, spendScalar, viewScalar *privacycrypto.SecretScalar, wallet *LocalWalletData, pageLimit int, scanOptions processOptions) (int, bool, error) {
 	startCursor := &privacytypes.PrivacyScanCursorV1{Height: wallet.LastHeight, GlobalSequence: wallet.LastSequence, OutputIndex: wallet.LastOutputIndex}
 	cursor := &privacytypes.PrivacyScanCursorV1{Height: startCursor.Height, GlobalSequence: startCursor.GlobalSequence, OutputIndex: startCursor.OutputIndex}
 	seen := make(map[string]struct{}, len(wallet.Notes))
 	selfViewByEvent := make(map[string]bool)
-	newlyFound := make([]FoundNote, 0)
+	newlyFound := make([]SecretFoundNote, 0)
 	for _, note := range wallet.Notes {
 		seen[foundNoteIdentityKey(note)] = struct{}{}
 	}
@@ -254,7 +260,7 @@ func syncNewNotesFromPrivacyScanV2(ctx context.Context, source PrivacyScanV2Sour
 			return 0, false, fmt.Errorf("invalid typed privacy scan response: %w", err)
 		}
 		for _, output := range response.Outputs {
-			found, decryptErr := ProcessPrivacyScanOutput(output, rootSeed, spendScalar, viewScalar, scanOptions.SkipViewTagMismatch)
+			found, decryptErr := ProcessSecretPrivacyScanOutput(output, rootSeed, spendScalar, viewScalar, scanOptions.SkipViewTagMismatch)
 			if decryptErr != nil {
 				if errors.Is(decryptErr, ErrPrivacyScanOutputNotOwned) {
 					continue
@@ -425,8 +431,8 @@ func syncNewNotesFromScanEvents(
 	source PrivacyScanEventSource,
 	observer SyncObserver,
 	rootSeed []byte,
-	spendScalar *big.Int,
-	viewScalar *big.Int,
+	spendScalar *privacycrypto.SecretScalar,
+	viewScalar *privacycrypto.SecretScalar,
 	wallet *LocalWalletData,
 	pageLimit int,
 	scanOptions processOptions,
@@ -496,8 +502,8 @@ func syncNewNotesFromTxSearch(
 	source PrivacyTxSource,
 	observer SyncObserver,
 	rootSeed []byte,
-	spendScalar *big.Int,
-	viewScalar *big.Int,
+	spendScalar *privacycrypto.SecretScalar,
+	viewScalar *privacycrypto.SecretScalar,
 	wallet *LocalWalletData,
 	pageLimit int,
 	scanOptions processOptions,
@@ -537,7 +543,7 @@ func syncNewNotesFromTxSearch(
 	return newNotes, walletChanged, nil
 }
 
-func markSpentStatuses(ctx context.Context, checker NullifierUsageChecker, notes []FoundNote) {
+func markSpentStatuses(ctx context.Context, checker NullifierUsageChecker, notes []SecretFoundNote) {
 	if batchChecker, ok := checker.(BatchNullifierUsageChecker); ok {
 		nullifiers := uniqueNullifiers(notes)
 		if usedByNullifier, err := batchChecker.CheckNullifiersUsed(ctx, nullifiers); err == nil {
@@ -565,7 +571,7 @@ func allNullifierStatusesPresent(nullifiers []string, usedByNullifier map[string
 	return true
 }
 
-func uniqueNullifiers(notes []FoundNote) []string {
+func uniqueNullifiers(notes []SecretFoundNote) []string {
 	seen := make(map[string]struct{}, len(notes))
 	nullifiers := make([]string, 0, len(notes))
 	for _, note := range notes {

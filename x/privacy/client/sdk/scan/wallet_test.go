@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"encoding/json"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -12,46 +13,29 @@ import (
 )
 
 func TestSummarizeSpendableNotes(t *testing.T) {
-	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(5)}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(7)}, IsSpent: true},
-		{Note: privacytypes.Note{Amount: big.NewInt(11)}, IsSpent: false},
+	notes := []SecretFoundNote{
+		{Note: privacytypes.SecretNoteV1{Amount: 5}, IsSpent: false},
+		{Note: privacytypes.SecretNoteV1{Amount: 7}, IsSpent: true},
+		{Note: privacytypes.SecretNoteV1{Amount: 11}, IsSpent: false},
 	}
 
-	spendable, total := SummarizeSpendableNotes(notes)
+	spendable, total, err := SummarizeSpendableNotes(notes)
+	require.NoError(t, err)
 
 	require.Len(t, spendable, 2)
-	require.Equal(t, int64(5), spendable[0].Note.Amount.Int64())
-	require.Equal(t, int64(11), spendable[1].Note.Amount.Int64())
-	require.Equal(t, int64(16), total.Int64())
+	require.Equal(t, uint64(5), spendable[0].Note.Amount)
+	require.Equal(t, uint64(11), spendable[1].Note.Amount)
+	require.Equal(t, uint64(16), total)
 }
 
 func TestNormalizeFoundNotesDeduplicatesAndSorts(t *testing.T) {
-	duplicate := FoundNote{
-		Note:      privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
-		Nullifier: "bb",
-		Height:    7,
-		TxHash:    "B2",
+	duplicate := SecretFoundNote{Note: privacytypes.SecretNoteV1{Amount: 7}, Nullifier: "bb", Height: 7, TxHash: "B2"}
+	notes := []SecretFoundNote{
+		{Note: privacytypes.SecretNoteV1{Amount: 11}, Nullifier: "cc", Height: 11, TxHash: "C3"},
+		duplicate, duplicate,
+		{Note: privacytypes.SecretNoteV1{Amount: 5}, Nullifier: "aa", Height: 3, TxHash: "A1"},
 	}
-	notes := []FoundNote{
-		{
-			Note:      privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
-			Nullifier: "cc",
-			Height:    11,
-			TxHash:    "C3",
-		},
-		duplicate,
-		duplicate,
-		{
-			Note:      privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
-			Nullifier: "aa",
-			Height:    3,
-			TxHash:    "A1",
-		},
-	}
-
 	normalized, changed := NormalizeFoundNotes(notes)
-
 	require.True(t, changed)
 	require.Len(t, normalized, 3)
 	require.Equal(t, "aa", normalized[0].Nullifier)
@@ -85,17 +69,8 @@ func TestSaveLocalWalletFileRoundTrip(t *testing.T) {
 	userAddress := "clair1roundtrip"
 	dbPath := WalletFilePath(tempDir, userAddress)
 
-	original := &LocalWalletData{
-		LastHeight: 23,
-		Notes: []FoundNote{
-			{
-				Note:      privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
-				Nullifier: "aa",
-				TxHash:    "ABCD",
-				Height:    23,
-			},
-		},
-	}
+	legacyNote, txRes := newScanServiceDepositTx(t, []byte("wallet-roundtrip"), big.NewInt(9), "uclair", 23)
+	original := &LocalWalletData{LastHeight: 23, Notes: []SecretFoundNote{mustSecretFoundNoteFromLegacy(t, BuildFoundNote(legacyNote, txRes))}}
 
 	require.NoError(t, os.WriteFile(dbPath, []byte("old"), 0o644))
 	require.NoError(t, os.Chmod(dbPath, 0o644))
@@ -108,6 +83,45 @@ func TestSaveLocalWalletFileRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(23), result.Wallet.LastHeight)
 	require.Len(t, result.Wallet.Notes, 1)
-	require.Equal(t, "aa", result.Wallet.Notes[0].Nullifier)
-	require.Equal(t, "9", result.Wallet.Notes[0].Note.Amount.String())
+	require.Equal(t, original.Notes[0].Nullifier, result.Wallet.Notes[0].Nullifier)
+	require.Equal(t, uint64(9), result.Wallet.Notes[0].Note.Amount)
+}
+
+func TestLoadLegacyWalletDecodesDirectlyToFixedNote(t *testing.T) {
+	tempDir := t.TempDir()
+	address := "clair1legacywallet"
+	legacyNote, txRes := newScanServiceDepositTx(t, []byte("legacy-wallet"), big.NewInt(21), "uclair", 31)
+	legacy := struct {
+		LastHeight int64       `json:"last_height"`
+		Notes      []FoundNote `json:"notes"`
+	}{LastHeight: 31, Notes: []FoundNote{BuildFoundNote(legacyNote, txRes)}}
+	encoded, err := json.Marshal(legacy)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(WalletFilePath(tempDir, address), encoded, 0o600))
+
+	loaded, err := LoadLocalWalletFile(tempDir, address)
+	require.NoError(t, err)
+	require.Empty(t, loaded.CorruptBackupPath)
+	require.Len(t, loaded.Wallet.Notes, 1)
+	require.Equal(t, uint64(21), loaded.Wallet.Notes[0].Note.Amount)
+	require.NoError(t, loaded.Wallet.Notes[0].Note.ValidateV1())
+}
+
+func TestWalletRejectsUnknownVersionWithoutMutation(t *testing.T) {
+	wallet := LocalWalletData{LastHeight: 123}
+	err := json.Unmarshal([]byte(`{"version":3,"notes":[]}`), &wallet)
+	require.Error(t, err)
+	require.Equal(t, int64(123), wallet.LastHeight)
+}
+
+func TestLegacyWalletRejectsMalformedDecimalFields(t *testing.T) {
+	for _, raw := range []json.RawMessage{json.RawMessage(`""`), json.RawMessage(`"0"`), json.RawMessage(`null`), json.RawMessage(`-1`), json.RawMessage(`1e2`), nil} {
+		_, err := legacyAmount(raw)
+		require.Error(t, err)
+		_, err = legacyFieldDecimal(raw)
+		require.Error(t, err)
+	}
+	amount, err := legacyAmount(json.RawMessage(`0`))
+	require.NoError(t, err)
+	require.Zero(t, amount)
 }

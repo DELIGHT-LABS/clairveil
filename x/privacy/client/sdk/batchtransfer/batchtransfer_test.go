@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	cryptoeddsa "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	"github.com/stretchr/testify/require"
 
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -137,10 +137,12 @@ func TestPreparedPayloadMutationExpirySignatureAndFileMode(t *testing.T) {
 	require.ErrorContains(t, ValidatePreparedBatchTransferPayloadMetadataAt(&mutated, time.Unix(payload.ExpiresAtUnix-1, 0)), "hash")
 	canonical, err := privacytypes.CanonicalMsgBatchTransferPayloadBytesV1(payload.effectMessage(nil, ""))
 	require.NoError(t, err)
-	request := signingRequest(payload, canonical)
-	request.OrderedOutputs[0].Amount = new(big.Int).Add(request.OrderedOutputs[0].Amount, big.NewInt(1))
+	request, err := signingRequest(payload, canonical)
+	require.NoError(t, err)
+	request.OrderedOutputs[0].Amount++
 	require.ErrorContains(t, ValidateBatchTransferSigningRequest(request), "commitment recomputation")
-	request = signingRequest(payload, canonical)
+	request, err = signingRequest(payload, canonical)
+	require.NoError(t, err)
 	request.ExpectedIntent = nil
 	require.ErrorContains(t, ValidateBatchTransferSigningRequest(request), "expected intent")
 	path := filepath.Join(t.TempDir(), "prepared.json")
@@ -179,25 +181,25 @@ func TestBatchStructuredSigningBoundaryRejectsGlobalSecretReuseBeforeRelease(t *
 		{
 			name: "input_randomness_to_output_randomness",
 			mutate: func(p *PreparedBatchTransfer) {
-				p.Outputs[0].Note.Randomness = new(big.Int).Set(p.Inputs[0].Note.Randomness)
+				p.Outputs[0].Note.Randomness = p.Inputs[0].Note.Randomness
 			},
 		},
 		{
 			name: "input_randomness_to_output_full_blinding",
 			mutate: func(p *PreparedBatchTransfer) {
-				p.Outputs[0].FullDisclosureBlinding = new(big.Int).Set(p.Inputs[0].Note.Randomness)
+				p.Outputs[0].FullDisclosureBlinding = p.Inputs[0].Note.Randomness
 			},
 		},
 		{
 			name: "output_randomness_to_later_full_blinding",
 			mutate: func(p *PreparedBatchTransfer) {
-				p.Outputs[1].FullDisclosureBlinding = new(big.Int).Set(p.Outputs[0].Note.Randomness)
+				p.Outputs[1].FullDisclosureBlinding = p.Outputs[0].Note.Randomness
 			},
 		},
 		{
 			name: "active_user_blinding_to_later_output_randomness",
 			mutate: func(p *PreparedBatchTransfer) {
-				p.Outputs[1].Note.Randomness = new(big.Int).Set(p.Outputs[0].UserDisclosureBlinding)
+				p.Outputs[1].Note.Randomness = p.Outputs[0].UserDisclosureBlinding
 			},
 		},
 	}
@@ -219,26 +221,6 @@ func TestBatchStructuredSigningBoundaryRejectsGlobalSecretReuseBeforeRelease(t *
 			require.Zero(t, signer.calls, "privacy-leaking intent must be rejected before signature release")
 		})
 	}
-}
-
-func TestBatchGlobalSecretReuseRejectsNonCanonicalRandomnessAlias(t *testing.T) {
-	spend := testKey(t, 17)
-	view := testKey(t, 19)
-	canonicalNote := testNote(t, spend, view, 10, 7)
-	aliasNote := canonicalNote
-	aliasNote.Randomness = new(big.Int).Add(new(big.Int).Set(canonicalNote.Randomness), fr.Modulus())
-	require.Equal(t, canonicalNote.ComputeCommitment(), aliasNote.ComputeCommitment(), "the circuit hash reduces both values to the same field element")
-
-	err := validateBatchTransferGlobalSecretReuse(
-		[]*big.Int{canonicalNote.Randomness},
-		[]batchTransferOutputSecrets{{
-			Randomness:             aliasNote.Randomness,
-			UserDisclosureBlinding: new(big.Int),
-			FullDisclosureBlinding: big.NewInt(11),
-			PrivacyPolicy:          privacytypes.TransferPrivacyPolicyAllPrivate,
-		}},
-	)
-	require.ErrorContains(t, err, "canonical BN254 field element")
 }
 
 func TestPreparedPayloadValidationRejectsNilFieldsWithoutPanicking(t *testing.T) {
@@ -271,7 +253,7 @@ func TestPreparedPayloadValidationRejectsNilFieldsWithoutPanicking(t *testing.T)
 func TestBuildPreparedPayloadRejectsMalformedPreparedTransferWithoutPanicking(t *testing.T) {
 	payload := testPayload(t)
 	valid := &PreparedBatchTransfer{Root: payload.Root, AssetID: payload.AssetID, Inputs: payload.Inputs, Outputs: payload.Outputs}
-	input := BuildPreparedBatchTransferPayloadInput{ChainID: "clairveil-test-1", ExpiresAtUnix: time.Now().Add(time.Hour).Unix(), AuditDisclosureTargetPubKey: testKey(t, 9), DisableSelfViewDisclosure: true}
+	input := BuildPreparedBatchTransferPayloadInput{ChainID: "clairveil-test-1", ExpiresAtUnix: time.Now().Add(time.Hour).Unix(), AuditKeyID: "audit-1", AuditKeyEpoch: 1, AuditDisclosureTargetPubKey: testKey(t, 9), DisableSelfViewDisclosure: true}
 	signer := rejectingBatchSigner{}
 
 	for _, tc := range []struct {
@@ -284,7 +266,7 @@ func TestBuildPreparedPayloadRejectsMalformedPreparedTransferWithoutPanicking(t 
 		{"too_many_outputs", func(p *PreparedBatchTransfer) {
 			p.Outputs = append(p.Outputs, make([]PreparedBatchTransferOutput, 32)...)
 		}, "output count"},
-		{"nil_user_blinding", func(p *PreparedBatchTransfer) { p.Outputs[0].UserDisclosureBlinding = nil }, "user disclosure blinding"},
+		{"zero_full_blinding", func(p *PreparedBatchTransfer) { p.Outputs[0].FullDisclosureBlinding = privacycrypto.FieldValue{} }, "disclosure blinding must be non-zero"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			copy := *valid
@@ -302,7 +284,10 @@ func TestPrepareBatchTransferRejectsRootMismatch(t *testing.T) {
 	notes := []InputNote{{testNote(t, owner, view, 2, 3)}, {testNote(t, owner, view, 2, 4)}}
 	plan, err := PlanBatchTransfer(PlanBatchTransferInput{Inputs: notes, Payments: []Payment{{SpendPubKey: testKey(t, 5), ViewPubKey: testKey(t, 6), Amount: big.NewInt(4)}}, OwnerSpendPubKey: owner, OwnerViewPubKey: view, Mode: OutputModeCompact})
 	require.NoError(t, err)
-	provider := pathProvider{roots: map[string]byte{notes[0].Note.ComputeCommitment().String(): 1}}
+	commitment, err := notes[0].Note.CommitmentV1()
+	require.NoError(t, err)
+	commitmentBytes := commitment.Bytes()
+	provider := pathProvider{roots: map[string]byte{new(big.Int).SetBytes(commitmentBytes[:]).String(): 1}}
 	_, err = PrepareBatchTransfer(context.Background(), provider, plan)
 	require.ErrorIs(t, err, ErrWalletSyncRequired)
 }
@@ -323,7 +308,6 @@ func TestPrepareBatchTransferRejectsMalformedExportedPlanWithoutPanicking(t *tes
 		mutate func(*BatchTransferPlan)
 		want   string
 	}{
-		{"nil_input_asset", func(p *BatchTransferPlan) { p.Inputs[0].Note.AssetID = nil }, "asset id"},
 		{"nil_output_spend_key", func(p *BatchTransferPlan) { p.Outputs[0].SpendPubKey = nil }, "recipient keys"},
 		{"nil_output_amount", func(p *BatchTransferPlan) { p.Outputs[0].Amount = nil }, "amount is required"},
 		{"invalid_output_kind", func(p *BatchTransferPlan) { p.Outputs[0].Kind = OutputKind("invalid") }, "unsupported planned output kind"},
@@ -412,10 +396,15 @@ func pointFromBytes(b []byte) (*crypto_tedwards.PointAffine, error) {
 	_, err := p.SetBytes(b)
 	return &p, err
 }
-func testNote(t *testing.T, spend, view *crypto_tedwards.PointAffine, amount, randomness int64) privacytypes.Note {
-	sx, sy := pointCoordinates(spend)
-	vx, vy := pointCoordinates(view)
-	n := privacytypes.Note{ReceiverSpendPubKeyX: sx, ReceiverSpendPubKeyY: sy, ReceiverViewPubKeyX: vx, ReceiverViewPubKeyY: vy, Amount: big.NewInt(amount), AssetID: privacytypes.ComputeAssetIDV1("uclair"), Randomness: big.NewInt(randomness)}
-	require.NoError(t, n.ValidateV1())
-	return n
+func testNote(t *testing.T, spend, view *crypto_tedwards.PointAffine, amount, randomness int64) privacytypes.SecretNoteV1 {
+	t.Helper()
+	sx, sy, err := privacycrypto.PublicPointFieldValues(*spend)
+	require.NoError(t, err)
+	vx, vy, err := privacycrypto.PublicPointFieldValues(*view)
+	require.NoError(t, err)
+	asset := privacytypes.ComputeSecretAssetIDV1("uclair")
+	r := privacycrypto.FieldValueFromUint64(uint64(randomness))
+	n, err := privacytypes.NewSecretNoteV1(sx, sy, vx, vy, uint64(amount), asset, r, "")
+	require.NoError(t, err)
+	return *n
 }

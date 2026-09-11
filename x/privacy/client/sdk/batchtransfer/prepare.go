@@ -3,6 +3,7 @@ package batchtransfer
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -26,11 +27,12 @@ func PrepareBatchTransfer(ctx context.Context, provider MerklePathProvider, plan
 	}
 	prepared := &PreparedBatchTransfer{Inputs: make([]PreparedBatchTransferInput, len(plan.Inputs)), Outputs: make([]PreparedBatchTransferOutput, len(plan.Outputs))}
 	for i, input := range plan.Inputs {
-		commitment, err := privacyfield.CanonicalBytesFromBigInt(input.Note.ComputeCommitment())
+		commitmentValue, err := input.Note.CommitmentV1()
 		if err != nil {
 			return nil, err
 		}
-		path, err := provider.LookupMerklePath(ctx, hex.EncodeToString(commitment))
+		commitment := commitmentValue.Bytes()
+		path, err := provider.LookupMerklePath(ctx, hex.EncodeToString(commitment[:]))
 		if err != nil {
 			return nil, fmt.Errorf("input %d merkle path lookup failed: %w", i, err)
 		}
@@ -50,13 +52,15 @@ func PrepareBatchTransfer(ctx context.Context, provider MerklePathProvider, plan
 				return nil, fmt.Errorf("input %d merkle helper must contain only bits", i)
 			}
 		}
-		nullifier, err := privacyfield.CanonicalBytesFromBigInt(input.Note.ComputeNullifier())
+		nullifierValue, err := input.Note.NullifierV1()
 		if err != nil {
 			return nil, err
 		}
-		prepared.Inputs[i] = PreparedBatchTransferInput{input.Note, append([]string(nil), path.Path...), append([]uint32(nil), path.PathHelper...), nullifier}
+		nullifier := nullifierValue.Bytes()
+		prepared.Inputs[i] = PreparedBatchTransferInput{input.Note, append([]string(nil), path.Path...), append([]uint32(nil), path.PathHelper...), nullifier[:]}
 		if prepared.AssetID == nil {
-			prepared.AssetID = new(big.Int).Set(input.Note.AssetID)
+			assetBytes := input.Note.AssetID.Bytes()
+			prepared.AssetID = new(big.Int).SetBytes(assetBytes[:])
 		}
 	}
 	nullifiers := make([][]byte, len(prepared.Inputs))
@@ -68,32 +72,40 @@ func PrepareBatchTransfer(ctx context.Context, provider MerklePathProvider, plan
 	}
 
 	commitments := make([][]byte, len(plan.Outputs))
-	usedSecrets := make(map[string]struct{}, len(plan.Outputs)*3+len(plan.Inputs))
+	usedSecrets := make([]privacycrypto.FieldValue, 0, len(plan.Outputs)*3+len(plan.Inputs))
 	for _, input := range plan.Inputs {
-		usedSecrets[input.Note.Randomness.String()] = struct{}{}
+		usedSecrets = append(usedSecrets, input.Note.Randomness)
 	}
 	for i, output := range plan.Outputs {
-		xs, ys := pointCoordinates(output.SpendPubKey)
-		xv, yv := pointCoordinates(output.ViewPubKey)
-		r, err := freshSecret(usedSecrets)
+		xs, ys, err := privacycrypto.PublicPointFieldValues(*output.SpendPubKey)
 		if err != nil {
 			return nil, err
 		}
-		note := privacytypes.Note{ReceiverSpendPubKeyX: xs, ReceiverSpendPubKeyY: ys, ReceiverViewPubKeyX: xv, ReceiverViewPubKeyY: yv, Amount: new(big.Int).Set(output.Amount), AssetID: new(big.Int).Set(prepared.AssetID), Randomness: r, Memo: string(output.Kind)}
+		xv, yv, err := privacycrypto.PublicPointFieldValues(*output.ViewPubKey)
+		if err != nil {
+			return nil, err
+		}
+		r, err := freshSecret(&usedSecrets)
+		if err != nil {
+			return nil, err
+		}
+		note := privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: xs, ReceiverSpendPubKeyY: ys, ReceiverViewPubKeyX: xv, ReceiverViewPubKeyY: yv, Amount: output.Amount.Uint64(), AssetID: plan.Inputs[0].Note.AssetID, Randomness: r, Memo: string(output.Kind)}
 		if err := note.ValidateV1(); err != nil {
 			return nil, fmt.Errorf("output %d NoteV1: %w", i, err)
 		}
-		commitments[i], err = privacyfield.CanonicalBytesFromBigInt(note.ComputeCommitment())
+		commitmentValue, err := note.CommitmentV1()
+		commitmentRaw := commitmentValue.Bytes()
+		commitments[i] = append([]byte(nil), commitmentRaw[:]...)
 		if err != nil {
 			return nil, err
 		}
-		full, err := freshSecret(usedSecrets)
+		full, err := freshSecret(&usedSecrets)
 		if err != nil {
 			return nil, err
 		}
-		user := big.NewInt(0)
+		user := privacycrypto.FieldValue{}
 		if output.PrivacyPolicy != 0 {
-			user, err = freshSecret(usedSecrets)
+			user, err = freshSecret(&usedSecrets)
 			if err != nil {
 				return nil, err
 			}
@@ -126,18 +138,23 @@ func validateBatchTransferPlanForPreparation(plan *BatchTransferPlan) error {
 		if err := note.ValidateV1(); err != nil {
 			return fmt.Errorf("invalid input NoteV1 %d: %w", i, err)
 		}
-		if i > 0 && !sameOwner(plan.Inputs[0].Note, note) {
+		if i > 0 && !sameSecretOwner(plan.Inputs[0].Note, note) {
 			return fmt.Errorf("input %d does not belong to the common owner", i)
 		}
-		if i > 0 && plan.Inputs[0].Note.AssetID.Cmp(note.AssetID) != 0 {
+		if i > 0 && !plan.Inputs[0].Note.AssetID.Equal(note.AssetID) {
 			return fmt.Errorf("input asset mismatch at index %d", i)
 		}
-		nullifier := note.ComputeNullifier().String()
+		nullifierValue, err := note.NullifierV1()
+		if err != nil {
+			return err
+		}
+		nullifierBytes := nullifierValue.Bytes()
+		nullifier := string(nullifierBytes[:])
 		if _, duplicate := seenNullifiers[nullifier]; duplicate {
 			return fmt.Errorf("duplicate input nullifier at index %d", i)
 		}
 		seenNullifiers[nullifier] = struct{}{}
-		inputTotal.Add(inputTotal, note.Amount)
+		inputTotal.Add(inputTotal, new(big.Int).SetUint64(note.Amount))
 	}
 
 	ownerSpend := pointBytesFromNote(plan.Inputs[0].Note, true)
@@ -225,17 +242,21 @@ func validateBatchTransferPlanForPreparation(plan *BatchTransferPlan) error {
 	return nil
 }
 
-func freshSecret(used map[string]struct{}) (*big.Int, error) {
+func freshSecret(used *[]privacycrypto.FieldValue) (privacycrypto.FieldValue, error) {
 	for {
-		value, err := privacycrypto.GenerateNonZeroRandomness()
+		value, err := privacycrypto.SampleNonzeroFieldValue(rand.Reader)
 		if err != nil {
-			return nil, err
+			return privacycrypto.FieldValue{}, err
 		}
-		key := value.String()
-		if _, exists := used[key]; exists {
+		duplicate := false
+		for _, previous := range *used {
+			equal := value.Equal(previous)
+			duplicate = equal || duplicate
+		}
+		if duplicate {
 			continue
 		}
-		used[key] = struct{}{}
+		*used = append(*used, value)
 		return value, nil
 	}
 }
@@ -258,4 +279,8 @@ func pointFromCoordinates(x, y *big.Int) (*crypto_tedwards.PointAffine, error) {
 		return nil, err
 	}
 	return &p, nil
+}
+
+func sameSecretOwner(left, right privacytypes.SecretNoteV1) bool {
+	return left.ReceiverSpendPubKeyX.Equal(right.ReceiverSpendPubKeyX) && left.ReceiverSpendPubKeyY.Equal(right.ReceiverSpendPubKeyY) && left.ReceiverViewPubKeyX.Equal(right.ReceiverViewPubKeyX) && left.ReceiverViewPubKeyY.Equal(right.ReceiverViewPubKeyY)
 }

@@ -10,6 +10,8 @@ import (
 
 	privacydisclosure "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/disclosure"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
+	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -61,7 +63,7 @@ func TestBuildUserDisclosureDataEncryptedPayloadDecrypts(t *testing.T) {
 	require.NotNil(t, data)
 	require.NotEqual(t, string(data.PayloadJSON), string(data.CipherText))
 
-	payload, err := privacydisclosure.DecryptPayload(data.CipherText, disclosureScalar)
+	payload, err := privacydisclosure.DecryptPayload(data.CipherText, testSecretScalar(t, disclosureScalar))
 	require.NoError(t, err)
 	require.Equal(t, data.Payload, *payload)
 
@@ -82,7 +84,7 @@ func TestBuildAuditDisclosureDataEncryptedPayloadDecrypts(t *testing.T) {
 	require.NotEmpty(t, data.Payload.ToShieldedAddress)
 	require.Empty(t, data.Payload.AssetDenom)
 
-	payload, err := privacydisclosure.DecryptPayload(data.CipherText, auditScalar)
+	payload, err := privacydisclosure.DecryptPayload(data.CipherText, testSecretScalar(t, auditScalar))
 	require.NoError(t, err)
 	require.Equal(t, data.Payload, *payload)
 
@@ -103,7 +105,7 @@ func TestBuildSelfViewDisclosureDataEncryptedPayloadDecrypts(t *testing.T) {
 	require.NotEmpty(t, data.Payload.ToShieldedAddress)
 	require.Empty(t, data.Payload.AssetDenom)
 
-	payload, err := privacydisclosure.DecryptPayload(data.CipherText, selfViewScalar)
+	payload, err := privacydisclosure.DecryptPayload(data.CipherText, testSecretScalar(t, selfViewScalar))
 	require.NoError(t, err)
 	require.Equal(t, data.Payload, *payload)
 
@@ -191,10 +193,10 @@ func testDisclosureBuildInput(t *testing.T) DisclosureBuildInput {
 	return DisclosureBuildInput{
 		OutputCommitment:       commitmentBytes,
 		TransferDenom:          "uclair",
-		FromNote:               fromNote,
-		RecipientNote:          recipientNote,
-		UserDisclosureBlinding: big.NewInt(303),
-		FullDisclosureBlinding: big.NewInt(307),
+		FromNote:               testFixedNote(fromNote),
+		RecipientNote:          testFixedNote(recipientNote),
+		UserDisclosureBlinding: privacycrypto.FieldValueFromUint64(303),
+		FullDisclosureBlinding: privacycrypto.FieldValueFromUint64(307),
 	}
 }
 
@@ -216,4 +218,69 @@ func pointCoordinate(point *crypto_tedwards.PointAffine, x bool) *big.Int {
 	}
 	point.Y.BigInt(value)
 	return value
+}
+
+func testSecretScalar(t *testing.T, scalar *big.Int) privacycrypto.SecretScalar {
+	t.Helper()
+	raw := scalar.FillBytes(make([]byte, 32))
+	secret, err := privacycrypto.ImportNonzeroScalarBE32(raw)
+	require.NoError(t, err)
+	return secret
+}
+
+func testSecretFoundNote(t *testing.T, note privacytypes.Note) privacyscan.SecretFoundNote {
+	t.Helper()
+	encoded, err := privacytypes.MarshalNotePlaintextV1(&note)
+	require.NoError(t, err)
+	secret, err := privacytypes.UnmarshalSecretNotePlaintextV1(encoded)
+	require.NoError(t, err)
+	commitment, err := secret.CommitmentV1()
+	require.NoError(t, err)
+	nullifier, err := secret.NullifierV1()
+	require.NoError(t, err)
+	commitmentBytes, nullifierBytes := commitment.Bytes(), nullifier.Bytes()
+	return privacyscan.SecretFoundNote{Note: *secret, Commitment: hex.EncodeToString(commitmentBytes[:]), Nullifier: hex.EncodeToString(nullifierBytes[:])}
+}
+
+func secretCommitmentHex(t *testing.T, note privacytypes.SecretNoteV1) string {
+	t.Helper()
+	commitment, err := note.CommitmentV1()
+	require.NoError(t, err)
+	raw := commitment.Bytes()
+	return hex.EncodeToString(raw[:])
+}
+
+func testPlannerSecretFoundNote(amount int64, denom, nullifier string, height int64) privacyscan.SecretFoundNote {
+	return privacyscan.SecretFoundNote{Note: privacytypes.SecretNoteV1{Amount: uint64(amount), AssetID: privacytypes.ComputeSecretAssetIDV1(denom), Randomness: privacycrypto.FieldValueFromUint64(uint64(amount) + 1000)}, Nullifier: nullifier, Height: height}
+}
+
+func testSecretInputs(t *testing.T, inputs [2]privacyscan.FoundNote) [2]privacyscan.SecretFoundNote {
+	return [2]privacyscan.SecretFoundNote{mustSecretInput(t, inputs[0]), mustSecretInput(t, inputs[1])}
+}
+func mustSecretInput(t *testing.T, found privacyscan.FoundNote) privacyscan.SecretFoundNote {
+	field := func(value *big.Int) privacycrypto.FieldValue {
+		if value == nil {
+			return privacycrypto.FieldValueFromUint64(0)
+		}
+		raw := value.FillBytes(make([]byte, 32))
+		result, err := privacycrypto.ParseFieldValueBE32(raw)
+		require.NoError(t, err)
+		return result
+	}
+	amount := uint64(0)
+	if found.Note.Amount != nil {
+		amount = found.Note.Amount.Uint64()
+	}
+	secret := privacyscan.SecretFoundNote{Note: privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: field(found.Note.ReceiverSpendPubKeyX), ReceiverSpendPubKeyY: field(found.Note.ReceiverSpendPubKeyY), ReceiverViewPubKeyX: field(found.Note.ReceiverViewPubKeyX), ReceiverViewPubKeyY: field(found.Note.ReceiverViewPubKeyY), Amount: amount, AssetID: field(found.Note.AssetID), Randomness: field(found.Note.Randomness), Memo: found.Note.Memo}}
+	secret.IsSpent, secret.TxHash, secret.Height, secret.GlobalSequence, secret.OutputIndex, secret.AssetDenom = found.IsSpent, found.TxHash, found.Height, found.GlobalSequence, found.OutputIndex, found.AssetDenom
+	secret.Nullifier, secret.Commitment = found.Nullifier, found.Commitment
+	return secret
+}
+
+func testSecretFoundNotes(t *testing.T, notes []privacyscan.FoundNote) []privacyscan.SecretFoundNote {
+	converted := make([]privacyscan.SecretFoundNote, len(notes))
+	for i := range notes {
+		converted[i] = mustSecretInput(t, notes[i])
+	}
+	return converted
 }

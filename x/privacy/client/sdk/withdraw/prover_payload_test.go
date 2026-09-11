@@ -155,7 +155,7 @@ func testBuildPreparedWithdrawProverPayloadDeps(
 	require.NoError(t, err)
 
 	source := &stubExactMatchNoteSource{
-		responses: [][]privacyscan.FoundNote{{selectedNote}},
+		responses: [][]privacyscan.SecretFoundNote{{selectedNote}},
 	}
 	planner := &stubExactMatchAutoPlanner{}
 	merklePaths := &stubMerklePathProvider{

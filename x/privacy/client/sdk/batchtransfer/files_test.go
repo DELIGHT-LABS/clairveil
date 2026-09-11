@@ -83,7 +83,7 @@ func TestPreparedBatchTransferFileDecodeIsStrict(t *testing.T) {
 
 func TestReadPreparedBatchTransferDetectsPayloadMutationAtValidation(t *testing.T) {
 	payload := testPayload(t)
-	payload.Outputs[0].Note.Amount.Add(payload.Outputs[0].Note.Amount, payload.Outputs[0].Note.Amount)
+	payload.Outputs[0].Note.Amount *= 2
 	path := filepath.Join(t.TempDir(), "mutated.json")
 	require.NoError(t, WritePreparedBatchTransferPayload(path, payload))
 

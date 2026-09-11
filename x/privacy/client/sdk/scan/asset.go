@@ -3,8 +3,6 @@ package scan
 import (
 	"context"
 	"fmt"
-
-	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 )
 
 type AssetDenomResolver interface {
@@ -13,14 +11,12 @@ type AssetDenomResolver interface {
 
 // RestoreFoundNoteDenom resolves display metadata through AssetRegistryV1
 // without changing any NoteV1 field used by its commitment.
-func RestoreFoundNoteDenom(ctx context.Context, resolver AssetDenomResolver, note *FoundNote) error {
+func RestoreFoundNoteDenom(ctx context.Context, resolver AssetDenomResolver, note *SecretFoundNote) error {
 	if resolver == nil || note == nil {
 		return fmt.Errorf("asset denom resolver and found note are required")
 	}
-	assetID, err := privacyfield.CanonicalBytesFromBigInt(note.Note.AssetID)
-	if err != nil {
-		return err
-	}
+	asset := note.Note.AssetID.Bytes()
+	assetID := asset[:]
 	denom, err := resolver.AssetDenomByID(ctx, assetID)
 	if err != nil {
 		return err

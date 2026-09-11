@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
 )
@@ -24,14 +25,18 @@ func TestPreparedDepositProverPayloadRoundTripPreservesCircuitWitness(t *testing
 
 	reconstructed, err := noteFromPreparedDepositProverPayload(*payload)
 	require.NoError(t, err)
-	require.Equal(t, note.ReceiverSpendPubKeyX, reconstructed.ReceiverSpendPubKeyX)
-	require.Equal(t, note.ReceiverSpendPubKeyY, reconstructed.ReceiverSpendPubKeyY)
-	require.Equal(t, note.ReceiverViewPubKeyX, reconstructed.ReceiverViewPubKeyX)
-	require.Equal(t, note.ReceiverViewPubKeyY, reconstructed.ReceiverViewPubKeyY)
+	require.True(t, note.ReceiverSpendPubKeyX.Equal(reconstructed.ReceiverSpendPubKeyX))
+	require.True(t, note.ReceiverSpendPubKeyY.Equal(reconstructed.ReceiverSpendPubKeyY))
+	require.True(t, note.ReceiverViewPubKeyX.Equal(reconstructed.ReceiverViewPubKeyX))
+	require.True(t, note.ReceiverViewPubKeyY.Equal(reconstructed.ReceiverViewPubKeyY))
 	require.Equal(t, note.Amount, reconstructed.Amount)
-	require.Equal(t, note.AssetID, reconstructed.AssetID)
-	require.Equal(t, note.Randomness, reconstructed.Randomness)
-	require.Equal(t, note.ComputeCommitment(), reconstructed.ComputeCommitment())
+	require.True(t, note.AssetID.Equal(reconstructed.AssetID))
+	require.True(t, note.Randomness.Equal(reconstructed.Randomness))
+	commitment, err := note.CommitmentV1()
+	require.NoError(t, err)
+	reconstructedCommitment, err := reconstructed.CommitmentV1()
+	require.NoError(t, err)
+	require.True(t, commitment.Equal(reconstructedCommitment))
 	require.Empty(t, reconstructed.Memo)
 }
 
@@ -48,12 +53,10 @@ func TestPreparedDepositProverPayloadPreservesZeroAmountAndCanonicalEncodings(t 
 	require.Equal(t, hex.EncodeToString(spendBytes[:]), payload.ReceiverSpendPubKeyHex)
 	require.Equal(t, hex.EncodeToString(viewBytes[:]), payload.ReceiverViewPubKeyHex)
 
-	assetBytes := make([]byte, privacyfield.ByteSize)
-	note.AssetID.FillBytes(assetBytes)
-	randomnessBytes := make([]byte, privacyfield.ByteSize)
-	note.Randomness.FillBytes(randomnessBytes)
-	require.Equal(t, hex.EncodeToString(assetBytes), payload.AssetIDHex)
-	require.Equal(t, hex.EncodeToString(randomnessBytes), payload.RandomnessHex)
+	assetBytes := note.AssetID.Bytes()
+	randomnessBytes := note.Randomness.Bytes()
+	require.Equal(t, hex.EncodeToString(assetBytes[:]), payload.AssetIDHex)
+	require.Equal(t, hex.EncodeToString(randomnessBytes[:]), payload.RandomnessHex)
 }
 
 func TestValidatePreparedDepositProverPayloadRejectsInvalidWitnesses(t *testing.T) {
@@ -135,19 +138,17 @@ func TestValidatePreparedDepositProofRejectsInvalidVersionsBindingsAndProofs(t *
 	}
 }
 
-func testDepositNote(t testing.TB, amount int64) privacytypes.Note {
+func testDepositNote(t testing.TB, amount int64) privacytypes.SecretNoteV1 {
 	t.Helper()
 	spend := testDepositPoint(11)
 	view := testDepositPoint(13)
-	return privacytypes.Note{
-		ReceiverSpendPubKeyX: spend.X.BigInt(new(big.Int)),
-		ReceiverSpendPubKeyY: spend.Y.BigInt(new(big.Int)),
-		ReceiverViewPubKeyX:  view.X.BigInt(new(big.Int)),
-		ReceiverViewPubKeyY:  view.Y.BigInt(new(big.Int)),
-		Amount:               big.NewInt(amount),
-		AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
-		Randomness:           big.NewInt(17),
-	}
+	spendX, spendY, err := privacycrypto.PublicPointFieldValues(spend)
+	require.NoError(t, err)
+	viewX, viewY, err := privacycrypto.PublicPointFieldValues(view)
+	require.NoError(t, err)
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, uint64(amount), privacytypes.ComputeSecretAssetIDV1("uclair"), privacycrypto.FieldValueFromUint64(17), "")
+	require.NoError(t, err)
+	return *note
 }
 
 func testDepositPayload(t testing.TB) PreparedDepositProverPayload {

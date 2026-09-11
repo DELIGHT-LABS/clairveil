@@ -3,6 +3,7 @@ package provertransport
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -455,7 +456,7 @@ func testPreparedTransferPayload(
 			Creator:                        sdk.AccAddress(bytes.Repeat([]byte{0x1}, 20)).String(),
 			ChainID:                        "clairveil-test-1",
 			ExpiresAtUnix:                  2_000_000_000,
-			Inputs:                         inputs,
+			Inputs:                         [2]privacyscan.SecretFoundNote{mustSecretFoundNote(t, inputs[0]), mustSecretFoundNote(t, inputs[1])},
 			RecipientSpendPubKey:           recipientSpendPubKey,
 			RecipientViewPubKey:            recipientViewPubKey,
 			TransferAmount:                 big.NewInt(7),
@@ -489,13 +490,15 @@ func testPreparedWithdrawProverPayload(
 	selectedNote := testWithdrawFoundNote(10, "uclair", 701)
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
 	require.NoError(t, err)
-	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(selectedNote.Note.ComputeCommitment())
+	commitment, err := selectedNote.Note.CommitmentV1()
 	require.NoError(t, err)
+	commitmentBytes := commitment.Bytes()
+	commitmentHex := hex.EncodeToString(commitmentBytes[:])
 	recipient, err := sdk.AccAddressFromBech32(testBech32AddressWithByte(0x2))
 	require.NoError(t, err)
 
 	source := &withdrawNoteSource{
-		responses: [][]privacyscan.FoundNote{{selectedNote}},
+		responses: [][]privacyscan.SecretFoundNote{{selectedNote}},
 	}
 	planner := &withdrawAutoPlanner{}
 	merklePaths := &withdrawMerklePathProvider{
@@ -553,7 +556,7 @@ func testPreparedBatchTransferPayload(t testing.TB) (
 		Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair"), Randomness: big.NewInt(47),
 	}
 	plan, err := privacybatchtransfer.PlanBatchTransfer(privacybatchtransfer.PlanBatchTransferInput{
-		Inputs:           []privacybatchtransfer.InputNote{{Note: note}},
+		Inputs:           []privacybatchtransfer.InputNote{{Note: mustSecretFoundNote(t, privacyscan.FoundNote{Note: note}).Note}},
 		Payments:         []privacybatchtransfer.Payment{{SpendPubKey: testPoint(53), ViewPubKey: testPoint(59), Amount: big.NewInt(7)}},
 		OwnerSpendPubKey: ownerSpend, OwnerViewPubKey: ownerView, Mode: privacybatchtransfer.OutputModeCompact,
 	})
@@ -661,14 +664,14 @@ func (s *transferProofRunner) ProveJoinSplit(_ constraint.ConstraintSystem, _ gr
 }
 
 type withdrawNoteSource struct {
-	responses [][]privacyscan.FoundNote
+	responses [][]privacyscan.SecretFoundNote
 }
 
-func (s *withdrawNoteSource) LoadFoundNotes(_ context.Context) ([]privacyscan.FoundNote, error) {
+func (s *withdrawNoteSource) LoadFoundNotes(_ context.Context) ([]privacyscan.SecretFoundNote, error) {
 	if len(s.responses) == 0 {
 		return nil, nil
 	}
-	return append([]privacyscan.FoundNote(nil), s.responses[0]...), nil
+	return append([]privacyscan.SecretFoundNote(nil), s.responses[0]...), nil
 }
 
 type withdrawAutoPlanner struct{}
@@ -716,20 +719,22 @@ func (s *withdrawProofRunner) ProveSpend(_ constraint.ConstraintSystem, _ groth1
 	return s.proof, nil
 }
 
-func testWithdrawFoundNote(amount int64, denom string, randomness int64) privacyscan.FoundNote {
+func testWithdrawFoundNote(amount int64, denom string, randomness int64) privacyscan.SecretFoundNote {
 	spendPubKey := testPoint(31)
 	viewPubKey := testPoint(37)
-	return privacyscan.FoundNote{
-		Note: privacytypes.Note{
-			ReceiverSpendPubKeyX: pointCoordinate(spendPubKey, true),
-			ReceiverSpendPubKeyY: pointCoordinate(spendPubKey, false),
-			ReceiverViewPubKeyX:  pointCoordinate(viewPubKey, true),
-			ReceiverViewPubKeyY:  pointCoordinate(viewPubKey, false),
-			Amount:               big.NewInt(amount),
-			AssetID:              privacytypes.ComputeAssetIDV1(denom),
-			Randomness:           big.NewInt(randomness),
-		},
+	spendX, spendY, err := privacycrypto.PublicPointFieldValues(*spendPubKey)
+	if err != nil {
+		panic(err)
 	}
+	viewX, viewY, err := privacycrypto.PublicPointFieldValues(*viewPubKey)
+	if err != nil {
+		panic(err)
+	}
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, uint64(amount), privacytypes.ComputeSecretAssetIDV1(denom), privacycrypto.FieldValueFromUint64(uint64(randomness)), "")
+	if err != nil {
+		panic(err)
+	}
+	return privacyscan.SecretFoundNote{Note: *note}
 }
 
 func testPoint(value int64) *crypto_tedwards.PointAffine {
@@ -762,4 +767,18 @@ func testSignatureBytes() []byte {
 
 func testBech32AddressWithByte(b byte) string {
 	return sdk.AccAddress(bytes.Repeat([]byte{b}, 20)).String()
+}
+
+func mustSecretFoundNote(t testing.TB, found privacyscan.FoundNote) privacyscan.SecretFoundNote {
+	t.Helper()
+	plain, err := privacytypes.MarshalNotePlaintextV1(&found.Note)
+	require.NoError(t, err)
+	note, err := privacytypes.UnmarshalSecretNotePlaintextV1(plain)
+	require.NoError(t, err)
+	commitment, err := note.CommitmentV1()
+	require.NoError(t, err)
+	nullifier, err := note.NullifierV1()
+	require.NoError(t, err)
+	commitmentBytes, nullifierBytes := commitment.Bytes(), nullifier.Bytes()
+	return privacyscan.SecretFoundNote{Note: *note, Nullifier: fmt.Sprintf("%x", nullifierBytes[:]), Commitment: fmt.Sprintf("%x", commitmentBytes[:]), TxHash: found.TxHash, Height: found.Height, IsSpent: found.IsSpent}
 }

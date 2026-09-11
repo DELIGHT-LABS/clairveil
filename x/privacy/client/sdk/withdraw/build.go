@@ -19,7 +19,7 @@ type BuildWithdrawPayloadInput struct {
 }
 
 type BuildWithdrawPayloadResult struct {
-	SelectedNote privacyscan.FoundNote
+	SelectedNote privacyscan.SecretFoundNote
 	Payload      *PreparedWithdrawPayload
 }
 

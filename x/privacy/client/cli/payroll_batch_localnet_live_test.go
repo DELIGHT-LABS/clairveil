@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"io"
 	"math/big"
 	"net/http"
@@ -213,8 +214,8 @@ func runBatchLocalnetGraphStage(t *testing.T, cfg batchLocalnetConfig) {
 	payload := readBatchLocalnetPayload(t, cfg.PreparedPath)
 	require.Len(t, payload.Inputs, 3)
 	require.Len(t, payload.Outputs, 4)
-	require.Equal(t, []int64{5, 7, 9}, batchLocalnetInputAmounts(payload))
-	require.Equal(t, []int64{4, 5, 9, 3}, batchLocalnetOutputAmounts(payload))
+	require.Equal(t, []uint64{5, 7, 9}, batchLocalnetInputAmounts(payload))
+	require.Equal(t, []uint64{4, 5, 9, 3}, batchLocalnetOutputAmounts(payload))
 
 	protector := newBatchLocalnetProtector(t, cfg.ArtifactKeyPath, true)
 	operation, notes := batchLocalnetPayrollOperation(t, cfg, payload, protector, "")
@@ -358,16 +359,16 @@ func runBatchLocalnetReconcileStage(t *testing.T, cfg batchLocalnetConfig) {
 	bobKeys := batchLocalnetPrivacyKeysFor(t, live.Client, "bob")
 	auditorKeys := batchLocalnetPrivacyKeysFor(t, live.Client, "auditor")
 	owner := payload.Inputs[0].Note
-	ownerAddress, err := owner.ReceiverShieldedAddress()
+	ownerAddress, err := batchLocalnetSecretNoteAddress(owner)
 	require.NoError(t, err)
-	expectedAmounts := []int64{4, 5, 9, 3}
+	expectedAmounts := []uint64{4, 5, 9, 3}
 	observed := make([]privacyreservation.ObservedOutputEvidence, len(outputs))
 	userDisclosuresVerified := 0
 	for i, output := range outputs {
 		require.Equal(t, uint32(i), output.OutputIndex)
 		require.Equal(t, payload.MessageOutputs[i].Commitment, output.Commitment)
 		require.Equal(t, privacytypes.EventTypeBatchTransferV1, output.EventType)
-		require.Equal(t, expectedAmounts[i], payload.Outputs[i].Note.Amount.Int64())
+		require.Equal(t, expectedAmounts[i], payload.Outputs[i].Note.Amount)
 
 		recipientKeys := bobKeys
 		expectedRecipient := cfg.BobAddress
@@ -375,16 +376,20 @@ func runBatchLocalnetReconcileStage(t *testing.T, cfg batchLocalnetConfig) {
 			recipientKeys = aliceKeys
 			expectedRecipient = ownerAddress
 		}
-		found, err := privacyscan.ProcessPrivacyScanOutput(output, recipientKeys.rootSeed, recipientKeys.spendScalar, recipientKeys.viewScalar, false)
+		found, err := privacyscan.ProcessSecretPrivacyScanOutput(output, recipientKeys.rootSeed, &recipientKeys.spendScalar, &recipientKeys.viewScalar, false)
 		require.NoError(t, err)
 		require.NotNil(t, found)
 		require.Equal(t, uint32(i), found.OutputIndex)
 		require.Equal(t, hex.EncodeToString(output.Commitment), found.Commitment)
 		require.Equal(t, payload.Outputs[i].Note, found.Note)
-		require.Zero(t, found.Note.ComputeCommitment().Cmp(new(big.Int).SetBytes(output.Commitment)))
-		require.Zero(t, found.Note.AssetID.Cmp(payload.AssetID))
-		require.Equal(t, expectedAmounts[i], found.Note.Amount.Int64())
-		recipientAddress, err := found.Note.ReceiverShieldedAddress()
+		commitment, err := found.Note.CommitmentV1()
+		require.NoError(t, err)
+		expectedCommitment, err := privacycrypto.ParseFieldValueBE32(output.Commitment)
+		require.NoError(t, err)
+		require.True(t, commitment.Equal(expectedCommitment))
+		require.True(t, found.Note.AssetID.Equal(batchLocalnetPayloadAssetID(t, payload)))
+		require.Equal(t, expectedAmounts[i], found.Note.Amount)
+		recipientAddress, err := batchLocalnetSecretNoteAddress(found.Note)
 		require.NoError(t, err)
 		require.Equal(t, expectedRecipient, recipientAddress)
 
@@ -392,16 +397,16 @@ func runBatchLocalnetReconcileStage(t *testing.T, cfg batchLocalnetConfig) {
 		mismatched.ViewTag = append([]byte(nil), output.ViewTag...)
 		require.Len(t, mismatched.ViewTag, privacytypes.ViewTagLength)
 		mismatched.ViewTag[0] ^= 0xff
-		foundDespiteMismatch, err := privacyscan.ProcessPrivacyScanOutput(&mismatched, recipientKeys.rootSeed, recipientKeys.spendScalar, recipientKeys.viewScalar, false)
+		foundDespiteMismatch, err := privacyscan.ProcessSecretPrivacyScanOutput(&mismatched, recipientKeys.rootSeed, &recipientKeys.spendScalar, &recipientKeys.viewScalar, false)
 		require.NoError(t, err)
 		require.NotNil(t, foundDespiteMismatch)
 		require.Equal(t, found.Note, foundDespiteMismatch.Note)
 		require.Equal(t, found.Commitment, foundDespiteMismatch.Commitment)
 
 		disclosures := privacyscan.VerifyPrivacyScanDisclosures(output, privacyscan.DisclosureKeySet{
-			UserRecipient: bobKeys.disclosureScalar,
-			Audit:         auditorKeys.disclosureScalar,
-			SelfView:      aliceKeys.disclosureScalar,
+			UserRecipient: &bobKeys.disclosureScalar,
+			Audit:         &auditorKeys.disclosureScalar,
+			SelfView:      &aliceKeys.disclosureScalar,
 		})
 		require.False(t, disclosures.ManualReview, disclosures.ManualReviewReason)
 		require.False(t, disclosures.AuditDeliveryFailed)
@@ -533,10 +538,16 @@ func batchLocalnetPayrollOperation(t *testing.T, cfg batchLocalnetConfig, payloa
 	readBatchLocalnetJSON(t, cfg.AliceNotesPath, &wallet)
 	notes := make([]privacypayroll.TreasuryNote, len(payload.Inputs))
 	for i, input := range payload.Inputs {
-		commitment := hex.EncodeToString(input.Note.ComputeCommitment().FillBytes(make([]byte, 32)))
+		inputCommitment, err := input.Note.CommitmentV1()
+		require.NoError(t, err)
+		inputCommitmentBytes := inputCommitment.Bytes()
+		commitment := hex.EncodeToString(inputCommitmentBytes[:])
 		matched := false
 		for _, candidate := range wallet.Notes {
-			candidateCommitment := hex.EncodeToString(candidate.Note.ComputeCommitment().FillBytes(make([]byte, 32)))
+			candidateCommitmentValue, err := candidate.Note.SecretNoteV1.CommitmentV1()
+			require.NoError(t, err)
+			candidateCommitmentBytes := candidateCommitmentValue.Bytes()
+			candidateCommitment := hex.EncodeToString(candidateCommitmentBytes[:])
 			if candidate.Status == "spendable" && candidateCommitment == commitment {
 				matched = true
 				break
@@ -547,7 +558,7 @@ func batchLocalnetPayrollOperation(t *testing.T, cfg batchLocalnetConfig, payloa
 		require.NoError(t, err)
 		notes[i] = privacypayroll.TreasuryNote{
 			NoteID: fmt.Sprintf("%02d:%s", i, commitment), OwnerKeyID: "alice", NullifierLookupKey: lookup,
-			NullifierLookupKeyID: batchLocalnetLookupKeyID, Denom: "uclair", Amount: new(big.Int).Set(input.Note.Amount),
+			NullifierLookupKeyID: batchLocalnetLookupKeyID, Denom: "uclair", Amount: new(big.Int).SetUint64(input.Note.Amount),
 		}
 	}
 	items := []privacypayroll.PayrollItemInput{
@@ -571,14 +582,43 @@ func batchLocalnetPayrollOperation(t *testing.T, cfg batchLocalnetConfig, payloa
 	return operation, notes
 }
 
-type batchLocalnetNoteSource map[string]privacytypes.Note
+type batchLocalnetNoteSource map[string]privacytypes.SecretNoteV1
 
-func (s batchLocalnetNoteSource) LoadBatchInputNote(_ context.Context, noteID string) (privacytypes.Note, error) {
+func (s batchLocalnetNoteSource) LoadBatchInputNote(_ context.Context, noteID string) (privacytypes.SecretNoteV1, error) {
 	note, ok := s[noteID]
 	if !ok {
-		return privacytypes.Note{}, fmt.Errorf("note %s not found", noteID)
+		return privacytypes.SecretNoteV1{}, fmt.Errorf("note %s not found", noteID)
 	}
 	return note, nil
+}
+
+func batchLocalnetSecretNoteAddress(note privacytypes.SecretNoteV1) (string, error) {
+	spendBytes, err := privacycrypto.LegacyCompressedPointFromFieldValues(note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY)
+	if err != nil {
+		return "", err
+	}
+	spend, err := privacycrypto.DecodeCanonicalPoint(spendBytes[:])
+	if err != nil {
+		return "", err
+	}
+	viewBytes, err := privacycrypto.LegacyCompressedPointFromFieldValues(note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY)
+	if err != nil {
+		return "", err
+	}
+	view, err := privacycrypto.DecodeCanonicalPoint(viewBytes[:])
+	if err != nil {
+		return "", err
+	}
+	return privacytypes.EncodeShieldedAddressWithView(spend, view)
+}
+
+func batchLocalnetPayloadAssetID(t *testing.T, payload *privacybatchtransfer.PreparedBatchTransferPayload) privacycrypto.FieldValue {
+	t.Helper()
+	require.NotNil(t, payload)
+	require.NotNil(t, payload.AssetID)
+	asset, err := privacycrypto.ParseFieldValueBE32(payload.AssetID.FillBytes(make([]byte, 32)))
+	require.NoError(t, err)
+	return asset
 }
 
 type batchLocalnetProtector struct{ key []byte }
@@ -701,9 +741,9 @@ func (c batchLocalnetClients) Close() { _ = c.Conn.Close() }
 
 type batchLocalnetPrivacyKeys struct {
 	rootSeed         []byte
-	spendScalar      *big.Int
-	viewScalar       *big.Int
-	disclosureScalar *big.Int
+	spendScalar      privacycrypto.SecretScalar
+	viewScalar       privacycrypto.SecretScalar
+	disclosureScalar privacycrypto.SecretScalar
 }
 
 func batchLocalnetPrivacyKeysFor(t *testing.T, base client.Context, name string) batchLocalnetPrivacyKeys {
@@ -715,99 +755,79 @@ func batchLocalnetPrivacyKeysFor(t *testing.T, base client.Context, name string)
 	keyCtx := base.WithFrom(name).WithFromName(name).WithFromAddress(address)
 	spendScalar, _, rootSeed, err := getExplicitKeys(keyCtx)
 	require.NoError(t, err)
-	viewScalar, _, _ := deriveViewKeys(rootSeed)
-	disclosureScalar, _, _ := deriveDisclosureKeys(rootSeed)
+	viewScalar, _, _, deriveErr := deriveViewKeys(rootSeed)
+	require.NoError(t, deriveErr)
+	disclosureScalar, _, _, deriveErr := deriveDisclosureKeys(rootSeed)
+	require.NoError(t, deriveErr)
 	return batchLocalnetPrivacyKeys{
 		rootSeed: append([]byte(nil), rootSeed...), spendScalar: spendScalar,
 		viewScalar: viewScalar, disclosureScalar: disclosureScalar,
 	}
 }
 
-func assertBatchLocalnetFullDisclosure(t *testing.T, output *privacytypes.PrivacyScanOutputV2, plaintext *privacytypes.DisclosurePlaintextV1, owner, recipient privacytypes.Note) {
+func assertBatchLocalnetFullDisclosure(t *testing.T, output *privacytypes.PrivacyScanOutputV2, plaintext *privacytypes.SecretDisclosurePlaintextV1, owner, recipient privacytypes.SecretNoteV1) {
 	t.Helper()
 	require.NotNil(t, plaintext)
 	require.Equal(t, privacytypes.DisclosurePlaneFullV1, plaintext.Plane)
 	require.Equal(t, output.OutputIndex, plaintext.OutputIndex)
 	require.Equal(t, privacytypes.DisclosureFullMarkerV1, plaintext.Policy)
 	require.Equal(t, privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom, plaintext.DisclosedFieldBitmap)
-	assertBatchLocalnetBigInt(t, "full commitment", new(big.Int).SetBytes(output.Commitment), plaintext.Commitment)
-	assertBatchLocalnetBigInt(t, "full amount", recipient.Amount, plaintext.Amount)
-	assertBatchLocalnetBigInt(t, "full asset ID", recipient.AssetID, plaintext.AssetID)
+	commitment, err := privacycrypto.ParseFieldValueBE32(output.Commitment)
+	require.NoError(t, err)
+	require.True(t, plaintext.Commitment.Equal(commitment), "full commitment")
+	require.Equal(t, recipient.Amount, plaintext.Amount, "full amount")
+	require.True(t, recipient.AssetID.Equal(plaintext.AssetID), "full asset ID")
 	assertBatchLocalnetDisclosureIdentity(t, "full sender", owner, plaintext.SenderSpendKeyX, plaintext.SenderSpendKeyY, plaintext.SenderViewKeyX, plaintext.SenderViewKeyY)
 	assertBatchLocalnetDisclosureIdentity(t, "full recipient", recipient, plaintext.RecipientSpendKeyX, plaintext.RecipientSpendKeyY, plaintext.RecipientViewKeyX, plaintext.RecipientViewKeyY)
-	require.NotNil(t, plaintext.DisclosureBlinding)
-	require.NotZero(t, plaintext.DisclosureBlinding.Sign())
-	digest, err := privacytypes.ComputeBatchFullDisclosureDigestV1(privacytypes.BatchFullDisclosureV1Input{
-		OutputIndex: output.OutputIndex, Commitment: plaintext.Commitment, Amount: plaintext.Amount, AssetID: plaintext.AssetID,
-		SenderSpendKeyX: plaintext.SenderSpendKeyX, SenderSpendKeyY: plaintext.SenderSpendKeyY,
-		SenderViewKeyX: plaintext.SenderViewKeyX, SenderViewKeyY: plaintext.SenderViewKeyY,
-		RecipientSpendKeyX: plaintext.RecipientSpendKeyX, RecipientSpendKeyY: plaintext.RecipientSpendKeyY,
-		RecipientViewKeyX: plaintext.RecipientViewKeyX, RecipientViewKeyY: plaintext.RecipientViewKeyY,
-		FullDisclosureBlinding: plaintext.DisclosureBlinding,
-	})
+	require.False(t, plaintext.DisclosureBlinding.IsZero())
+	digest, err := privacytypes.SecretBatchFullDisclosureDigestV1(plaintext.FullDigestInputV1())
 	require.NoError(t, err)
-	require.Equal(t, output.FullDisclosureDigest, digest.FillBytes(make([]byte, 32)))
+	digestBytes := digest.Bytes()
+	require.Equal(t, output.FullDisclosureDigest, digestBytes[:])
 }
 
-func assertBatchLocalnetUserDisclosure(t *testing.T, output *privacytypes.PrivacyScanOutputV2, plaintext *privacytypes.DisclosurePlaintextV1, owner, recipient privacytypes.Note) {
+func assertBatchLocalnetUserDisclosure(t *testing.T, output *privacytypes.PrivacyScanOutputV2, plaintext *privacytypes.SecretDisclosurePlaintextV1, owner, recipient privacytypes.SecretNoteV1) {
 	t.Helper()
 	require.NotNil(t, plaintext)
 	require.Equal(t, privacytypes.DisclosurePlaneUserV1, plaintext.Plane)
 	require.Equal(t, output.OutputIndex, plaintext.OutputIndex)
 	require.Equal(t, output.UserPrivacyPolicy, plaintext.Policy)
 	require.Equal(t, output.UserPrivacyPolicy, plaintext.DisclosedFieldBitmap)
-	assertBatchLocalnetBigInt(t, "user commitment", new(big.Int).SetBytes(output.Commitment), plaintext.Commitment)
-	assertBatchLocalnetBigInt(t, "user asset ID", recipient.AssetID, plaintext.AssetID)
-	assertBatchLocalnetSelectedBigInt(t, "user amount", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0, recipient.Amount, plaintext.Amount)
+	commitment, err := privacycrypto.ParseFieldValueBE32(output.Commitment)
+	require.NoError(t, err)
+	require.True(t, plaintext.Commitment.Equal(commitment), "user commitment")
+	require.True(t, recipient.AssetID.Equal(plaintext.AssetID), "user asset ID")
+	if output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
+		require.Equal(t, recipient.Amount, plaintext.Amount, "user amount")
+	} else {
+		require.Zero(t, plaintext.Amount, "user amount")
+	}
 	assertBatchLocalnetSelectedIdentity(t, "user sender", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0, owner, plaintext.SenderSpendKeyX, plaintext.SenderSpendKeyY, plaintext.SenderViewKeyX, plaintext.SenderViewKeyY)
 	assertBatchLocalnetSelectedIdentity(t, "user recipient", output.UserPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseTo != 0, recipient, plaintext.RecipientSpendKeyX, plaintext.RecipientSpendKeyY, plaintext.RecipientViewKeyX, plaintext.RecipientViewKeyY)
-	require.NotNil(t, plaintext.DisclosureBlinding)
-	require.NotZero(t, plaintext.DisclosureBlinding.Sign())
-	digest, err := privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{
-		OutputIndex: output.OutputIndex, Commitment: plaintext.Commitment, Policy: plaintext.Policy,
-		DisclosedFieldBitmap: plaintext.DisclosedFieldBitmap, SelectedAmount: plaintext.Amount, AssetID: plaintext.AssetID,
-		SelectedFromSpendKeyX: plaintext.SenderSpendKeyX, SelectedFromSpendKeyY: plaintext.SenderSpendKeyY,
-		SelectedFromViewKeyX: plaintext.SenderViewKeyX, SelectedFromViewKeyY: plaintext.SenderViewKeyY,
-		SelectedToSpendKeyX: plaintext.RecipientSpendKeyX, SelectedToSpendKeyY: plaintext.RecipientSpendKeyY,
-		SelectedToViewKeyX: plaintext.RecipientViewKeyX, SelectedToViewKeyY: plaintext.RecipientViewKeyY,
-		UserDisclosureBlinding: plaintext.DisclosureBlinding,
-	})
+	require.False(t, plaintext.DisclosureBlinding.IsZero())
+	digest, err := privacytypes.SecretBatchUserDisclosureDigestV1(plaintext.UserDigestInputV1())
 	require.NoError(t, err)
-	require.Equal(t, output.UserDisclosureDigest, digest.FillBytes(make([]byte, 32)))
+	digestBytes := digest.Bytes()
+	require.Equal(t, output.UserDisclosureDigest, digestBytes[:])
 }
 
-func assertBatchLocalnetSelectedIdentity(t *testing.T, name string, selected bool, note privacytypes.Note, spendX, spendY, viewX, viewY *big.Int) {
+func assertBatchLocalnetSelectedIdentity(t *testing.T, name string, selected bool, note privacytypes.SecretNoteV1, spendX, spendY, viewX, viewY privacycrypto.FieldValue) {
 	t.Helper()
 	if selected {
 		assertBatchLocalnetDisclosureIdentity(t, name, note, spendX, spendY, viewX, viewY)
 		return
 	}
-	for _, field := range []*big.Int{spendX, spendY, viewX, viewY} {
-		assertBatchLocalnetBigInt(t, name, new(big.Int), field)
+	for _, field := range []privacycrypto.FieldValue{spendX, spendY, viewX, viewY} {
+		require.True(t, field.IsZero(), name)
 	}
 }
 
-func assertBatchLocalnetDisclosureIdentity(t *testing.T, name string, note privacytypes.Note, spendX, spendY, viewX, viewY *big.Int) {
+func assertBatchLocalnetDisclosureIdentity(t *testing.T, name string, note privacytypes.SecretNoteV1, spendX, spendY, viewX, viewY privacycrypto.FieldValue) {
 	t.Helper()
-	assertBatchLocalnetBigInt(t, name+" spend x", note.ReceiverSpendPubKeyX, spendX)
-	assertBatchLocalnetBigInt(t, name+" spend y", note.ReceiverSpendPubKeyY, spendY)
-	assertBatchLocalnetBigInt(t, name+" view x", note.ReceiverViewPubKeyX, viewX)
-	assertBatchLocalnetBigInt(t, name+" view y", note.ReceiverViewPubKeyY, viewY)
-}
-
-func assertBatchLocalnetSelectedBigInt(t *testing.T, name string, selected bool, want, got *big.Int) {
-	t.Helper()
-	if !selected {
-		want = new(big.Int)
-	}
-	assertBatchLocalnetBigInt(t, name, want, got)
-}
-
-func assertBatchLocalnetBigInt(t *testing.T, name string, want, got *big.Int) {
-	t.Helper()
-	require.NotNil(t, want, name+" expected")
-	require.NotNil(t, got, name+" actual")
-	require.Zero(t, want.Cmp(got), name)
+	require.True(t, note.ReceiverSpendPubKeyX.Equal(spendX), name+" spend x")
+	require.True(t, note.ReceiverSpendPubKeyY.Equal(spendY), name+" spend y")
+	require.True(t, note.ReceiverViewPubKeyX.Equal(viewX), name+" view x")
+	require.True(t, note.ReceiverViewPubKeyY.Equal(viewY), name+" view y")
 }
 
 type batchLocalnetTimeoutSender struct{ calls int }
@@ -1001,18 +1021,18 @@ func readBatchLocalnetJSON(t *testing.T, path string, value any) {
 	require.NoError(t, decoder.Decode(value))
 }
 
-func batchLocalnetInputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []int64 {
-	values := make([]int64, len(payload.Inputs))
+func batchLocalnetInputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []uint64 {
+	values := make([]uint64, len(payload.Inputs))
 	for i := range payload.Inputs {
-		values[i] = payload.Inputs[i].Note.Amount.Int64()
+		values[i] = payload.Inputs[i].Note.Amount
 	}
 	return values
 }
 
-func batchLocalnetOutputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []int64 {
-	values := make([]int64, len(payload.Outputs))
+func batchLocalnetOutputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []uint64 {
+	values := make([]uint64, len(payload.Outputs))
 	for i := range payload.Outputs {
-		values[i] = payload.Outputs[i].Note.Amount.Int64()
+		values[i] = payload.Outputs[i].Note.Amount
 	}
 	return values
 }

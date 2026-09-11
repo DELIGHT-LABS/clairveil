@@ -35,8 +35,8 @@ func TestResolveTransferRecipientDecodesShieldedBundle(t *testing.T) {
 
 func TestSelectInputsFiltersDifferentDenomZeroNote(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}), IsSpent: false},
 	}
 
 	_, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(10))
@@ -47,59 +47,59 @@ func TestSelectInputsFiltersDifferentDenomZeroNote(t *testing.T) {
 
 func TestSelectInputsUsesSameDenomPairOnly(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(4), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uatom")}), IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(4), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), IsSpent: false},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(10))
 	require.False(t, needZero)
 	require.True(t, isFinal)
 	require.Equal(t, int64(11), total.Int64())
-	require.Equal(t, 0, inputs[0].Note.AssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
-	require.Equal(t, 0, inputs[1].Note.AssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
+	require.Equal(t, 0, testSecretFieldBig(inputs[0].Note.AssetID).Cmp(privacytypes.ComputeAssetIDV1("uclair")))
+	require.Equal(t, 0, testSecretFieldBig(inputs[1].Note.AssetID).Cmp(privacytypes.ComputeAssetIDV1("uclair")))
 }
 
 func TestSelectInputsFallsBackToPositivePairWhenSingleNoteNeedsZero(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), IsSpent: false},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(8))
 	require.False(t, needZero)
 	require.True(t, isFinal)
 	require.Equal(t, int64(21), total.Int64())
-	require.Equal(t, int64(10), inputs[0].Note.Amount.Int64())
-	require.Equal(t, int64(11), inputs[1].Note.Amount.Int64())
+	require.Equal(t, int64(10), int64(inputs[0].Note.Amount))
+	require.Equal(t, int64(11), int64(inputs[1].Note.Amount))
 }
 
 func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(11), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), Nullifier: "c", Height: 3, IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), Nullifier: "a", Height: 1, IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), Nullifier: "b", Height: 2, IsSpent: false},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(12))
 	require.False(t, needZero)
 	require.True(t, isFinal)
 	require.Equal(t, int64(12), total.Int64())
-	require.Equal(t, int64(5), inputs[0].Note.Amount.Int64())
-	require.Equal(t, int64(7), inputs[1].Note.Amount.Int64())
+	require.Equal(t, int64(5), int64(inputs[0].Note.Amount))
+	require.Equal(t, int64(7), int64(inputs[1].Note.Amount))
 }
 
 func TestSelectInputsChoosesLargestMergePairWhenNoFinalPairExists(t *testing.T) {
 	notes := []FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), Nullifier: "a", Height: 1, IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), Nullifier: "b", Height: 2, IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), Nullifier: "c", Height: 3, IsSpent: false},
 	}
 
 	inputs, total, isFinal, needZero := selectInputs(notes, "uclair", big.NewInt(20))
 	require.False(t, needZero)
 	require.False(t, isFinal)
 	require.Equal(t, int64(12), total.Int64())
-	require.Equal(t, int64(3), inputs[0].Note.Amount.Int64())
-	require.Equal(t, int64(9), inputs[1].Note.Amount.Int64())
+	require.Equal(t, int64(3), int64(inputs[0].Note.Amount))
+	require.Equal(t, int64(9), int64(inputs[1].Note.Amount))
 }

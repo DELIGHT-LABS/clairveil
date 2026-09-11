@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -19,7 +20,7 @@ func TestExecuteRecursiveTransferFinishesWithFinalTransfer(t *testing.T) {
 	finalViewScalar, finalViewPubKey := testScalarAndPubKey(263)
 
 	source := &stubRecursiveTransferNoteSource{
-		responses: [][]privacyscan.FoundNote{
+		responses: [][]privacyscan.SecretFoundNote{
 			{
 				recursiveTransferFoundNote(7, "uclair", "a", 1),
 				recursiveTransferFoundNote(5, "uclair", "b", 2),
@@ -74,7 +75,7 @@ func TestExecuteRecursiveTransferPreparesDummyAndRetries(t *testing.T) {
 	finalViewScalar, finalViewPubKey := testScalarAndPubKey(281)
 
 	source := &stubRecursiveTransferNoteSource{
-		responses: [][]privacyscan.FoundNote{
+		responses: [][]privacyscan.SecretFoundNote{
 			{
 				recursiveTransferFoundNote(10, "uclair", "a", 1),
 			},
@@ -127,7 +128,7 @@ func TestExecuteRecursiveTransferMergesThenWaitsThenFinishes(t *testing.T) {
 	finalViewScalar, finalViewPubKey := testScalarAndPubKey(311)
 
 	source := &stubRecursiveTransferNoteSource{
-		responses: [][]privacyscan.FoundNote{
+		responses: [][]privacyscan.SecretFoundNote{
 			{
 				recursiveTransferFoundNote(2, "uclair", "a", 1),
 				recursiveTransferFoundNote(3, "uclair", "b", 2),
@@ -187,17 +188,17 @@ func TestExecuteRecursiveTransferMergesThenWaitsThenFinishes(t *testing.T) {
 }
 
 type stubRecursiveTransferNoteSource struct {
-	responses [][]privacyscan.FoundNote
+	responses [][]privacyscan.SecretFoundNote
 	calls     []struct{}
 }
 
-func (s *stubRecursiveTransferNoteSource) LoadFoundNotes(_ context.Context) ([]privacyscan.FoundNote, error) {
+func (s *stubRecursiveTransferNoteSource) LoadFoundNotes(_ context.Context) ([]privacyscan.SecretFoundNote, error) {
 	s.calls = append(s.calls, struct{}{})
 	index := len(s.calls) - 1
 	if index >= len(s.responses) {
 		index = len(s.responses) - 1
 	}
-	return append([]privacyscan.FoundNote(nil), s.responses[index]...), nil
+	return append([]privacyscan.SecretFoundNote(nil), s.responses[index]...), nil
 }
 
 type stubRecursiveTransferDummyPreparer struct {
@@ -263,12 +264,9 @@ func (s *stubRecursiveTransferObserver) OnTransferComplete(_ int, txHash string)
 
 func (s *stubRecursiveTransferObserver) OnWaitForBlock(_ int, _ string, _ int64) {}
 
-func recursiveTransferFoundNote(amount int64, denom string, nullifier string, height int64) privacyscan.FoundNote {
-	return privacyscan.FoundNote{
-		Note: privacytypes.Note{
-			Amount:  big.NewInt(amount),
-			AssetID: privacytypes.ComputeAssetIDV1(denom),
-		},
+func recursiveTransferFoundNote(amount int64, denom string, nullifier string, height int64) privacyscan.SecretFoundNote {
+	return privacyscan.SecretFoundNote{
+		Note:      privacytypes.SecretNoteV1{Amount: uint64(amount), AssetID: privacytypes.ComputeSecretAssetIDV1(denom), Randomness: privacycrypto.FieldValueFromUint64(uint64(amount) + 500)},
 		Nullifier: nullifier,
 		Height:    height,
 		IsSpent:   false,

@@ -149,7 +149,10 @@ func resolveDisclosurePrivateKeyHexFromCmd(cmd *cobra.Command, explicitHex strin
 		return "", err
 	}
 
-	disclosureScalar, _, _ := deriveDisclosureKeys(rootSeed)
+	disclosureScalar, _, _, err := deriveDisclosureKeys(rootSeed)
+	if err != nil {
+		return "", err
+	}
 	return scalarToFixedHex(disclosureScalar), nil
 }
 

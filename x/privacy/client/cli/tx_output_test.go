@@ -122,7 +122,9 @@ func TestShowViewingKeyOutputModes(t *testing.T) {
 	rootSeed, _, err := derivePrivacyRootSeed(clientCtx)
 	require.NoError(t, err)
 
-	viewScalar, viewPubKey, _ := deriveViewKeys(rootSeed)
+	viewScalar, viewPubKey, _, deriveErr := deriveViewKeys(rootSeed)
+
+	require.NoError(t, deriveErr)
 	expectedIncomingViewKeyHex := scalarToFixedHex(viewScalar)
 	expectedViewPublicKeyHex := encodePointHex(viewPubKey)
 

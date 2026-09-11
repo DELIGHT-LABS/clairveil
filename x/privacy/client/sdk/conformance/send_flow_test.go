@@ -117,7 +117,7 @@ func buildSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowB
 
 	userDisclosurePayload, err := privacydisclosure.DecryptPayloadHex(
 		transferRequest.Payload.UserDisclosurePayloadHex,
-		big.NewInt(referenceUserDisclosureScalar),
+		mustSecretScalar(t, big.NewInt(referenceUserDisclosureScalar)),
 	)
 	require.NoError(t, err)
 	userDisclosureVerification, err := privacydisclosure.VerifyPayload(
@@ -128,7 +128,7 @@ func buildSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowB
 
 	auditDisclosurePayload, err := privacydisclosure.DecryptPayloadHex(
 		transferRequest.Payload.AuditDisclosurePayloadHex,
-		big.NewInt(referenceAuditDisclosureScalar),
+		mustSecretScalar(t, big.NewInt(referenceAuditDisclosureScalar)),
 	)
 	require.NoError(t, err)
 	auditDisclosureVerification, err := privacydisclosure.VerifyPayload(
@@ -139,7 +139,7 @@ func buildSendCapableReferenceFlowBundle(t *testing.T) sendCapableReferenceFlowB
 
 	selfViewDisclosurePayload, err := privacydisclosure.DecryptPayloadHex(
 		transferRequest.Payload.SelfViewDisclosurePayloadHex,
-		big.NewInt(referenceSelfViewDisclosureScalar),
+		mustSecretScalar(t, big.NewInt(referenceSelfViewDisclosureScalar)),
 	)
 	require.NoError(t, err)
 	selfViewDisclosureVerification, err := privacydisclosure.VerifyPayload(

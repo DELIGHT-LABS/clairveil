@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
-	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 func TestRecursivePlannerDecisionReturnsFinalTransfer(t *testing.T) {
@@ -18,9 +17,9 @@ func TestRecursivePlannerDecisionReturnsFinalTransfer(t *testing.T) {
 
 	runtime := NewRecursivePlannerRuntime()
 	decision, err := runtime.DecideNextStep(RecursivePlannerInput{
-		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-			{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		FoundNotes: []privacyscan.SecretFoundNote{
+			testPlannerSecretFoundNote(7, "uclair", "", 0),
+			testPlannerSecretFoundNote(5, "uclair", "", 0),
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(12),
@@ -52,10 +51,10 @@ func TestRecursivePlannerDecisionReturnsSelfMerge(t *testing.T) {
 
 	runtime := NewRecursivePlannerRuntime()
 	decision, err := runtime.DecideNextStep(RecursivePlannerInput{
-		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-			{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
-			{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
+		FoundNotes: []privacyscan.SecretFoundNote{
+			testPlannerSecretFoundNote(2, "uclair", "a", 1),
+			testPlannerSecretFoundNote(3, "uclair", "b", 2),
+			testPlannerSecretFoundNote(9, "uclair", "c", 3),
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(20),
@@ -87,9 +86,9 @@ func TestRecursivePlannerDecisionRequestsDummyWhenAllowed(t *testing.T) {
 
 	runtime := NewRecursivePlannerRuntime()
 	decision, err := runtime.DecideNextStep(RecursivePlannerInput{
-		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-			{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		FoundNotes: []privacyscan.SecretFoundNote{
+			testPlannerSecretFoundNote(10, "uclair", "", 0),
+			testPlannerSecretFoundNote(0, "uatom", "", 0),
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(10),
@@ -117,9 +116,9 @@ func TestRecursivePlannerDecisionRejectsDummyWhenDisabled(t *testing.T) {
 
 	runtime := NewRecursivePlannerRuntime()
 	_, err := runtime.DecideNextStep(RecursivePlannerInput{
-		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-			{Note: privacytypes.Note{Amount: big.NewInt(0), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		FoundNotes: []privacyscan.SecretFoundNote{
+			testPlannerSecretFoundNote(10, "uclair", "", 0),
+			testPlannerSecretFoundNote(0, "uatom", "", 0),
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(10),
@@ -148,8 +147,8 @@ func TestRecursivePlannerDecisionRejectsInsufficientFundsWithSummary(t *testing.
 
 	runtime := NewRecursivePlannerRuntime()
 	_, err := runtime.DecideNextStep(RecursivePlannerInput{
-		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+		FoundNotes: []privacyscan.SecretFoundNote{
+			testPlannerSecretFoundNote(5, "uclair", "", 0),
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(10),
@@ -178,8 +177,8 @@ func TestRecursivePlannerDecisionRejectsInsufficientFundsWithoutSameDenomNotes(t
 
 	runtime := NewRecursivePlannerRuntime()
 	_, err := runtime.DecideNextStep(RecursivePlannerInput{
-		FoundNotes: []privacyscan.FoundNote{
-			{Note: privacytypes.Note{Amount: big.NewInt(5), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+		FoundNotes: []privacyscan.SecretFoundNote{
+			testPlannerSecretFoundNote(5, "uatom", "", 0),
 		},
 		TargetDenom:               "uclair",
 		TargetAmount:              big.NewInt(10),
@@ -206,10 +205,10 @@ func TestRecursivePlannerDecisionRejectsRepeatedFingerprint(t *testing.T) {
 	selfSpendScalar, selfSpendPubKey := testScalarAndPubKey(229)
 	selfViewScalar, selfViewPubKey := testScalarAndPubKey(233)
 
-	foundNotes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(2), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "a", Height: 1, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "b", Height: 2, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, Nullifier: "c", Height: 3, IsSpent: false},
+	foundNotes := []privacyscan.SecretFoundNote{
+		testPlannerSecretFoundNote(2, "uclair", "a", 1),
+		testPlannerSecretFoundNote(3, "uclair", "b", 2),
+		testPlannerSecretFoundNote(9, "uclair", "c", 3),
 	}
 
 	runtime := NewRecursivePlannerRuntime()

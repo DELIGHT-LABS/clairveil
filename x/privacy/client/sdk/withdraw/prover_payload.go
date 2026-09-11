@@ -56,7 +56,7 @@ type PreparedWithdrawProof struct {
 }
 
 type BuildPreparedWithdrawProverPayloadResult struct {
-	SelectedNote privacyscan.FoundNote
+	SelectedNote privacyscan.SecretFoundNote
 	Payload      *PreparedWithdrawProverPayload
 }
 
@@ -105,14 +105,10 @@ func BuildPreparedWithdrawProverPayload(
 	if err != nil {
 		return nil, err
 	}
-	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(selectedFoundNote.Note.AssetID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid withdraw asset id: %w", err)
-	}
-	randomnessHex, err := privacyfield.CanonicalHexFromBigInt(selectedFoundNote.Note.Randomness)
-	if err != nil {
-		return nil, fmt.Errorf("invalid withdraw note randomness: %w", err)
-	}
+	assetRaw := selectedFoundNote.Note.AssetID.Bytes()
+	assetIDHex := hex.EncodeToString(assetRaw[:])
+	randomnessRaw := selectedFoundNote.Note.Randomness.Bytes()
+	randomnessHex := hex.EncodeToString(randomnessRaw[:])
 	spendPubKeyHex, err := withdrawNotePubKeyHex(selectedFoundNote.Note, true)
 	if err != nil {
 		return nil, fmt.Errorf("invalid withdraw spend key: %w", err)
@@ -421,7 +417,7 @@ func buildSpendAssignmentFromPreparedWithdrawPayload(payload PreparedWithdrawPro
 	if err != nil {
 		return nil, err
 	}
-	randomness, err := decodeCanonicalHexBigInt(payload.NoteRandomnessHex, "note randomness")
+	randomness, err := decodeWithdrawSecretField(payload.NoteRandomnessHex, "note randomness")
 	if err != nil {
 		return nil, err
 	}
@@ -446,6 +442,32 @@ func buildSpendAssignmentFromPreparedWithdrawPayload(payload PreparedWithdrawPro
 		return nil, err
 	}
 
+	sx, sy, err := privacycrypto.PublicPointFieldValues(*spendPubKey)
+	if err != nil {
+		return nil, err
+	}
+	vx, vy, err := privacycrypto.PublicPointFieldValues(*viewPubKey)
+	if err != nil {
+		return nil, err
+	}
+	asset, err := decodeWithdrawSecretField(payload.AssetIDHex, "asset id")
+	if err != nil {
+		return nil, err
+	}
+	note := privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: sx, ReceiverSpendPubKeyY: sy, ReceiverViewPubKeyX: vx, ReceiverViewPubKeyY: vy, Amount: amount.Uint64(), AssetID: asset, Randomness: randomness}
+	if err := note.ValidateV1(); err != nil {
+		return nil, err
+	}
+	expectedNullifier, err := note.NullifierV1()
+	if err != nil {
+		return nil, err
+	}
+	expectedBytes := expectedNullifier.Bytes()
+	if new(big.Int).SetBytes(expectedBytes[:]).Cmp(nullifier) != 0 {
+		return nil, fmt.Errorf("withdraw nullifier does not match payload witness")
+	}
+	// Only after fixed-secret validation, export canonical bytes as a witness.
+	witnessRandomness := randomness.Bytes()
 	assignment := &circuit.SpendCircuit{
 		MerkleRoot:        new(big.Int).SetBytes(rootBytes),
 		ChainDomainHi:     chainDomain.Hi,
@@ -456,7 +478,7 @@ func buildSpendAssignmentFromPreparedWithdrawPayload(payload PreparedWithdrawPro
 		RecipientDigestLo: recipientDigest.Lo,
 		AssetID:           assetID,
 		Nullifier:         nullifier,
-		Randomness:        randomness,
+		Randomness:        new(big.Int).SetBytes(witnessRandomness[:]),
 	}
 	assignPubKey(&assignment.ReceiverSpendPubKey, *spendPubKey)
 	assignPubKey(&assignment.ReceiverViewPubKey, *viewPubKey)
@@ -468,25 +490,6 @@ func buildSpendAssignmentFromPreparedWithdrawPayload(payload PreparedWithdrawPro
 	for depth := 0; depth < circuit.MerkleDepth; depth++ {
 		assignment.Path[depth] = pathNodes[depth]
 		assignment.PathHelper[depth] = pathHelpers[depth]
-	}
-
-	noteCommitment := privacytypes.ComputeNoteCommitmentV1(
-		pointAffineCoordinate(spendPubKey, true),
-		pointAffineCoordinate(spendPubKey, false),
-		pointAffineCoordinate(viewPubKey, true),
-		pointAffineCoordinate(viewPubKey, false),
-		amount,
-		assetID,
-		randomness,
-	)
-	expectedNullifier := privacytypes.ComputeNoteNullifierV1(
-		noteCommitment,
-		randomness,
-		pointAffineCoordinate(spendPubKey, true),
-		pointAffineCoordinate(spendPubKey, false),
-	)
-	if expectedNullifier.Cmp(nullifier) != 0 {
-		return nil, fmt.Errorf("withdraw nullifier does not match payload witness")
 	}
 
 	return assignment, nil
@@ -571,20 +574,16 @@ func decodeOpaqueHex(value, fieldName string) ([]byte, error) {
 	return bz, nil
 }
 
-func withdrawNotePubKeyHex(note privacytypes.Note, spend bool) (string, error) {
-	var point *crypto_tedwards.PointAffine
-	var err error
+func withdrawNotePubKeyHex(note privacytypes.SecretNoteV1, spend bool) (string, error) {
+	x, y := note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY
 	if spend {
-		point, err = spendPubKeyFromNote(note)
-	} else {
-		point, err = viewPubKeyFromNote(note)
+		x, y = note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY
 	}
+	raw, err := privacycrypto.LegacyCompressedPointFromFieldValues(x, y)
 	if err != nil {
 		return "", err
 	}
-
-	pointBytes := point.Bytes()
-	return hex.EncodeToString(pointBytes[:]), nil
+	return hex.EncodeToString(raw[:]), nil
 }
 
 func pointAffineCoordinate(point *crypto_tedwards.PointAffine, x bool) *big.Int {
@@ -607,4 +606,13 @@ func bytesEqual(a, b []byte) bool {
 		}
 	}
 	return true
+}
+
+func decodeWithdrawSecretField(value, name string) (privacycrypto.FieldValue, error) {
+	raw, err := privacyfield.DecodeCanonicalHex(value, name)
+	if err != nil {
+		return privacycrypto.FieldValue{}, err
+	}
+	defer clear(raw)
+	return privacycrypto.ParseFieldValueBE32(raw)
 }

@@ -3,7 +3,6 @@ package scan
 import (
 	"bytes"
 	"fmt"
-	"math/big"
 
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -21,15 +20,15 @@ const (
 )
 
 type DisclosureKeySet struct {
-	UserRecipient *big.Int
-	Audit         *big.Int
-	SelfView      *big.Int
+	UserRecipient *privacycrypto.SecretScalar
+	Audit         *privacycrypto.SecretScalar
+	SelfView      *privacycrypto.SecretScalar
 }
 
 type DisclosurePlaneEvidence struct {
-	Status    DisclosureVerificationStatus        `json:"status"`
-	Reason    string                              `json:"reason,omitempty"`
-	Plaintext *privacytypes.DisclosurePlaintextV1 `json:"-"`
+	Status    DisclosureVerificationStatus              `json:"status"`
+	Reason    string                                    `json:"reason,omitempty"`
+	Plaintext *privacytypes.SecretDisclosurePlaintextV1 `json:"-"`
 }
 
 type PrivacyScanDisclosureEvidence struct {
@@ -104,7 +103,7 @@ func VerifyPrivacyScanDisclosures(output *privacytypes.PrivacyScanOutputV2, keys
 	return result
 }
 
-func decryptAndVerifyDisclosure(output *privacytypes.PrivacyScanOutputV2, envelope []byte, kind privacytypes.EncryptedEnvelopeKindV1, scalar *big.Int, plane privacytypes.DisclosurePlaneV1, digest []byte) DisclosurePlaneEvidence {
+func decryptAndVerifyDisclosure(output *privacytypes.PrivacyScanOutputV2, envelope []byte, kind privacytypes.EncryptedEnvelopeKindV1, scalar *privacycrypto.SecretScalar, plane privacytypes.DisclosurePlaneV1, digest []byte) DisclosurePlaneEvidence {
 	if len(envelope) == 0 {
 		return DisclosurePlaneEvidence{Status: DisclosureNotPresent}
 	}
@@ -115,7 +114,7 @@ func decryptAndVerifyDisclosure(output *privacytypes.PrivacyScanOutputV2, envelo
 	if err != nil {
 		return DisclosurePlaneEvidence{Status: DisclosureInvalid, Reason: err.Error()}
 	}
-	plaintext, err := privacycrypto.AsymDecrypt(raw, scalar)
+	plaintext, err := privacycrypto.AsymDecrypt(raw, *scalar)
 	if err != nil {
 		return DisclosurePlaneEvidence{Status: DisclosureDecryptFailed, Reason: err.Error()}
 	}
@@ -123,44 +122,34 @@ func decryptAndVerifyDisclosure(output *privacytypes.PrivacyScanOutputV2, envelo
 }
 
 func verifyDisclosurePlaintext(output *privacytypes.PrivacyScanOutputV2, encoded []byte, plane privacytypes.DisclosurePlaneV1, digest []byte) DisclosurePlaneEvidence {
-	plaintext, err := privacytypes.UnmarshalDisclosurePlaintextV1(encoded)
+	plaintextSecret, err := privacytypes.UnmarshalSecretDisclosurePlaintextV1(encoded)
 	if err != nil {
 		return DisclosurePlaneEvidence{Status: DisclosureInvalid, Reason: err.Error()}
 	}
-	commitment := new(big.Int).SetBytes(output.Commitment)
-	if plaintext.Plane != plane || plaintext.OutputIndex != output.OutputIndex || plaintext.Commitment.Cmp(commitment) != 0 {
+	commitment := plaintextSecret.Commitment.Bytes()
+	if plaintextSecret.Plane != plane || plaintextSecret.OutputIndex != output.OutputIndex || !bytes.Equal(commitment[:], output.Commitment) {
 		return DisclosurePlaneEvidence{Status: DisclosureInvalid, Reason: "disclosure index/commitment/plane mismatch"}
 	}
-	var expected *big.Int
+	var expected privacycrypto.FieldValue
 	if plane == privacytypes.DisclosurePlaneUserV1 {
-		if plaintext.Policy != output.UserPrivacyPolicy || plaintext.DisclosedFieldBitmap != output.UserPrivacyPolicy {
+		if plaintextSecret.Policy != output.UserPrivacyPolicy || plaintextSecret.DisclosedFieldBitmap != output.UserPrivacyPolicy {
 			return DisclosurePlaneEvidence{Status: DisclosureInvalid, Reason: "disclosure policy mismatch"}
 		}
-		expected, err = privacytypes.ComputeBatchUserDisclosureDigestV1(privacytypes.BatchUserDisclosureV1Input{
-			OutputIndex: plaintext.OutputIndex, Commitment: plaintext.Commitment, Policy: plaintext.Policy, DisclosedFieldBitmap: plaintext.DisclosedFieldBitmap,
-			SelectedAmount: plaintext.Amount, AssetID: plaintext.AssetID,
-			SelectedFromSpendKeyX: plaintext.SenderSpendKeyX, SelectedFromSpendKeyY: plaintext.SenderSpendKeyY, SelectedFromViewKeyX: plaintext.SenderViewKeyX, SelectedFromViewKeyY: plaintext.SenderViewKeyY,
-			SelectedToSpendKeyX: plaintext.RecipientSpendKeyX, SelectedToSpendKeyY: plaintext.RecipientSpendKeyY, SelectedToViewKeyX: plaintext.RecipientViewKeyX, SelectedToViewKeyY: plaintext.RecipientViewKeyY,
-			UserDisclosureBlinding: plaintext.DisclosureBlinding,
-		})
+		expected, err = privacytypes.SecretBatchUserDisclosureDigestV1(plaintextSecret.UserDigestInputV1())
 	} else {
-		if plaintext.Policy != privacytypes.DisclosureFullMarkerV1 || plaintext.DisclosedFieldBitmap != privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom {
+		if plaintextSecret.Policy != privacytypes.DisclosureFullMarkerV1 || plaintextSecret.DisclosedFieldBitmap != privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom {
 			return DisclosurePlaneEvidence{Status: DisclosureInvalid, Reason: "full disclosure policy mismatch"}
 		}
-		expected, err = privacytypes.ComputeBatchFullDisclosureDigestV1(privacytypes.BatchFullDisclosureV1Input{
-			OutputIndex: plaintext.OutputIndex, Commitment: plaintext.Commitment, Amount: plaintext.Amount, AssetID: plaintext.AssetID,
-			SenderSpendKeyX: plaintext.SenderSpendKeyX, SenderSpendKeyY: plaintext.SenderSpendKeyY, SenderViewKeyX: plaintext.SenderViewKeyX, SenderViewKeyY: plaintext.SenderViewKeyY,
-			RecipientSpendKeyX: plaintext.RecipientSpendKeyX, RecipientSpendKeyY: plaintext.RecipientSpendKeyY, RecipientViewKeyX: plaintext.RecipientViewKeyX, RecipientViewKeyY: plaintext.RecipientViewKeyY,
-			FullDisclosureBlinding: plaintext.DisclosureBlinding,
-		})
+		expected, err = privacytypes.SecretBatchFullDisclosureDigestV1(plaintextSecret.FullDigestInputV1())
 	}
 	if err != nil {
 		return DisclosurePlaneEvidence{Status: DisclosureInvalid, Reason: err.Error()}
 	}
-	if len(digest) != 32 || !bytes.Equal(expected.FillBytes(make([]byte, 32)), digest) {
-		return DisclosurePlaneEvidence{Status: DisclosureDigestMismatch, Reason: fmt.Sprintf("%s digest mismatch", planeName(plane)), Plaintext: plaintext}
+	expectedBytes := expected.Bytes()
+	if len(digest) != 32 || !bytes.Equal(expectedBytes[:], digest) {
+		return DisclosurePlaneEvidence{Status: DisclosureDigestMismatch, Reason: fmt.Sprintf("%s digest mismatch", planeName(plane)), Plaintext: plaintextSecret}
 	}
-	return DisclosurePlaneEvidence{Status: DisclosureVerified, Plaintext: plaintext}
+	return DisclosurePlaneEvidence{Status: DisclosureVerified, Plaintext: plaintextSecret}
 }
 
 func planeName(plane privacytypes.DisclosurePlaneV1) string {

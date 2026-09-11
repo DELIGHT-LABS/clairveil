@@ -140,8 +140,8 @@ func buildAssignment(p *PreparedBatchTransferPayload) (*circuit.BatchJoinSplit16
 		return nil, err
 	}
 	a := &circuit.BatchJoinSplit16x32{MerkleRoot: new(big.Int).SetBytes(p.Root), ChainDomainHi: chain.Hi, ChainDomainLo: chain.Lo, ExpiresAtUnix: big.NewInt(p.ExpiresAtUnix), InputCount: big.NewInt(int64(len(p.Inputs))), OutputCount: big.NewInt(int64(len(p.Outputs))), NullifierRoot: p.NullifierRoot, CommitmentRoot: p.CommitmentRoot, UserDisclosureRoot: p.UserDisclosureRoot, FullDisclosureRoot: p.FullDisclosureRoot, PayloadDigestHi: p.PayloadDigestHi, PayloadDigestLo: p.PayloadDigestLo, AssetID: p.AssetID}
-	ownerSpend, _ := pointFromCoordinates(p.Inputs[0].Note.ReceiverSpendPubKeyX, p.Inputs[0].Note.ReceiverSpendPubKeyY)
-	ownerView, _ := pointFromCoordinates(p.Inputs[0].Note.ReceiverViewPubKeyX, p.Inputs[0].Note.ReceiverViewPubKeyY)
+	ownerSpend, _ := fixedPoint(p.Inputs[0].Note.ReceiverSpendPubKeyX, p.Inputs[0].Note.ReceiverSpendPubKeyY)
+	ownerView, _ := fixedPoint(p.Inputs[0].Note.ReceiverViewPubKeyX, p.Inputs[0].Note.ReceiverViewPubKeyY)
 	assignKey(&a.OwnerSpendPubKey, ownerSpend)
 	assignKey(&a.OwnerViewPubKey, ownerView)
 	if err := assignSig(&a.OwnerSignature, p.OwnerSignature); err != nil {
@@ -159,7 +159,7 @@ func buildAssignment(p *PreparedBatchTransferPayload) (*circuit.BatchJoinSplit16
 	}
 	for i, in := range p.Inputs {
 		a.InputAmounts[i] = in.Note.Amount
-		a.InputRandomness[i] = in.Note.Randomness
+		a.InputRandomness[i] = fixedPublicBig(in.Note.Randomness)
 		for j, raw := range in.MerklePath {
 			if j >= circuit.MerkleDepth {
 				return nil, fmt.Errorf("input path exceeds circuit depth")
@@ -182,15 +182,15 @@ func buildAssignment(p *PreparedBatchTransferPayload) (*circuit.BatchJoinSplit16
 		a.FullDisclosureBlindings[i] = big.NewInt(0)
 	}
 	for i, out := range p.Outputs {
-		sp, _ := pointFromCoordinates(out.Note.ReceiverSpendPubKeyX, out.Note.ReceiverSpendPubKeyY)
-		vp, _ := pointFromCoordinates(out.Note.ReceiverViewPubKeyX, out.Note.ReceiverViewPubKeyY)
+		sp, _ := fixedPoint(out.Note.ReceiverSpendPubKeyX, out.Note.ReceiverSpendPubKeyY)
+		vp, _ := fixedPoint(out.Note.ReceiverViewPubKeyX, out.Note.ReceiverViewPubKeyY)
 		assignKey(&a.OutputSpendPubKeys[i], sp)
 		assignKey(&a.OutputViewPubKeys[i], vp)
 		a.OutputAmounts[i] = out.Note.Amount
-		a.OutputRandomness[i] = out.Note.Randomness
+		a.OutputRandomness[i] = fixedPublicBig(out.Note.Randomness)
 		a.OutputPrivacyPolicies[i] = new(big.Int).SetUint64(uint64(out.PrivacyPolicy))
-		a.UserDisclosureBlindings[i] = out.UserDisclosureBlinding
-		a.FullDisclosureBlindings[i] = out.FullDisclosureBlinding
+		a.UserDisclosureBlindings[i] = fixedPublicBig(out.UserDisclosureBlinding)
+		a.FullDisclosureBlindings[i] = fixedPublicBig(out.FullDisclosureBlinding)
 	}
 	return a, nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -48,7 +49,9 @@ func TestVerifyPrivacyScanDisclosuresMarksAuditDeliveryFailure(t *testing.T) {
 	envelope, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeAuditDisclosureV1, raw)
 	require.NoError(t, err)
 	output := &privacytypes.PrivacyScanOutputV2{AuditDisclosurePayload: envelope}
-	evidence := VerifyPrivacyScanDisclosures(output, DisclosureKeySet{Audit: big.NewInt(1)})
+	audit, err := privacycrypto.ImportNonzeroScalarBE32(append(make([]byte, 31), 1))
+	require.NoError(t, err)
+	evidence := VerifyPrivacyScanDisclosures(output, DisclosureKeySet{Audit: &audit})
 	require.Equal(t, DisclosureDecryptFailed, evidence.Audit.Status)
 	require.True(t, evidence.AuditDeliveryFailed)
 	require.True(t, evidence.ManualReview)

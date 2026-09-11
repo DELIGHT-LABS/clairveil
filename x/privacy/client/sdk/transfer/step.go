@@ -25,7 +25,7 @@ type BuildTransferStepMessageInput struct {
 	Creator              string
 	ChainID              string
 	ExpiresAtUnix        int64
-	Inputs               [2]privacyscan.FoundNote
+	Inputs               [2]privacyscan.SecretFoundNote
 	RecipientSpendPubKey *crypto_tedwards.PointAffine
 	RecipientViewPubKey  *crypto_tedwards.PointAffine
 	TransferAmount       *big.Int

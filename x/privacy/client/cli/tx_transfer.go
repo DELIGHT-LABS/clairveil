@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"io"
 	"math/big"
 	"strings"
@@ -213,7 +214,7 @@ func queryAuditDisclosureTarget(clientCtx client.Context) (*crypto_tedwards.Poin
 }
 
 type transferExecutionIdentity struct {
-	scalar      *big.Int
+	scalar      privacycrypto.SecretScalar
 	spendPubKey *crypto_tedwards.PointAffine
 	viewPubKey  *crypto_tedwards.PointAffine
 	seed        []byte
@@ -224,7 +225,10 @@ func resolveTransferExecutionIdentity(clientCtx client.Context) (*transferExecut
 	if err != nil {
 		return nil, err
 	}
-	_, viewPubKey, _ := deriveViewKeys(seed)
+	_, viewPubKey, _, err := deriveViewKeys(seed)
+	if err != nil {
+		return nil, err
+	}
 
 	return &transferExecutionIdentity{
 		scalar:      scalar,
@@ -283,7 +287,10 @@ func executeTransferFlowWithIdentity(
 		return nil, fmt.Errorf("transfer execution identity is required")
 	}
 	if !disclosure.DisableSelfViewDisclosure && disclosure.SelfViewDisclosureTargetPubKey == nil {
-		_, selfViewDisclosurePubKey, _ := deriveDisclosureKeys(identity.seed)
+		_, selfViewDisclosurePubKey, _, err := deriveDisclosureKeys(identity.seed)
+		if err != nil {
+			return nil, err
+		}
 		disclosure.SelfViewDisclosureTargetPubKey = selfViewDisclosurePubKey
 	}
 	forceRescan, err := cmd.Flags().GetBool(flagRescanWallet)
@@ -414,7 +421,7 @@ func resolveTransferRecipient(targetAddrStr string) (*crypto_tedwards.PointAffin
 }
 
 type manualTransferOwnerIntentSigner struct {
-	scalar *big.Int
+	scalar privacycrypto.SecretScalar
 	pubKey *crypto_tedwards.PointAffine
 }
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -109,17 +110,17 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 	senderRootSeed := mustDecodeHex(t, vectors.SenderRootSeed.RootSeedHex)
 	recipientRootSeed := mustDecodeHex(t, vectors.RecipientRootSeed.RootSeedHex)
 
-	senderSpendScalar, senderSpendPubKey, _ := privacyidentity.DeriveSpendKeys(senderRootSeed)
-	senderViewScalar, senderViewPubKey, _ := privacyidentity.DeriveViewKeys(senderRootSeed)
-	_, senderDisclosurePubKey, _ := privacyidentity.DeriveDisclosureKeys(senderRootSeed)
+	senderSpendScalar, senderSpendPubKey, _, _ := privacyidentity.DeriveSpendKeys(senderRootSeed)
+	senderViewScalar, senderViewPubKey, _, _ := privacyidentity.DeriveViewKeys(senderRootSeed)
+	_, senderDisclosurePubKey, _, _ := privacyidentity.DeriveDisclosureKeys(senderRootSeed)
 	senderViewPubKeyBytes := senderViewPubKey.Bytes()
 	senderDisclosurePubKeyBytes := senderDisclosurePubKey.Bytes()
 	senderShieldedAddress, err := privacytypes.EncodeShieldedAddressWithView(senderSpendPubKey, senderViewPubKey)
 	require.NoError(t, err)
 
-	_, recipientSpendPubKey, _ := privacyidentity.DeriveSpendKeys(recipientRootSeed)
-	recipientViewScalar, recipientViewPubKey, _ := privacyidentity.DeriveViewKeys(recipientRootSeed)
-	_, recipientDisclosurePubKey, _ := privacyidentity.DeriveDisclosureKeys(recipientRootSeed)
+	_, recipientSpendPubKey, _, _ := privacyidentity.DeriveSpendKeys(recipientRootSeed)
+	recipientViewScalar, recipientViewPubKey, _, _ := privacyidentity.DeriveViewKeys(recipientRootSeed)
+	_, recipientDisclosurePubKey, _, _ := privacyidentity.DeriveDisclosureKeys(recipientRootSeed)
 	recipientViewPubKeyBytes := recipientViewPubKey.Bytes()
 	recipientDisclosurePubKeyBytes := recipientDisclosurePubKey.Bytes()
 	recipientShieldedAddress, err := privacytypes.EncodeShieldedAddressWithView(recipientSpendPubKey, recipientViewPubKey)
@@ -152,8 +153,8 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 			abci.EventAttribute{Key: privacytypes.AttributeKeyCommitment, Value: vectors.Note.CommitmentHex},
 		),
 		senderRootSeed,
-		senderSpendScalar,
-		senderViewScalar,
+		&senderSpendScalar,
+		&senderViewScalar,
 	)
 	require.Len(t, depositFound, 1)
 
@@ -172,8 +173,8 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 			abci.EventAttribute{Key: privacytypes.AttributeKeyCommitment1, Value: vectors.Note.CommitmentHex},
 		),
 		senderRootSeed,
-		senderSpendScalar,
-		senderViewScalar,
+		&senderSpendScalar,
+		&senderViewScalar,
 	)
 	require.Len(t, transferFound, 1)
 
@@ -238,7 +239,7 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 					TxHash:                  depositFound[0].TxHash,
 					Height:                  depositFound[0].Height,
 					Nullifier:               depositFound[0].Nullifier,
-					Amount:                  depositFound[0].Note.Amount.String(),
+					Amount:                  strconv.FormatUint(depositFound[0].Note.Amount, 10),
 					AssetDenom:              assetDenom,
 					ReceiverShieldedAddress: receiverAddress,
 				},
@@ -248,7 +249,7 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 					TxHash:                  transferFound[0].TxHash,
 					Height:                  transferFound[0].Height,
 					Nullifier:               transferFound[0].Nullifier,
-					Amount:                  transferFound[0].Note.Amount.String(),
+					Amount:                  strconv.FormatUint(transferFound[0].Note.Amount, 10),
 					AssetDenom:              assetDenom,
 					ReceiverShieldedAddress: receiverAddress,
 				},

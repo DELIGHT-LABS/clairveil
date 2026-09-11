@@ -165,10 +165,10 @@ func rewriteDisclosureEnvelope(
 	commitmentHex, assetIDHex string,
 ) (string, string) {
 	t.Helper()
-	payload, err := privacydisclosure.DecryptPayloadHex(cipherHex, scalar)
+	payload, err := privacydisclosure.DecryptPayloadHex(cipherHex, mustSecretScalar(t, scalar))
 	if err != nil {
 		legacyCipherText := mustDecodeHex(t, cipherHex)
-		legacyPlainText, decryptErr := privacycrypto.AsymDecrypt(legacyCipherText, scalar)
+		legacyPlainText, decryptErr := privacycrypto.AsymDecrypt(legacyCipherText, mustSecretScalar(t, scalar))
 		require.NoError(t, decryptErr)
 		payload = new(privacydisclosure.Payload)
 		require.NoError(t, json.Unmarshal(legacyPlainText, payload))

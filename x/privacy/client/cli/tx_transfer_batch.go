@@ -17,7 +17,6 @@ import (
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
-	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacyprovider "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/provider"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -238,7 +237,10 @@ func buildTransferBatchMessages(
 		return nil, fmt.Errorf("at least one transfer amount is required")
 	}
 	if !disclosure.DisableSelfViewDisclosure && disclosure.SelfViewDisclosureTargetPubKey == nil {
-		_, selfViewDisclosurePubKey, _ := deriveDisclosureKeys(identity.seed)
+		_, selfViewDisclosurePubKey, _, err := deriveDisclosureKeys(identity.seed)
+		if err != nil {
+			return nil, err
+		}
 		disclosure.SelfViewDisclosureTargetPubKey = selfViewDisclosurePubKey
 	}
 
@@ -302,23 +304,12 @@ func transferBatchFoundNoteKey(note FoundNote) string {
 	if trimmed := strings.ToLower(strings.TrimSpace(note.Nullifier)); trimmed != "" {
 		return "nullifier:" + trimmed
 	}
-	if transferBatchNoteCanComputeCommitment(note.Note) {
-		commitment := note.Note.ComputeCommitment()
-		if commitmentHex, err := privacyfield.CanonicalHexFromBigInt(commitment); err == nil {
-			return "commitment:" + commitmentHex
-		}
+	if commitment, err := note.Note.CommitmentV1(); err == nil {
+		raw := commitment.Bytes()
+		return fmt.Sprintf("commitment:%x", raw[:])
 	}
-	return fmt.Sprintf("fallback:%d:%s:%s", note.Height, strings.ToLower(strings.TrimSpace(note.TxHash)), note.Note.Amount.String())
-}
 
-func transferBatchNoteCanComputeCommitment(note privacytypes.Note) bool {
-	return note.ReceiverSpendPubKeyX != nil &&
-		note.ReceiverSpendPubKeyY != nil &&
-		note.ReceiverViewPubKeyX != nil &&
-		note.ReceiverViewPubKeyY != nil &&
-		note.Amount != nil &&
-		note.AssetID != nil &&
-		note.Randomness != nil
+	return fmt.Sprintf("fallback:%d:%s:%s", note.Height, strings.ToLower(strings.TrimSpace(note.TxHash)), fmt.Sprintf("%d", note.Note.Amount))
 }
 
 func transferBatchOutputItems(coins []sdk.Coin, msgs []sdk.Msg) ([]transferBatchItemOutput, error) {

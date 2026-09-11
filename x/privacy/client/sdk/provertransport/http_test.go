@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
 	privacywithdraw "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/withdraw"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -35,16 +35,13 @@ func testDepositProofRequest(t testing.TB) (*DepositProofRequest, []byte) {
 	t.Helper()
 	spendKey := testPoint(101)
 	viewKey := testPoint(103)
-	note := privacytypes.Note{
-		ReceiverSpendPubKeyX: spendKey.X.BigInt(new(big.Int)),
-		ReceiverSpendPubKeyY: spendKey.Y.BigInt(new(big.Int)),
-		ReceiverViewPubKeyX:  viewKey.X.BigInt(new(big.Int)),
-		ReceiverViewPubKeyY:  viewKey.Y.BigInt(new(big.Int)),
-		Amount:               big.NewInt(7),
-		AssetID:              big.NewInt(11),
-		Randomness:           big.NewInt(13),
-	}
-	payload, err := privacydeposit.BuildPreparedDepositProverPayload(note)
+	spendX, spendY, err := privacycrypto.PublicPointFieldValues(*spendKey)
+	require.NoError(t, err)
+	viewX, viewY, err := privacycrypto.PublicPointFieldValues(*viewKey)
+	require.NoError(t, err)
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, 7, privacycrypto.FieldValueFromUint64(11), privacycrypto.FieldValueFromUint64(13), "")
+	require.NoError(t, err)
+	payload, err := privacydeposit.BuildPreparedDepositProverPayload(*note)
 	require.NoError(t, err)
 	request, err := NewDepositProofRequest(*payload)
 	require.NoError(t, err)

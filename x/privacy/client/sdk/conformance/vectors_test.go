@@ -95,8 +95,8 @@ func TestGoldenVectorsNoteAndScanContracts(t *testing.T) {
 	vectors := loadGoldenVectors(t)
 
 	rootSeed := mustDecodeHex(t, vectors.SenderRootSeed.RootSeedHex)
-	spendScalar, _, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	viewScalar, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	spendScalar, _, _, _ := privacyidentity.DeriveSpendKeys(rootSeed)
+	viewScalar, viewPubKey, _, _ := privacyidentity.DeriveViewKeys(rootSeed)
 
 	kind, encryptedNote, err := privacytypes.DecodeEncryptedEnvelopeV1(mustDecodeHex(t, vectors.Note.EncryptedNoteHex))
 	require.NoError(t, err)
@@ -132,7 +132,7 @@ func TestGoldenVectorsNoteAndScanContracts(t *testing.T) {
 		vectors.Note.EncryptedNoteHex,
 		abci.EventAttribute{Key: privacytypes.AttributeKeyCommitment, Value: vectors.Note.CommitmentHex},
 	)
-	depositFound := privacyscan.ProcessTx(depositTx, rootSeed, spendScalar, viewScalar)
+	depositFound := privacyscan.ProcessTx(depositTx, rootSeed, &spendScalar, &viewScalar)
 	require.Len(t, depositFound, 1)
 	require.Equal(t, vectors.Note.NullifierHex, depositFound[0].Nullifier)
 	require.Equal(t, vectors.Scan.TxHashHex, depositFound[0].TxHash)
@@ -152,7 +152,7 @@ func TestGoldenVectorsNoteAndScanContracts(t *testing.T) {
 		hex.EncodeToString(transferEnvelope),
 		abci.EventAttribute{Key: privacytypes.AttributeKeyCommitment1, Value: vectors.Note.CommitmentHex},
 	)
-	transferFound := privacyscan.ProcessTx(transferTx, rootSeed, spendScalar, viewScalar)
+	transferFound := privacyscan.ProcessTx(transferTx, rootSeed, &spendScalar, &viewScalar)
 	require.Len(t, transferFound, 1)
 	require.Equal(t, vectors.Note.NullifierHex, transferFound[0].Nullifier)
 	require.Equal(t, vectors.Scan.TxHashHex, transferFound[0].TxHash)
@@ -180,7 +180,7 @@ func TestGoldenVectorsDisclosureContracts(t *testing.T) {
 	require.True(t, verification.OnChainDisclosureDigestUsed)
 	require.True(t, verification.OnChainDisclosureDigestMatch)
 
-	disclosureScalar, _, _ := privacyidentity.DeriveDisclosureKeys(mustDecodeHex(t, vectors.RecipientRootSeed.RootSeedHex))
+	disclosureScalar, _, _, _ := privacyidentity.DeriveDisclosureKeys(mustDecodeHex(t, vectors.RecipientRootSeed.RootSeedHex))
 	decrypted, err := privacydisclosure.DecryptPayloadHex(vectors.Disclosure.CiphertextHex, disclosureScalar)
 	require.NoError(t, err)
 	require.Equal(t, payload, decrypted)
@@ -217,11 +217,11 @@ func buildGoldenVectorsFixture(t *testing.T) goldenVectors {
 	sender := buildIdentityFixture(t, senderSeed)
 	recipient := buildIdentityFixture(t, recipientSeed)
 
-	_, senderSpendPubKey, _ := privacyidentity.DeriveSpendKeys(senderSeed)
-	_, senderViewPubKey, _ := privacyidentity.DeriveViewKeys(senderSeed)
-	_, recipientSpendPubKey, _ := privacyidentity.DeriveSpendKeys(recipientSeed)
-	_, recipientViewPubKey, _ := privacyidentity.DeriveViewKeys(recipientSeed)
-	_, recipientDisclosurePubKey, _ := privacyidentity.DeriveDisclosureKeys(recipientSeed)
+	_, senderSpendPubKey, _, _ := privacyidentity.DeriveSpendKeys(senderSeed)
+	_, senderViewPubKey, _, _ := privacyidentity.DeriveViewKeys(senderSeed)
+	_, recipientSpendPubKey, _, _ := privacyidentity.DeriveSpendKeys(recipientSeed)
+	_, recipientViewPubKey, _, _ := privacyidentity.DeriveViewKeys(recipientSeed)
+	_, recipientDisclosurePubKey, _, _ := privacyidentity.DeriveDisclosureKeys(recipientSeed)
 
 	note := privacytypes.Note{
 		ReceiverSpendPubKeyX: pointX(senderSpendPubKey),
@@ -256,14 +256,16 @@ func buildGoldenVectorsFixture(t *testing.T) goldenVectors {
 	}
 	recipientOutputCommitment, err := privacyfield.CanonicalBytesFromBigInt(recipientOutputNote.ComputeCommitment())
 	require.NoError(t, err)
+	secretNote := goldenSecretNote(t, senderSpendPubKey, senderViewPubKey, 7, 1771001, "golden-vector")
+	secretRecipientOutputNote := goldenSecretNote(t, recipientSpendPubKey, recipientViewPubKey, 7, 1771002, "golden-vector-recipient-output")
 	disclosure, err := privacytransfer.BuildUserDisclosureData(
 		privacytransfer.DisclosureBuildInput{
 			OutputCommitment:       recipientOutputCommitment,
 			TransferDenom:          "uclair",
-			FromNote:               note,
-			RecipientNote:          recipientOutputNote,
-			UserDisclosureBlinding: big.NewInt(1771003),
-			FullDisclosureBlinding: big.NewInt(1771004),
+			FromNote:               secretNote,
+			RecipientNote:          secretRecipientOutputNote,
+			UserDisclosureBlinding: privacycrypto.FieldValueFromUint64(1771003),
+			FullDisclosureBlinding: privacycrypto.FieldValueFromUint64(1771004),
 		},
 		privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom,
 		privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_RECIPIENT_ENCRYPTED,
@@ -300,6 +302,17 @@ func buildGoldenVectorsFixture(t *testing.T) goldenVectors {
 	}
 }
 
+func goldenSecretNote(t *testing.T, spend, view *crypto_tedwards.PointAffine, amount, randomness uint64, memo string) privacytypes.SecretNoteV1 {
+	t.Helper()
+	spendX, spendY, err := privacycrypto.PublicPointFieldValues(*spend)
+	require.NoError(t, err)
+	viewX, viewY, err := privacycrypto.PublicPointFieldValues(*view)
+	require.NoError(t, err)
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, amount, privacytypes.ComputeSecretAssetIDV1("uclair"), privacycrypto.FieldValueFromUint64(randomness), memo)
+	require.NoError(t, err)
+	return *note
+}
+
 func buildRootSeedFixture(t *testing.T, address string, pubKeyHex string, signatureHex string) rootSeedFixture {
 	t.Helper()
 
@@ -320,9 +333,9 @@ func buildRootSeedFixture(t *testing.T, address string, pubKeyHex string, signat
 func buildIdentityFixture(t *testing.T, rootSeed []byte) identityFixture {
 	t.Helper()
 
-	spendScalar, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	viewScalar, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
-	disclosureScalar, disclosurePubKey, _ := privacyidentity.DeriveDisclosureKeys(rootSeed)
+	spendScalar, spendPubKey, _, _ := privacyidentity.DeriveSpendKeys(rootSeed)
+	viewScalar, viewPubKey, _, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	disclosureScalar, disclosurePubKey, _, _ := privacyidentity.DeriveDisclosureKeys(rootSeed)
 	shieldedAddress, err := privacytypes.EncodeShieldedAddressWithView(spendPubKey, viewPubKey)
 	require.NoError(t, err)
 
@@ -386,9 +399,9 @@ func assertRootSeedFixture(t *testing.T, fixture rootSeedFixture) {
 func assertIdentityFixture(t *testing.T, rootSeed []byte, fixture identityFixture) {
 	t.Helper()
 
-	spendScalar, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	viewScalar, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
-	disclosureScalar, disclosurePubKey, _ := privacyidentity.DeriveDisclosureKeys(rootSeed)
+	spendScalar, spendPubKey, _, _ := privacyidentity.DeriveSpendKeys(rootSeed)
+	viewScalar, viewPubKey, _, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	disclosureScalar, disclosurePubKey, _, _ := privacyidentity.DeriveDisclosureKeys(rootSeed)
 
 	require.Equal(t, fixture.SpendScalarHex, privacyidentity.ScalarToFixedHex(spendScalar))
 	require.Equal(t, fixture.SpendPubKeyHex, pointHex(spendPubKey))
@@ -447,4 +460,12 @@ func newPrivacyTx(t *testing.T, txHashHex string, height int64, eventType string
 			},
 		},
 	}
+}
+
+func mustSecretScalar(t *testing.T, value *big.Int) privacycrypto.SecretScalar {
+	t.Helper()
+	raw := value.FillBytes(make([]byte, 32))
+	scalar, err := privacycrypto.ImportNonzeroScalarBE32(raw)
+	require.NoError(t, err)
+	return scalar
 }

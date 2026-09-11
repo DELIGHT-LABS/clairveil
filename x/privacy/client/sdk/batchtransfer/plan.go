@@ -37,7 +37,8 @@ func PlanBatchTransfer(input PlanBatchTransferInput) (*BatchTransferPlan, error)
 
 	inputTotal, paymentTotal := new(big.Int), new(big.Int)
 	seen := make(map[string]struct{}, len(input.Inputs))
-	var asset *big.Int
+	var asset privacycrypto.FieldValue
+	assetSet := false
 	ownerSpend, ownerView := input.OwnerSpendPubKey.Bytes(), input.OwnerViewPubKey.Bytes()
 	for i := range input.Inputs {
 		note := input.Inputs[i].Note
@@ -48,17 +49,25 @@ func PlanBatchTransfer(input PlanBatchTransferInput) (*BatchTransferPlan, error)
 		if !bytes.Equal(spend, ownerSpend[:]) || !bytes.Equal(view, ownerView[:]) {
 			return nil, fmt.Errorf("input %d does not belong to the common owner", i)
 		}
-		if asset == nil {
-			asset = new(big.Int).Set(note.AssetID)
-		} else if asset.Cmp(note.AssetID) != 0 {
-			return nil, fmt.Errorf("input asset mismatch at index %d", i)
+		if !assetSet {
+			asset = note.AssetID
+			assetSet = true
+		} else {
+			if !asset.Equal(note.AssetID) {
+				return nil, fmt.Errorf("input asset mismatch at index %d", i)
+			}
 		}
-		nullifier := note.ComputeNullifier().String()
+		nullifierValue, err := note.NullifierV1()
+		if err != nil {
+			return nil, fmt.Errorf("input %d nullifier: %w", i, err)
+		}
+		nullifierBytes := nullifierValue.Bytes()
+		nullifier := string(nullifierBytes[:])
 		if _, ok := seen[nullifier]; ok {
 			return nil, fmt.Errorf("duplicate input nullifier at index %d", i)
 		}
 		seen[nullifier] = struct{}{}
-		inputTotal.Add(inputTotal, note.Amount)
+		inputTotal.Add(inputTotal, new(big.Int).SetUint64(note.Amount))
 	}
 
 	outputs := make([]PlannedOutput, 0, 32)
@@ -135,19 +144,14 @@ func PlanBatchTransfer(input PlanBatchTransferInput) (*BatchTransferPlan, error)
 	return &BatchTransferPlan{append([]InputNote(nil), input.Inputs...), outputs, inputTotal, paymentTotal, change}, nil
 }
 
-func pointBytesFromNote(note privacytypes.Note, spend bool) []byte {
-	var pX, pY *big.Int
+func pointBytesFromNote(note privacytypes.SecretNoteV1, spend bool) []byte {
+	x, y := note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY
 	if spend {
-		pX, pY = note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY
-	} else {
-		pX, pY = note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY
+		x, y = note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY
 	}
-	var p [32]byte
-	_ = p
-	point, err := pointFromCoordinates(pX, pY)
+	encoded, err := privacycrypto.LegacyCompressedPointFromFieldValues(x, y)
 	if err != nil {
 		return nil
 	}
-	b := point.Bytes()
-	return append([]byte(nil), b[:]...)
+	return append([]byte(nil), encoded[:]...)
 }

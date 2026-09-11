@@ -1,7 +1,9 @@
 package transfer
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -114,11 +116,7 @@ func BuildPreparedTransferPayload(
 		return nil, err
 	}
 
-	userDisclosureBlinding, fullDisclosureBlinding, err := generateTransferDisclosureBlindingsV1(
-		prepared.RecipientNote.Randomness,
-		input.UserPrivacyPolicy,
-		privacycrypto.GenerateNonZeroRandomness,
-	)
+	userDisclosureBlinding, fullDisclosureBlinding, err := generateFixedTransferDisclosureBlindings(prepared.RecipientNote.Randomness, input.UserPrivacyPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate separated disclosure blindings: %w", err)
 	}
@@ -161,20 +159,11 @@ func BuildPreparedTransferPayload(
 	if err != nil {
 		return nil, err
 	}
-	assetIDHex, err := privacyfield.CanonicalHexFromBigInt(prepared.FromNote.AssetID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid asset id: %w", err)
-	}
-	fullDisclosureBlindingHex, err := privacyfield.CanonicalHexFromBigInt(fullDisclosureBlinding)
-	if err != nil {
-		return nil, fmt.Errorf("invalid full disclosure blinding: %w", err)
-	}
+	assetIDHex := prepared.FromNote.AssetIDHex()
+	fullDisclosureBlindingHex := fixedFieldHex(fullDisclosureBlinding)
 	userDisclosureBlindingHex := ""
-	if userDisclosureBlinding.Sign() != 0 {
-		userDisclosureBlindingHex, err = privacyfield.CanonicalHexFromBigInt(userDisclosureBlinding)
-		if err != nil {
-			return nil, fmt.Errorf("invalid user disclosure blinding: %w", err)
-		}
+	if !userDisclosureBlinding.IsZero() {
+		userDisclosureBlindingHex = fixedFieldHex(userDisclosureBlinding)
 	}
 
 	payload := &PreparedTransferPayload{
@@ -208,21 +197,19 @@ func BuildPreparedTransferPayload(
 	}
 
 	for i, foundNote := range input.Inputs {
-		randomnessHex, err := privacyfield.CanonicalHexFromBigInt(foundNote.Note.Randomness)
-		if err != nil {
-			return nil, fmt.Errorf("invalid input randomness %d: %w", i, err)
-		}
-		spendPubKeyHex, err := notePubKeyHex(foundNote.Note, true)
+		randomness := foundNote.Note.Randomness.Bytes()
+		randomnessHex := hex.EncodeToString(randomness[:])
+		spendPubKeyHex, err := secretNotePubKeyHex(foundNote.Note, true)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input spend key %d: %w", i, err)
 		}
-		viewPubKeyHex, err := notePubKeyHex(foundNote.Note, false)
+		viewPubKeyHex, err := secretNotePubKeyHex(foundNote.Note, false)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input view key %d: %w", i, err)
 		}
 
 		payload.Inputs = append(payload.Inputs, PreparedTransferInput{
-			Amount:           foundNote.Note.Amount.String(),
+			Amount:           strconv.FormatUint(foundNote.Note.Amount, 10),
 			RandomnessHex:    randomnessHex,
 			SpendPubKeyHex:   spendPubKeyHex,
 			ViewPubKeyHex:    viewPubKeyHex,
@@ -232,22 +219,19 @@ func BuildPreparedTransferPayload(
 		})
 	}
 
-	for i, outputNote := range []privacytypes.Note{prepared.RecipientNote, prepared.ChangeNote} {
-		randomnessHex, err := privacyfield.CanonicalHexFromBigInt(outputNote.Randomness)
-		if err != nil {
-			return nil, fmt.Errorf("invalid output randomness %d: %w", i, err)
-		}
-		spendPubKeyHex, err := notePubKeyHex(outputNote, true)
+	for i, outputNote := range []privacytypes.SecretNoteV1{prepared.RecipientNote, prepared.ChangeNote} {
+		randomnessHex := fixedFieldHex(outputNote.Randomness)
+		spendPubKeyHex, err := secretNotePubKeyHex(outputNote, true)
 		if err != nil {
 			return nil, fmt.Errorf("invalid output spend key %d: %w", i, err)
 		}
-		viewPubKeyHex, err := notePubKeyHex(outputNote, false)
+		viewPubKeyHex, err := secretNotePubKeyHex(outputNote, false)
 		if err != nil {
 			return nil, fmt.Errorf("invalid output view key %d: %w", i, err)
 		}
 
 		payload.Outputs = append(payload.Outputs, PreparedTransferOutput{
-			Amount:         outputNote.Amount.String(),
+			Amount:         strconv.FormatUint(outputNote.Amount, 10),
 			RandomnessHex:  randomnessHex,
 			SpendPubKeyHex: spendPubKeyHex,
 			ViewPubKeyHex:  viewPubKeyHex,
@@ -294,7 +278,7 @@ func BuildPreparedTransferPayload(
 		ChainDomainHi:        chainDomain.Hi,
 		ChainDomainLo:        chainDomain.Lo,
 		MerkleRoot:           new(big.Int).SetBytes(prepared.CommonRoot),
-		AssetID:              prepared.FromNote.AssetID,
+		AssetID:              publicFieldBig(prepared.FromNote.AssetID),
 		Nullifiers:           [2]*big.Int{new(big.Int).SetBytes(prepared.InputNullifiers[0]), new(big.Int).SetBytes(prepared.InputNullifiers[1])},
 		Commitments:          [2]*big.Int{new(big.Int).SetBytes(prepared.OutputCommitments[0]), new(big.Int).SetBytes(prepared.OutputCommitments[1])},
 		UserDisclosureDigest: new(big.Int).SetBytes(digestBytes(userDisclosureData)),
@@ -307,16 +291,19 @@ func BuildPreparedTransferPayload(
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute transfer owner intent: %w", err)
 	}
+	assetIDBytes := prepared.FromNote.AssetID.Bytes()
+	var signingAssetID [32]byte
+	copy(signingAssetID[:], assetIDBytes[:])
 	signingRequest := JoinSplitOwnerIntentSigningRequestV1{
 		Intent:                    ownerIntent,
 		ChainID:                   input.ChainID,
 		Effect:                    effectMessage,
-		AssetID:                   ownerIntentInput.AssetID,
+		AssetID:                   signingAssetID,
 		UserPrivacyPolicy:         input.UserPrivacyPolicy,
 		RecipientOutputRandomness: prepared.RecipientNote.Randomness,
 		UserDisclosureBlinding:    userDisclosureBlinding,
 		FullDisclosureBlinding:    fullDisclosureBlinding,
-		InputNotes:                [2]*privacytypes.Note{&input.Inputs[0].Note, &input.Inputs[1].Note},
+		InputNotes:                [2]*privacytypes.SecretNoteV1{&input.Inputs[0].Note, &input.Inputs[1].Note},
 		RecipientOutputNote:       &prepared.RecipientNote,
 		ChangeOutputNote:          &prepared.ChangeNote,
 		SenderSpendPubKeyX:        prepared.FromNote.ReceiverSpendPubKeyX,
@@ -925,6 +912,10 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 	if err != nil {
 		return nil, err
 	}
+	assetID, err := privacycrypto.ParseFieldValueBE32(assetIDBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid asset id: %w", err)
+	}
 	userDigest := big.NewInt(0)
 	if strings.TrimSpace(payload.UserDisclosureDigestHex) != "" {
 		userDigestBytes, err := decodePayloadField(payload.UserDisclosureDigestHex, "user disclosure digest")
@@ -989,7 +980,10 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		if err != nil {
 			return nil, err
 		}
-		randomness, err := decodeCanonicalHexBigInt(input.RandomnessHex, "input randomness")
+		if !amount.IsUint64() {
+			return nil, fmt.Errorf("input amount exceeds uint64")
+		}
+		randomness, err := decodeSecretPayloadField(input.RandomnessHex, "input randomness")
 		if err != nil {
 			return nil, err
 		}
@@ -1001,14 +995,34 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		if err != nil {
 			return nil, err
 		}
-		nullifier, err := decodeCanonicalHexBigInt(input.NullifierHex, "input nullifier")
+		nullifierBytes, err := privacyfield.DecodeCanonicalHex(input.NullifierHex, "input nullifier")
 		if err != nil {
 			return nil, err
 		}
+		spendX, spendY, err := privacycrypto.PublicPointFieldValues(*spendPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("input spend pubkey %d: %w", i, err)
+		}
+		viewX, viewY, err := privacycrypto.PublicPointFieldValues(*viewPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("input view pubkey %d: %w", i, err)
+		}
+		note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, amount.Uint64(), assetID, randomness, "")
+		if err != nil {
+			return nil, fmt.Errorf("invalid input note %d: %w", i, err)
+		}
+		expectedNullifier, err := note.NullifierV1()
+		if err != nil {
+			return nil, fmt.Errorf("input nullifier %d: %w", i, err)
+		}
+		if !bytes.Equal(fieldValueBytes(expectedNullifier), nullifierBytes) {
+			return nil, fmt.Errorf("input nullifier %d does not match payload witness", i)
+		}
+		witnessNote := note.ToProverWitnessV1()
 
-		assignment.InputAmounts[i] = amount
-		assignment.InputRandomness[i] = randomness
-		assignment.Nullifiers[i] = nullifier
+		assignment.InputAmounts[i] = witnessNote.Amount
+		assignment.InputRandomness[i] = witnessNote.Randomness
+		assignment.Nullifiers[i] = new(big.Int).SetBytes(nullifierBytes)
 		assignPubKey(&assignment.InputSpendPubKeys[i], *spendPubKey)
 		assignPubKey(&assignment.InputViewPubKeys[i], *viewPubKey)
 
@@ -1018,24 +1032,6 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 			assignment.InputPathHelpers[i][depth] = pathHelpers[depth]
 		}
 
-		inputCommitment := privacytypes.ComputeNoteCommitmentV1(
-			pointAffineCoordinate(spendPubKey, true),
-			pointAffineCoordinate(spendPubKey, false),
-			pointAffineCoordinate(viewPubKey, true),
-			pointAffineCoordinate(viewPubKey, false),
-			amount,
-			new(big.Int).SetBytes(assetIDBytes),
-			randomness,
-		)
-		expectedNullifier := privacytypes.ComputeNoteNullifierV1(
-			inputCommitment,
-			randomness,
-			pointAffineCoordinate(spendPubKey, true),
-			pointAffineCoordinate(spendPubKey, false),
-		)
-		if expectedNullifier.Cmp(nullifier) != 0 {
-			return nil, fmt.Errorf("input nullifier %d does not match payload witness", i)
-		}
 	}
 
 	for i, output := range payload.Outputs {
@@ -1043,7 +1039,10 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		if err != nil {
 			return nil, err
 		}
-		randomness, err := decodeCanonicalHexBigInt(output.RandomnessHex, "output randomness")
+		if !amount.IsUint64() {
+			return nil, fmt.Errorf("output amount exceeds uint64")
+		}
+		randomness, err := decodeSecretPayloadField(output.RandomnessHex, "output randomness")
 		if err != nil {
 			return nil, err
 		}
@@ -1055,29 +1054,37 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		if err != nil {
 			return nil, err
 		}
-		commitment, err := decodeCanonicalHexBigInt(output.CommitmentHex, "output commitment")
+		commitmentBytes, err := privacyfield.DecodeCanonicalHex(output.CommitmentHex, "output commitment")
 		if err != nil {
 			return nil, err
 		}
+		spendX, spendY, err := privacycrypto.PublicPointFieldValues(*spendPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("output spend pubkey %d: %w", i, err)
+		}
+		viewX, viewY, err := privacycrypto.PublicPointFieldValues(*viewPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("output view pubkey %d: %w", i, err)
+		}
+		note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, amount.Uint64(), assetID, randomness, "")
+		if err != nil {
+			return nil, fmt.Errorf("invalid output note %d: %w", i, err)
+		}
+		expectedCommitment, err := note.CommitmentV1()
+		if err != nil {
+			return nil, fmt.Errorf("output commitment %d: %w", i, err)
+		}
+		if !bytes.Equal(fieldValueBytes(expectedCommitment), commitmentBytes) {
+			return nil, fmt.Errorf("output commitment %d does not match payload witness", i)
+		}
+		witnessNote := note.ToProverWitnessV1()
 
-		assignment.OutputAmounts[i] = amount
-		assignment.OutputRandomness[i] = randomness
-		assignment.Commitments[i] = commitment
+		assignment.OutputAmounts[i] = witnessNote.Amount
+		assignment.OutputRandomness[i] = witnessNote.Randomness
+		assignment.Commitments[i] = new(big.Int).SetBytes(commitmentBytes)
 		assignPubKey(&assignment.OutputSpendPubKeys[i], *spendPubKey)
 		assignPubKey(&assignment.OutputViewPubKeys[i], *viewPubKey)
 
-		expectedCommitment := privacytypes.ComputeNoteCommitmentV1(
-			pointAffineCoordinate(spendPubKey, true),
-			pointAffineCoordinate(spendPubKey, false),
-			pointAffineCoordinate(viewPubKey, true),
-			pointAffineCoordinate(viewPubKey, false),
-			amount,
-			new(big.Int).SetBytes(assetIDBytes),
-			randomness,
-		)
-		if expectedCommitment.Cmp(commitment) != 0 {
-			return nil, fmt.Errorf("output commitment %d does not match payload witness", i)
-		}
 	}
 
 	return assignment, nil
@@ -1097,6 +1104,18 @@ func notePubKeyHex(note privacytypes.Note, spend bool) (string, error) {
 
 	pointBytes := point.Bytes()
 	return hex.EncodeToString(pointBytes[:]), nil
+}
+
+func secretNotePubKeyHex(note privacytypes.SecretNoteV1, spend bool) (string, error) {
+	x, y := note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY
+	if spend {
+		x, y = note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY
+	}
+	encoded, err := privacycrypto.LegacyCompressedPointFromFieldValues(x, y)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(encoded[:]), nil
 }
 
 func digestBytes(data *DisclosureData) []byte {
@@ -1140,6 +1159,18 @@ func decodeCanonicalHexBigInt(value, fieldName string) (*big.Int, error) {
 		return nil, err
 	}
 	return new(big.Int).SetBytes(bz), nil
+}
+
+func decodeSecretPayloadField(value, fieldName string) (privacycrypto.FieldValue, error) {
+	raw, err := privacyfield.DecodeCanonicalHex(value, fieldName)
+	if err != nil {
+		return privacycrypto.FieldValue{}, err
+	}
+	field, err := privacycrypto.ParseFieldValueBE32(raw)
+	if err != nil {
+		return privacycrypto.FieldValue{}, fmt.Errorf("invalid %s: %w", fieldName, err)
+	}
+	return field, nil
 }
 
 func decodeNonZeroCanonicalBlindingHex(value, fieldName string) (*big.Int, error) {
@@ -1307,4 +1338,34 @@ func decodeViewTagHexes(values []string) ([][]byte, error) {
 		}
 	}
 	return viewTags, nil
+}
+
+func publicFieldBig(v privacycrypto.FieldValue) *big.Int {
+	raw := v.Bytes()
+	return new(big.Int).SetBytes(raw[:])
+}
+func generateFixedTransferDisclosureBlindings(rho privacycrypto.FieldValue, policy uint32) (privacycrypto.FieldValue, privacycrypto.FieldValue, error) {
+	var user, full privacycrypto.FieldValue
+	var err error
+	for {
+		full, err = privacycrypto.SampleNonzeroFieldValue(rand.Reader)
+		if err != nil {
+			return user, full, err
+		}
+		if !full.Equal(rho) {
+			break
+		}
+	}
+	if policy != privacytypes.TransferPrivacyPolicyAllPrivate {
+		for {
+			user, err = privacycrypto.SampleNonzeroFieldValue(rand.Reader)
+			if err != nil {
+				return user, full, err
+			}
+			if !user.Equal(rho) && !user.Equal(full) {
+				break
+			}
+		}
+	}
+	return user, full, nil
 }

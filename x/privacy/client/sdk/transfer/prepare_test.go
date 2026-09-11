@@ -68,7 +68,7 @@ func TestPrepareJoinSplitTransferBuildsAssignmentAndOutputs(t *testing.T) {
 		context.Background(),
 		merkleProvider,
 		PrepareJoinSplitInput{
-			Inputs:               inputs,
+			Inputs:               testSecretInputs(t, inputs),
 			RecipientSpendPubKey: recipientSpendPubKey,
 			RecipientViewPubKey:  recipientViewPubKey,
 			TransferAmount:       big.NewInt(7),
@@ -81,8 +81,8 @@ func TestPrepareJoinSplitTransferBuildsAssignmentAndOutputs(t *testing.T) {
 	require.Equal(t, rootBytes, prepared.CommonRoot)
 	require.Len(t, prepared.InputNullifiers, 2)
 	require.Len(t, prepared.OutputCommitments, 2)
-	require.Equal(t, int64(7), prepared.RecipientNote.Amount.Int64())
-	require.Equal(t, int64(5), prepared.ChangeNote.Amount.Int64())
+	require.Equal(t, int64(7), int64(prepared.RecipientNote.Amount))
+	require.Equal(t, int64(5), int64(prepared.ChangeNote.Amount))
 	assignmentAssetID, ok := prepared.Assignment.AssetID.(*big.Int)
 	require.True(t, ok)
 	require.Equal(t, 0, assignmentAssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
@@ -91,17 +91,17 @@ func TestPrepareJoinSplitTransferBuildsAssignmentAndOutputs(t *testing.T) {
 	require.Equal(t, 0, prepared.Assignment.InputPathHelpers[0][0].(int))
 	require.Equal(t, 1, prepared.Assignment.InputPathHelpers[0][1].(int))
 
-	recipientPlainText, err := privacycrypto.AsymDecrypt(mustEncryptPreparedNote(t, prepared.RecipientNote), recipientViewScalar)
+	recipientPlainText, err := privacycrypto.AsymDecrypt(mustEncryptPreparedNote(t, prepared.RecipientNote.ToProverWitnessV1()), testSecretScalar(t, recipientViewScalar))
 	require.NoError(t, err)
 	require.NotEmpty(t, recipientPlainText)
-	changePlainText, err := privacycrypto.AsymDecrypt(mustEncryptPreparedNote(t, prepared.ChangeNote), senderViewScalar)
+	changePlainText, err := privacycrypto.AsymDecrypt(mustEncryptPreparedNote(t, prepared.ChangeNote.ToProverWitnessV1()), testSecretScalar(t, senderViewScalar))
 	require.NoError(t, err)
 	require.NotEmpty(t, changePlainText)
 
 	require.NotNil(t, senderSpendScalar)
-	require.NotNil(t, senderViewScalar)
+	require.NotNil(t, testSecretScalar(t, senderViewScalar))
 	require.NotNil(t, recipientSpendScalar)
-	require.NotNil(t, recipientViewScalar)
+	require.NotNil(t, testSecretScalar(t, recipientViewScalar))
 }
 
 func TestPrepareJoinSplitTransferRejectsMerkleRootMismatch(t *testing.T) {
@@ -155,7 +155,7 @@ func TestPrepareJoinSplitTransferRejectsMerkleRootMismatch(t *testing.T) {
 		context.Background(),
 		merkleProvider,
 		PrepareJoinSplitInput{
-			Inputs:               inputs,
+			Inputs:               testSecretInputs(t, inputs),
 			RecipientSpendPubKey: recipientSpendPubKey,
 			RecipientViewPubKey:  recipientViewPubKey,
 			TransferAmount:       big.NewInt(4),
@@ -166,9 +166,9 @@ func TestPrepareJoinSplitTransferRejectsMerkleRootMismatch(t *testing.T) {
 	require.ErrorContains(t, err, "merkle root mismatch")
 
 	require.NotNil(t, senderSpendScalar)
-	require.NotNil(t, senderViewScalar)
+	require.NotNil(t, testSecretScalar(t, senderViewScalar))
 	require.NotNil(t, recipientSpendScalar)
-	require.NotNil(t, recipientViewScalar)
+	require.NotNil(t, testSecretScalar(t, recipientViewScalar))
 }
 
 func TestPrepareJoinSplitTransferRejectsOverTransfer(t *testing.T) {
@@ -178,7 +178,7 @@ func TestPrepareJoinSplitTransferRejectsOverTransfer(t *testing.T) {
 		context.Background(),
 		fixture.merkleProvider,
 		PrepareJoinSplitInput{
-			Inputs:               fixture.inputs,
+			Inputs:               testSecretInputs(t, fixture.inputs),
 			RecipientSpendPubKey: fixture.recipientSpendPubKey,
 			RecipientViewPubKey:  fixture.recipientViewPubKey,
 			TransferAmount:       big.NewInt(13),
@@ -197,7 +197,7 @@ func TestPrepareJoinSplitTransferRejectsDuplicateInputBeforePathLookup(t *testin
 		context.Background(),
 		fixture.merkleProvider,
 		PrepareJoinSplitInput{
-			Inputs:               fixture.inputs,
+			Inputs:               testSecretInputs(t, fixture.inputs),
 			RecipientSpendPubKey: fixture.recipientSpendPubKey,
 			RecipientViewPubKey:  fixture.recipientViewPubKey,
 			TransferAmount:       big.NewInt(7),
@@ -218,7 +218,7 @@ func TestPrepareJoinSplitTransferRejectsMixedOwnersBeforePathLookup(t *testing.T
 		context.Background(),
 		fixture.merkleProvider,
 		PrepareJoinSplitInput{
-			Inputs:               fixture.inputs,
+			Inputs:               testSecretInputs(t, fixture.inputs),
 			RecipientSpendPubKey: fixture.recipientSpendPubKey,
 			RecipientViewPubKey:  fixture.recipientViewPubKey,
 			TransferAmount:       big.NewInt(7),
@@ -240,7 +240,7 @@ func TestPrepareJoinSplitTransferRejectsChangeAmountAboveShieldedLimit(t *testin
 		context.Background(),
 		fixture.merkleProvider,
 		PrepareJoinSplitInput{
-			Inputs:               fixture.inputs,
+			Inputs:               testSecretInputs(t, fixture.inputs),
 			RecipientSpendPubKey: fixture.recipientSpendPubKey,
 			RecipientViewPubKey:  fixture.recipientViewPubKey,
 			TransferAmount:       big.NewInt(1),
@@ -259,7 +259,7 @@ func TestPrepareJoinSplitTransferRejectsInvalidPathHelper(t *testing.T) {
 		context.Background(),
 		fixture.merkleProvider,
 		PrepareJoinSplitInput{
-			Inputs:               fixture.inputs,
+			Inputs:               testSecretInputs(t, fixture.inputs),
 			RecipientSpendPubKey: fixture.recipientSpendPubKey,
 			RecipientViewPubKey:  fixture.recipientViewPubKey,
 			TransferAmount:       big.NewInt(7),
@@ -387,7 +387,7 @@ func testSignatureBytes(t *testing.T) []byte {
 func mustEncryptPreparedNote(t *testing.T, note privacytypes.Note) []byte {
 	t.Helper()
 
-	cipherTexts, err := EncryptOutputNotes(note, note)
+	cipherTexts, err := EncryptOutputNotes(testFixedNote(note), testFixedNote(note))
 	require.NoError(t, err)
 	raw, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherTexts[0], privacytypes.EnvelopeTransferNoteV1)
 	require.NoError(t, err)

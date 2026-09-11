@@ -73,8 +73,10 @@ func testSeedLocalnetShieldedAddress(t *testing.T) string {
 	for i := range rootSeed {
 		rootSeed[i] = byte(i + 1)
 	}
-	_, spendPubKey, _ := privacyidentity.DeriveSpendKeys(rootSeed)
-	_, viewPubKey, _ := privacyidentity.DeriveViewKeys(rootSeed)
+	_, spendPubKey, _, deriveErr := privacyidentity.DeriveSpendKeys(rootSeed)
+	require.NoError(t, deriveErr)
+	_, viewPubKey, _, deriveErr := privacyidentity.DeriveViewKeys(rootSeed)
+	require.NoError(t, deriveErr)
 	address, err := privacytypes.EncodeShieldedAddressWithView(spendPubKey, viewPubKey)
 	require.NoError(t, err)
 	return address

@@ -12,29 +12,29 @@ import (
 )
 
 func TestFindExactMatchSpendableNoteByDenomIgnoresDifferentDenom(t *testing.T) {
-	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: true},
-		{Note: privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
+	notes := []privacyscan.SecretFoundNote{
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uatom")}), IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), IsSpent: true},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), IsSpent: false},
 	}
 
 	selected := FindExactMatchSpendableNoteByDenom(notes, "uclair", big.NewInt(10))
 	require.NotNil(t, selected)
-	require.Equal(t, 0, selected.Note.AssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
-	require.Equal(t, int64(10), selected.Note.Amount.Int64())
+	require.Equal(t, 0, testSecretFieldBig(selected.Note.AssetID).Cmp(privacytypes.ComputeAssetIDV1("uclair")))
+	require.Equal(t, int64(10), int64(selected.Note.Amount))
 	require.False(t, selected.IsSpent)
 }
 
 func TestFindExactMatchSpendableNoteByDenomUsesDeterministicOrder(t *testing.T) {
-	notes := []privacyscan.FoundNote{
+	notes := []privacyscan.SecretFoundNote{
 		{
-			Note:      privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
+			Note:      testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}),
 			Nullifier: "bb",
 			Height:    9,
 			IsSpent:   false,
 		},
 		{
-			Note:      privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")},
+			Note:      testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(10), AssetID: privacytypes.ComputeAssetIDV1("uclair")}),
 			Nullifier: "aa",
 			Height:    5,
 			IsSpent:   false,
@@ -48,10 +48,10 @@ func TestFindExactMatchSpendableNoteByDenomUsesDeterministicOrder(t *testing.T) 
 
 func TestBuildExactMatchErrorShowsSpendableGuidance(t *testing.T) {
 	targetCoin := sdk.NewInt64Coin("uclair", 10)
-	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}, IsSpent: false},
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+	notes := []privacyscan.SecretFoundNote{
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(3), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(7), AssetID: privacytypes.ComputeAssetIDV1("uclair")}), IsSpent: false},
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uatom")}), IsSpent: false},
 	}
 
 	err := BuildExactMatchError(targetCoin, notes)
@@ -67,8 +67,8 @@ func TestBuildExactMatchErrorShowsSpendableGuidance(t *testing.T) {
 
 func TestBuildExactMatchErrorHandlesMissingDenomNotes(t *testing.T) {
 	targetCoin := sdk.NewInt64Coin("uclair", 10)
-	notes := []privacyscan.FoundNote{
-		{Note: privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uatom")}, IsSpent: false},
+	notes := []privacyscan.SecretFoundNote{
+		{Note: testSecretNoteFixture(privacytypes.Note{Amount: big.NewInt(9), AssetID: privacytypes.ComputeAssetIDV1("uatom")}), IsSpent: false},
 	}
 
 	err := BuildExactMatchError(targetCoin, notes)

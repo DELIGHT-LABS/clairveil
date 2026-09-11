@@ -3,13 +3,13 @@ package cli
 import (
 	"encoding/hex"
 	"fmt"
-	"math/big"
 	"strings"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
 	privacydisclosure "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/disclosure"
 	privacytransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/transfer"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
@@ -52,29 +52,11 @@ func decodeDisclosurePubKeyHex(value string) (*crypto_tedwards.PointAffine, []by
 	return privacytransfer.DecodeDisclosurePubKeyHex(value)
 }
 
-func decodeDisclosurePrivateKeyHex(value string) (*big.Int, error) {
-	scalarHex := strings.TrimSpace(value)
-	if scalarHex == "" {
-		return nil, fmt.Errorf("disclosure private key hex is required")
-	}
-
-	scalarBytes, err := hex.DecodeString(scalarHex)
+func decodeDisclosurePrivateKeyHex(value string) (privacycrypto.SecretScalar, error) {
+	raw, err := hex.DecodeString(strings.TrimSpace(value))
 	if err != nil {
-		return nil, fmt.Errorf("invalid disclosure private key hex: %w", err)
+		return privacycrypto.SecretScalar{}, fmt.Errorf("invalid disclosure private key hex: %w", err)
 	}
-	if len(scalarBytes) == 0 {
-		return nil, fmt.Errorf("disclosure private key hex is empty")
-	}
-
-	scalar := new(big.Int).SetBytes(scalarBytes)
-	if scalar.Sign() <= 0 {
-		return nil, fmt.Errorf("disclosure private key must be greater than zero")
-	}
-
-	curve := crypto_tedwards.GetEdwardsCurve()
-	if scalar.Cmp(&curve.Order) >= 0 {
-		return nil, fmt.Errorf("disclosure private key must be smaller than the BN254 Edwards curve order")
-	}
-
-	return scalar, nil
+	defer clear(raw)
+	return privacycrypto.ImportNonzeroScalarBE32(raw)
 }

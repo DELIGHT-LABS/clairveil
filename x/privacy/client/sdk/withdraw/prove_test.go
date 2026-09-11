@@ -56,8 +56,8 @@ func testSpendAssignment(t *testing.T) *circuit.SpendCircuit {
 
 	spendPubKey := testPubKey(11)
 	viewPubKey := testPubKey(13)
-	note := privacyscan.FoundNote{
-		Note: privacytypes.Note{
+	note := privacyscan.SecretFoundNote{
+		Note: testSecretNoteFixture(privacytypes.Note{
 			ReceiverSpendPubKeyX: pointCoordinate(spendPubKey, true),
 			ReceiverSpendPubKeyY: pointCoordinate(spendPubKey, false),
 			ReceiverViewPubKeyX:  pointCoordinate(viewPubKey, true),
@@ -65,12 +65,12 @@ func testSpendAssignment(t *testing.T) *circuit.SpendCircuit {
 			Amount:               big.NewInt(7),
 			AssetID:              privacytypes.ComputeAssetIDV1("uclair"),
 			Randomness:           big.NewInt(701),
-		},
+		}),
 	}
 
 	rootBytes, err := privacyfield.CanonicalBytesFromBigInt(big.NewInt(909))
 	require.NoError(t, err)
-	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(note.Note.ComputeCommitment())
+	commitmentHex, err := privacyfield.CanonicalHexFromBigInt(testSecretCommitment(note.Note))
 	require.NoError(t, err)
 
 	provider := &stubMerklePathProvider{

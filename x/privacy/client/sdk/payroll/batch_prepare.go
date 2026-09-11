@@ -13,7 +13,7 @@ import (
 )
 
 type BatchInputNoteSource interface {
-	LoadBatchInputNote(ctx context.Context, noteID string) (privacytypes.Note, error)
+	LoadBatchInputNote(ctx context.Context, noteID string) (privacytypes.SecretNoteV1, error)
 }
 
 func BuildPayrollBatchTransferPlan(ctx context.Context, operation BatchPayrollOperationPlan, source BatchInputNoteSource, ownerSpend, ownerView *crypto_tedwards.PointAffine, mode privacybatchtransfer.OutputMode) (*privacybatchtransfer.BatchTransferPlan, error) {

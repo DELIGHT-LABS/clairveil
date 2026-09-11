@@ -37,7 +37,7 @@ func TestEncryptOutputNotesDecryptsWithMatchingViewKeys(t *testing.T) {
 		Memo:                 "change",
 	}
 
-	cipherTexts, err := EncryptOutputNotes(recipientNote, changeNote)
+	cipherTexts, err := EncryptOutputNotes(testFixedNote(recipientNote), testFixedNote(changeNote))
 	require.NoError(t, err)
 	require.Len(t, cipherTexts, 2)
 
@@ -45,9 +45,9 @@ func TestEncryptOutputNotesDecryptsWithMatchingViewKeys(t *testing.T) {
 	require.NoError(t, err)
 	changeCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherTexts[1], privacytypes.EnvelopeTransferNoteV1)
 	require.NoError(t, err)
-	recipientPlainText, err := privacycrypto.AsymDecrypt(recipientCipherText, recipientViewScalar)
+	recipientPlainText, err := privacycrypto.AsymDecrypt(recipientCipherText, testSecretScalar(t, recipientViewScalar))
 	require.NoError(t, err)
-	changePlainText, err := privacycrypto.AsymDecrypt(changeCipherText, changeViewScalar)
+	changePlainText, err := privacycrypto.AsymDecrypt(changeCipherText, testSecretScalar(t, changeViewScalar))
 	require.NoError(t, err)
 
 	recipientBytes, err := privacytypes.MarshalNotePlaintextV1(&recipientNote)
@@ -94,7 +94,7 @@ func TestEncryptOutputNotesWithViewTags(t *testing.T) {
 	commitments[0][31] = 0x01
 	commitments[1][31] = 0x02
 
-	cipherTexts, viewTags, err := EncryptOutputNotesWithViewTags(recipientNote, changeNote, commitments)
+	cipherTexts, viewTags, err := EncryptOutputNotesWithViewTags(testFixedNote(recipientNote), testFixedNote(changeNote), commitments)
 	require.NoError(t, err)
 	require.Len(t, cipherTexts, 2)
 	require.Len(t, viewTags, 2)
@@ -105,9 +105,9 @@ func TestEncryptOutputNotesWithViewTags(t *testing.T) {
 	require.NoError(t, err)
 	changeCipherText, err := privacytypes.UnwrapEncryptedEnvelopeV1(cipherTexts[1], privacytypes.EnvelopeTransferNoteV1)
 	require.NoError(t, err)
-	recipientPlainText, err := privacycrypto.AsymDecryptWithViewTag(recipientCipherText, recipientViewScalar, commitments[0], 0, viewTags[0])
+	recipientPlainText, err := privacycrypto.AsymDecryptWithViewTag(recipientCipherText, testSecretScalar(t, recipientViewScalar), commitments[0], 0, viewTags[0])
 	require.NoError(t, err)
-	changePlainText, err := privacycrypto.AsymDecryptWithViewTag(changeCipherText, changeViewScalar, commitments[1], 1, viewTags[1])
+	changePlainText, err := privacycrypto.AsymDecryptWithViewTag(changeCipherText, testSecretScalar(t, changeViewScalar), commitments[1], 1, viewTags[1])
 	require.NoError(t, err)
 
 	recipientBytes, err := privacytypes.MarshalNotePlaintextV1(&recipientNote)
@@ -117,7 +117,7 @@ func TestEncryptOutputNotesWithViewTags(t *testing.T) {
 	require.Equal(t, recipientBytes, recipientPlainText)
 	require.Equal(t, changeBytes, changePlainText)
 
-	_, err = privacycrypto.AsymDecryptWithViewTag(recipientCipherText, recipientViewScalar, commitments[0], 1, viewTags[0])
+	_, err = privacycrypto.AsymDecryptWithViewTag(recipientCipherText, testSecretScalar(t, recipientViewScalar), commitments[0], 1, viewTags[0])
 	require.ErrorIs(t, err, privacycrypto.ErrViewTagMismatch)
 }
 
@@ -143,6 +143,6 @@ func TestEncryptOutputNotesRejectsMissingViewKey(t *testing.T) {
 		Randomness:           big.NewInt(606),
 	}
 
-	_, err := EncryptOutputNotes(recipientNote, changeNote)
+	_, err := EncryptOutputNotes(testFixedNote(recipientNote), testFixedNote(changeNote))
 	require.ErrorContains(t, err, "invalid recipient note receiver view key")
 }
