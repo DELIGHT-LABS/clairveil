@@ -92,11 +92,18 @@ func (k BatchVectorKindV1) domainLabel(part string) (string, error) {
 
 // ComputeBatchVectorRootV1 commits to an exact-capacity vector. Active slots
 // are the prefix [0,count); every disabled value must be the canonical zero
-// sentinel. This makes count, order, vector type, and enabled state explicit.
+// sentinel. Capacity is one or two for audit-field single/2x2 vectors, or the
+// existing kind-specific 16/32 batch capacity. This makes count, order, vector
+// type, and enabled state explicit.
 func ComputeBatchVectorRootV1(kind BatchVectorKindV1, count uint32, values []*big.Int) (*big.Int, error) {
 	capacity, err := kind.Capacity()
 	if err != nil {
 		return nil, err
+	}
+	// Audit-field vectors also have exact capacities one and two. The existing
+	// kind-specific 16/32 capacities remain the only larger accepted shapes.
+	if len(values) == 1 || len(values) == 2 {
+		capacity = uint32(len(values))
 	}
 	if count > capacity {
 		return nil, fmt.Errorf("%s vector count %d exceeds capacity %d", kind, count, capacity)

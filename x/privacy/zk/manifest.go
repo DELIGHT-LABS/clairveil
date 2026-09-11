@@ -34,6 +34,8 @@ type ArtifactDescriptor struct {
 }
 
 type RuntimeArtifactManifest struct {
+	// DevelopmentOnly marks an untrusted, single-party setup bundle.
+	DevelopmentOnly    bool                             `json:"development_only,omitempty"`
 	SchemaVersion      string                           `json:"schema_version"`
 	GeneratedAt        string                           `json:"generated_at,omitempty"`
 	Curve              string                           `json:"curve"`
@@ -146,25 +148,40 @@ func ManifestFromChecksums(outDir, generatedAt string, checksums map[string]stri
 }
 
 func CircuitSetIdentityFromChecksums(checksums map[string]string) (*privacytypes.CircuitSetIdentity, error) {
-	identity := &privacytypes.CircuitSetIdentity{
-		SchemaVersion: privacytypes.CircuitSetIdentitySchemaVersion,
-		CircuitSetId:  ActiveCircuitSetID,
-		Curve:         CircuitCurve,
-		Circuits:      make([]*privacytypes.CircuitIdentity, 0, len(privacytypes.RequiredCircuitIdentityOrder)),
-	}
-	for _, circuitID := range privacytypes.RequiredCircuitIdentityOrder {
-		vkEnv := verifyingKeyChecksumEnv(circuitID)
-		schemaDigest, err := PublicInputSchemaSHA256(circuitID)
+	return identityForDescriptors(ActiveCircuitSetID, DefaultArtifactDescriptors(), checksums)
+}
+
+func identityForDescriptors(setID string, descriptors []ArtifactDescriptor, checksums map[string]string) (*privacytypes.CircuitSetIdentity, error) {
+	identity := &privacytypes.CircuitSetIdentity{SchemaVersion: privacytypes.CircuitSetIdentitySchemaVersion, CircuitSetId: setID, Curve: CircuitCurve}
+	for _, descriptor := range descriptors {
+		if descriptor.ArtifactType != "verifying_key" {
+			continue
+		}
+		digest, err := PublicInputSchemaSHA256(descriptor.CircuitID)
 		if err != nil {
 			return nil, err
 		}
-		identity.Circuits = append(identity.Circuits, &privacytypes.CircuitIdentity{
-			CircuitId:               circuitID,
-			VerifyingKeySha256:      strings.TrimSpace(checksums[vkEnv]),
-			PublicInputSchemaSha256: schemaDigest,
-		})
+		identity.Circuits = append(identity.Circuits, &privacytypes.CircuitIdentity{CircuitId: descriptor.CircuitID, VerifyingKeySha256: strings.TrimSpace(checksums[descriptor.ChecksumEnv]), PublicInputSchemaSha256: digest})
 	}
 	return identity, nil
+}
+
+// AuditFieldManifestFromChecksums describes a development bundle only. It does
+// not register a circuit set or authorize any key for production verification.
+func AuditFieldManifestFromChecksums(outDir, generatedAt string, checksums map[string]string) (RuntimeArtifactManifest, error) {
+	descriptors := AuditFieldArtifactDescriptors()
+	for i := range descriptors {
+		descriptors[i].SHA256 = checksums[descriptors[i].ChecksumEnv]
+	}
+	identity, err := identityForDescriptors(AuditFieldCircuitSetID, descriptors, checksums)
+	if err != nil {
+		return RuntimeArtifactManifest{}, err
+	}
+	manifest := RuntimeArtifactManifest{SchemaVersion: CircuitConfigSchemaVersion, DevelopmentOnly: true, GeneratedAt: generatedAt, Curve: CircuitCurve, ActiveSetID: AuditFieldCircuitSetID, ArtifactDir: outDir, Artifacts: descriptors, CircuitSetIdentity: identity}
+	if err := ValidateAuditFieldArtifactManifest(&manifest); err != nil {
+		return RuntimeArtifactManifest{}, err
+	}
+	return manifest, nil
 }
 
 func LoadArtifactManifest(path string) (*RuntimeArtifactManifest, error) {
@@ -215,6 +232,9 @@ func decodeRuntimeArtifactManifest(bz []byte, manifest *RuntimeArtifactManifest)
 func ValidateRuntimeArtifactManifest(manifest *RuntimeArtifactManifest) error {
 	if manifest == nil {
 		return fmt.Errorf("artifact manifest is required")
+	}
+	if manifest.DevelopmentOnly {
+		return fmt.Errorf("development-only artifact manifest is not accepted by the active set")
 	}
 	if manifest.SchemaVersion != CircuitConfigSchemaVersion {
 		return fmt.Errorf("artifact manifest schema_version must be %q", CircuitConfigSchemaVersion)
@@ -281,21 +301,6 @@ func verifyingKeyFilename(circuitID string) string {
 		return JoinSplitVKFile
 	case "batch-joinsplit-16x32-v1":
 		return BatchJoinSplit16x32VKFile
-	default:
-		return ""
-	}
-}
-
-func verifyingKeyChecksumEnv(circuitID string) string {
-	switch circuitID {
-	case "deposit":
-		return DepositVKSHA256Env
-	case "spend":
-		return SpendVKSHA256Env
-	case "joinsplit":
-		return JoinSplitVKSHA256Env
-	case "batch-joinsplit-16x32-v1":
-		return BatchJoinSplit16x32VKSHA256Env
 	default:
 		return ""
 	}

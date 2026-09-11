@@ -63,6 +63,11 @@ type BatchJoinSplit16x32 struct {
 type BatchJoinSplit16x32FeasibilityCircuit = BatchJoinSplit16x32
 
 func (c *BatchJoinSplit16x32) Define(api frontend.API) error {
+	return c.defineRelation(api, nil)
+}
+
+func (c *BatchJoinSplit16x32) defineRelation(api frontend.API, finish func([]frontend.Variable) error) error {
+	inputCommitments := make([]frontend.Variable, MaxBatchJoinSplitInputs)
 	h, err := mimc.NewMiMC(api)
 	if err != nil {
 		return err
@@ -119,6 +124,9 @@ func (c *BatchJoinSplit16x32) Define(api frontend.API) error {
 			c.InputAmounts[i], c.AssetID, c.InputRandomness[i],
 		)
 		assertEnabledNonZero(api, enabled, inputCommitment)
+		if finish != nil {
+			inputCommitments[i] = api.Select(enabled, inputCommitment, 0)
+		}
 
 		current := inputCommitment
 		for level := 0; level < MerkleDepth; level++ {
@@ -257,6 +265,9 @@ func (c *BatchJoinSplit16x32) Define(api frontend.API) error {
 	api.AssertIsEqual(computedUserRoot, c.UserDisclosureRoot)
 	api.AssertIsEqual(computedFullRoot, c.FullDisclosureRoot)
 
+	if finish != nil {
+		return finish(inputCommitments)
+	}
 	intent := batchCircuitHash(&h,
 		privacytypes.DomainFieldV1(privacytypes.BatchTransferIntentV1DomainLabel),
 		c.ChainDomainHi, c.ChainDomainLo,

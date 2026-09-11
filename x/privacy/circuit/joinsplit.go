@@ -51,13 +51,17 @@ type JoinSplitCircuit struct {
 }
 
 func (c *JoinSplitCircuit) Define(api frontend.API) error {
-	if err := c.defineBase(api); err != nil {
+	return c.defineWithIntent(api, nil)
+}
+
+func (c *JoinSplitCircuit) defineWithIntent(api frontend.API, finish func([]frontend.Variable) error) error {
+	if err := c.defineRelation(api, finish); err != nil {
 		return err
 	}
 
 	// DISCLOSURE-BLINDING-SEPARATION V1 applies to the recipient output only.
 	// JoinSplit2x2 has no disabled output capacity slot: output 1 remains an
-	// active change note without a disclosure witness. This block is kept after
+	// active output with an arbitrary recipient and no disclosure witness. This block is kept after
 	// the base relation so it exactly matches the frozen protocol contract.
 	userEnabled := api.Sub(1, api.IsZero(c.UserPrivacyPolicy))
 	api.AssertIsEqual(api.Mul(api.Sub(1, userEnabled), c.UserDisclosureBlinding), 0)
@@ -75,6 +79,11 @@ func (c *JoinSplitCircuit) Define(api frontend.API) error {
 // so regression tests can prove that each newly rejected witness satisfied all
 // prior constraints; callers outside this package cannot select the old path.
 func (c *JoinSplitCircuit) defineBase(api frontend.API) error {
+	return c.defineRelation(api, nil)
+}
+
+func (c *JoinSplitCircuit) defineRelation(api frontend.API, finish func([]frontend.Variable) error) error {
+	inputCommitments := make([]frontend.Variable, NumInputs)
 	h, _ := mimc.NewMiMC(api)
 	curve, _ := twistededwards.NewEdCurve(api, ecc_twistededwards.BN254)
 	api.ToBinary(c.ChainDomainHi, 128)
@@ -107,6 +116,7 @@ func (c *JoinSplitCircuit) defineBase(api frontend.API) error {
 			c.InputRandomness[i],
 		)
 		inputCommitment := h.Sum()
+		inputCommitments[i] = inputCommitment
 		api.AssertIsDifferent(inputCommitment, 0)
 
 		currentHash := inputCommitment
@@ -146,44 +156,47 @@ func (c *JoinSplitCircuit) defineBase(api frontend.API) error {
 	api.AssertIsEqual(c.InputViewPubKeys[0].A.X, c.InputViewPubKeys[1].A.X)
 	api.AssertIsEqual(c.InputViewPubKeys[0].A.Y, c.InputViewPubKeys[1].A.Y)
 
-	h.Reset()
-	h.Write(
-		privacycrypto.HashString(privacytypes.NullifierSetV1FieldDomain),
-		NumInputs,
-		c.Nullifiers[0],
-		c.Nullifiers[1],
-	)
-	nullifierSetDigest := h.Sum()
-	h.Reset()
-	h.Write(
-		privacycrypto.HashString(privacytypes.CommitmentSetV1FieldDomain),
-		NumOutputs,
-		c.Commitments[0],
-		c.Commitments[1],
-	)
-	commitmentSetDigest := h.Sum()
-	h.Reset()
-	h.Write(
-		privacycrypto.HashString(privacytypes.TransferIntentV2FieldDomain),
-		c.ChainDomainHi,
-		c.ChainDomainLo,
-		privacycrypto.HashString(privacytypes.JoinSplit2x2V2CircuitKindFieldDomain),
-		c.MerkleRoot,
-		NumInputs,
-		NumOutputs,
-		c.AssetID,
-		nullifierSetDigest,
-		commitmentSetDigest,
-		c.UserDisclosureDigest,
-		c.FullDisclosureDigest,
-		c.PayloadDigestHi,
-		c.PayloadDigestLo,
-		c.ExpiresAtUnix,
-	)
-	transferIntent := h.Sum()
-	h.Reset()
-	if err := eddsa.Verify(curve, c.OwnerSignature, transferIntent, c.InputSpendPubKeys[0], &h); err != nil {
-		return err
+	if finish == nil {
+		h.Reset()
+		h.Write(
+			privacycrypto.HashString(privacytypes.NullifierSetV1FieldDomain),
+			NumInputs,
+			c.Nullifiers[0],
+			c.Nullifiers[1],
+		)
+		nullifierSetDigest := h.Sum()
+		h.Reset()
+		h.Write(
+			privacycrypto.HashString(privacytypes.CommitmentSetV1FieldDomain),
+			NumOutputs,
+			c.Commitments[0],
+			c.Commitments[1],
+		)
+		commitmentSetDigest := h.Sum()
+		h.Reset()
+		h.Write(
+			privacycrypto.HashString(privacytypes.TransferIntentV2FieldDomain),
+			c.ChainDomainHi,
+			c.ChainDomainLo,
+			privacycrypto.HashString(privacytypes.JoinSplit2x2V2CircuitKindFieldDomain),
+			c.MerkleRoot,
+			NumInputs,
+			NumOutputs,
+			c.AssetID,
+			nullifierSetDigest,
+			commitmentSetDigest,
+			c.UserDisclosureDigest,
+			c.FullDisclosureDigest,
+			c.PayloadDigestHi,
+			c.PayloadDigestLo,
+			c.ExpiresAtUnix,
+		)
+		transferIntent := h.Sum()
+		h.Reset()
+		if err := eddsa.Verify(curve, c.OwnerSignature, transferIntent, c.InputSpendPubKeys[0], &h); err != nil {
+			return err
+		}
+
 	}
 
 	for i := 0; i < NumOutputs; i++ {
@@ -272,5 +285,8 @@ func (c *JoinSplitCircuit) defineBase(api frontend.API) error {
 	)
 	api.AssertIsEqual(h.Sum(), c.FullDisclosureDigest)
 
+	if finish != nil {
+		return finish(inputCommitments)
+	}
 	return nil
 }

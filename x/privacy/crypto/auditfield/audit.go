@@ -5,12 +5,12 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/internal/ctbn254/secretmem"
 	"io"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/internal/ctbn254/edwardsct"
 	frct "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/internal/ctbn254/frct"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/internal/ctbn254/scalarct"
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/internal/ctbn254/secretmem"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/internal/ctbn254/secretprofile"
 )
 
@@ -22,27 +22,58 @@ var ErrAuditDecrypt = errors.New("audit decryption failed")
 // only typed fixed context and plaintext; raw T, arbitrary AD, nonce and
 // encryption scalar inputs are unavailable to production callers.
 func EncryptAudit(context AuditContext, plain AuditPlain) (EnvelopeFrame, CipherRoot, error) {
+	envelope, root, witness, err := EncryptAuditForProver(context, plain)
+	witness.Clear()
+	return envelope, root, err
+}
+
+// EncryptionWitness owns the scalar needed by the integrated proof. It is
+// redacted by default; explicit witness export is inside the prover trust boundary.
+type EncryptionWitness struct{ r scalarct.NonzeroScalar }
+
+func (w EncryptionWitness) Format(s fmt.State, _ rune) {
+	_, _ = io.WriteString(s, "auditfield.EncryptionWitness(<redacted>)")
+}
+func (w EncryptionWitness) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("implicit encryption witness serialization is disabled")
+}
+func (w EncryptionWitness) MarshalText() ([]byte, error) {
+	return nil, errors.New("implicit encryption witness serialization is disabled")
+}
+func (w *EncryptionWitness) Clear() { secretmem.Clear(&w.r) }
+func (w EncryptionWitness) ToProverWitnessBE32() ([32]byte, error) {
+	if w.r.IsValid() != 1 {
+		return [32]byte{}, errors.New("invalid encryption witness")
+	}
+	var raw [32]byte
+	subtle.WithDataIndependentTiming(func() { raw = w.r.Bytes() })
+	return raw, nil
+}
+
+// EncryptAuditForProver samples fresh independent r/nonce exactly as EncryptAudit
+// does and retains r solely for the integrated circuit's private witness.
+// It accepts no caller-selected scalar, nonce, raw T, or arbitrary AD.
+func EncryptAuditForProver(context AuditContext, plain AuditPlain) (EnvelopeFrame, CipherRoot, EncryptionWitness, error) {
 	if err := secretprofile.Check(); err != nil {
-		return EnvelopeFrame{}, CipherRoot{}, err
+		return EnvelopeFrame{}, CipherRoot{}, EncryptionWitness{}, err
 	}
 	r, err := scalarct.SampleNonzeroScalar(rand.Reader)
 	if err != nil {
-		return EnvelopeFrame{}, CipherRoot{}, err
+		return EnvelopeFrame{}, CipherRoot{}, EncryptionWitness{}, err
 	}
+	defer secretmem.Clear(&r)
 	var nonce Nonce128
-	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
-		r = scalarct.NonzeroScalar{}
-		return EnvelopeFrame{}, CipherRoot{}, err
+	if _, err = io.ReadFull(rand.Reader, nonce[:]); err != nil {
+		return EnvelopeFrame{}, CipherRoot{}, EncryptionWitness{}, err
 	}
+	defer clear(nonce[:])
 	var envelope EnvelopeFrame
 	var root CipherRoot
 	subtle.WithDataIndependentTiming(func() { envelope, root, err = encryptAuditWithNonce(context.AuditKey(), r, context, nonce, plain) })
-	r = scalarct.NonzeroScalar{}
-	clear(nonce[:])
 	if err != nil {
-		return EnvelopeFrame{}, CipherRoot{}, err
+		return EnvelopeFrame{}, CipherRoot{}, EncryptionWitness{}, err
 	}
-	return envelope, root, nil
+	return envelope, root, EncryptionWitness{r: r}, nil
 }
 
 // encryptAuditWithNonce is deterministic test plumbing for the fixed

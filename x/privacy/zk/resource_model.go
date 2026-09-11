@@ -61,6 +61,10 @@ func ComputeBatchGasV1(model BatchGasModelV1, bounds BatchResourceBoundsV1, usag
 		return BatchGasBreakdownV1{}, err
 	}
 
+	return computeGasComponentsV1(model, usage)
+}
+
+func computeGasComponentsV1(model BatchGasModelV1, usage BatchResourceUsageV1) (BatchGasBreakdownV1, error) {
 	breakdown := BatchGasBreakdownV1{Verification: model.VerifyBase}
 	var err error
 	if breakdown.Inputs, err = checkedGasProduct("inputs", model.PerInput, usage.InputCount); err != nil {

@@ -36,6 +36,8 @@ const (
 )
 
 type ArtifactRegistryConfig struct {
+	// Empty selects the current active set. Audit-field is explicit and dev-only.
+	CircuitSetID             string
 	ArtifactDir              string
 	ReadFile                 func(string) ([]byte, error)
 	LookupEnv                func(string) (string, bool)
@@ -50,6 +52,7 @@ type artifactCacheEntry struct {
 }
 
 type ArtifactRegistry struct {
+	circuitSetID             string
 	artifactDir              string
 	readFile                 func(string) ([]byte, error)
 	lookupEnv                func(string) (string, bool)
@@ -125,7 +128,18 @@ func NewArtifactRegistry(config ArtifactRegistryConfig) (*ArtifactRegistry, erro
 	if config.AllowDevelopmentOverride && runtimeEnvironment != ZKRuntimeEnvironmentDevelopment {
 		return nil, fmt.Errorf("artifact checksum override is development-only")
 	}
+	setID := config.CircuitSetID
+	if setID == "" {
+		setID = ActiveCircuitSetID
+	}
+	if setID != ActiveCircuitSetID && setID != AuditFieldCircuitSetID {
+		return nil, fmt.Errorf("unsupported circuit set %q", setID)
+	}
+	if setID == AuditFieldCircuitSetID && (runtimeEnvironment != ZKRuntimeEnvironmentDevelopment || config.AllowDevelopmentOverride) {
+		return nil, fmt.Errorf("audit-field set requires explicit development mode without checksum overrides")
+	}
 	return &ArtifactRegistry{
+		circuitSetID:             setID,
 		artifactDir:              dir,
 		readFile:                 readFile,
 		lookupEnv:                lookupEnv,
@@ -155,7 +169,7 @@ func (r *ArtifactRegistry) LocalCircuitSetIdentity() (*privacytypes.CircuitSetId
 // circuits and never reads their VK files; it also compares consensus metadata
 // when expectedConsensus is supplied by the caller.
 func (r *ArtifactRegistry) CheckReadiness(role ArtifactRole, circuits []CircuitID, expectedConsensus *privacytypes.CircuitSetIdentity) error {
-	requested, err := normalizeCircuitIDs(circuits)
+	requested, err := r.normalizeCircuitIDs(circuits)
 	if err != nil {
 		return err
 	}
@@ -169,7 +183,7 @@ func (r *ArtifactRegistry) CheckReadiness(role ArtifactRole, circuits []CircuitI
 		if expectedConsensus == nil {
 			return fmt.Errorf("consensus circuit identity is required for validator readiness")
 		}
-		if err := privacytypes.ValidateCircuitSetIdentity(expectedConsensus); err != nil {
+		if err := r.validateExpectedIdentity(expectedConsensus); err != nil {
 			return fmt.Errorf("invalid consensus circuit identity: %w", err)
 		}
 		if !reflect.DeepEqual(expectedConsensus, manifest.CircuitSetIdentity) {
@@ -196,7 +210,7 @@ func (r *ArtifactRegistry) CheckReadiness(role ArtifactRole, circuits []CircuitI
 		return nil
 	case ArtifactRoleProver:
 		if expectedConsensus != nil {
-			if err := privacytypes.ValidateCircuitSetIdentity(expectedConsensus); err != nil {
+			if err := r.validateExpectedIdentity(expectedConsensus); err != nil {
 				return fmt.Errorf("invalid consensus circuit identity: %w", err)
 			}
 			if !reflect.DeepEqual(expectedConsensus, manifest.CircuitSetIdentity) {
@@ -257,7 +271,7 @@ func (r *ArtifactRegistry) loadManifest() (*RuntimeArtifactManifest, error) {
 			r.manifestErr = fmt.Errorf("decode structured artifact manifest %s: %w", path, err)
 			return
 		}
-		if err := ValidateRuntimeArtifactManifest(&manifest); err != nil {
+		if err := r.validateManifest(&manifest); err != nil {
 			r.manifestErr = err
 			return
 		}
@@ -270,7 +284,7 @@ func (r *ArtifactRegistry) loadArtifact(circuitID CircuitID, artifactType string
 	if r == nil {
 		return nil, fmt.Errorf("artifact registry is required")
 	}
-	if _, err := normalizeCircuitIDs([]CircuitID{circuitID}); err != nil {
+	if _, err := r.normalizeCircuitIDs([]CircuitID{circuitID}); err != nil {
 		return nil, err
 	}
 	cacheKey := string(circuitID) + ":" + artifactType
@@ -332,7 +346,7 @@ func (r *ArtifactRegistry) readArtifact(circuitID CircuitID, artifactType string
 	if read != int64(len(bz)) {
 		return nil, fmt.Errorf("artifact %s has trailing bytes", descriptor.Filename)
 	}
-	if artifactType == "verifying_key" {
+	if artifactType == "verifying_key" || r.circuitSetID == AuditFieldCircuitSetID {
 		var canonical bytes.Buffer
 		if _, err := object.(interface {
 			WriteTo(io.Writer) (int64, error)
@@ -340,7 +354,19 @@ func (r *ArtifactRegistry) readArtifact(circuitID CircuitID, artifactType string
 			return nil, fmt.Errorf("re-encode %s: %w", descriptor.Filename, err)
 		}
 		if !bytes.Equal(canonical.Bytes(), bz) {
-			return nil, fmt.Errorf("verifying key %s is not canonically encoded", descriptor.Filename)
+			return nil, fmt.Errorf("artifact %s is not canonically encoded", descriptor.Filename)
+		}
+	}
+	if r.circuitSetID == AuditFieldCircuitSetID {
+		switch v := object.(type) {
+		case constraint.ConstraintSystem:
+			if v.GetNbPublicVariables() != 24 {
+				return nil, fmt.Errorf("audit-field R1CS requires PI23")
+			}
+		case groth16.VerifyingKey:
+			if v.NbPublicWitness() != 23 {
+				return nil, fmt.Errorf("audit-field VK requires PI23")
+			}
 		}
 	}
 	return object, nil
@@ -392,4 +418,44 @@ func normalizeCircuitIDs(circuits []CircuitID) ([]CircuitID, error) {
 		seen[circuitID] = struct{}{}
 	}
 	return append([]CircuitID(nil), circuits...), nil
+}
+
+func (r *ArtifactRegistry) normalizeCircuitIDs(circuits []CircuitID) ([]CircuitID, error) {
+	if r == nil {
+		return nil, fmt.Errorf("artifact registry is required")
+	}
+	if r.circuitSetID != AuditFieldCircuitSetID {
+		return normalizeCircuitIDs(circuits)
+	}
+	if len(circuits) == 0 {
+		return nil, fmt.Errorf("at least one circuit id is required")
+	}
+	seen := make(map[CircuitID]bool)
+	for _, id := range circuits {
+		if !isAuditFieldCircuit(string(id)) || seen[id] {
+			return nil, fmt.Errorf("unsupported or duplicate audit-field circuit id %q", id)
+		}
+		seen[id] = true
+	}
+	return append([]CircuitID(nil), circuits...), nil
+}
+func (r *ArtifactRegistry) validateManifest(manifest *RuntimeArtifactManifest) error {
+	if r.circuitSetID == AuditFieldCircuitSetID {
+		if !manifest.DevelopmentOnly {
+			return fmt.Errorf("audit-field development bundle marker is required")
+		}
+		return ValidateAuditFieldArtifactManifest(manifest)
+	}
+	return ValidateRuntimeArtifactManifest(manifest)
+}
+func (r *ArtifactRegistry) validateExpectedIdentity(expected *privacytypes.CircuitSetIdentity) error {
+	if r.circuitSetID == AuditFieldCircuitSetID {
+		// loadManifest has validated the complete PI23 identity; readiness also
+		// requires exact equality with this independent expected identity.
+		if expected == nil || expected.CircuitSetId != r.circuitSetID {
+			return fmt.Errorf("audit-field expected identity is required")
+		}
+		return nil
+	}
+	return privacytypes.ValidateCircuitSetIdentity(expected)
 }

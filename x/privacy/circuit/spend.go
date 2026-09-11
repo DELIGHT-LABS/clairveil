@@ -35,6 +35,11 @@ type SpendCircuit struct {
 }
 
 func (c *SpendCircuit) Define(api frontend.API) error {
+	return c.defineRelation(api, nil)
+}
+
+// finish is a compile-time caller, never a witness-controlled proof fallback.
+func (c *SpendCircuit) defineRelation(api frontend.API, finish func(frontend.Variable) error) error {
 	h, _ := mimc.NewMiMC(api)
 	curve, _ := twistededwards.NewEdCurve(api, ecc_twistededwards.BN254)
 
@@ -77,25 +82,28 @@ func (c *SpendCircuit) Define(api frontend.API) error {
 	}
 	api.AssertIsEqual(currentHash, c.MerkleRoot)
 
-	h.Reset()
-	h.Write(
-		privacycrypto.HashString(privacytypes.SpendIntentV2FieldDomain),
-		c.ChainDomainHi,
-		c.ChainDomainLo,
-		privacycrypto.HashString(privacytypes.SpendV2CircuitKindFieldDomain),
-		c.MerkleRoot,
-		c.Nullifier,
-		c.Amount,
-		c.AssetID,
-		c.RecipientDigestHi,
-		c.RecipientDigestLo,
-		c.ExpiresAtUnix,
-	)
-	msg := h.Sum()
+	if finish == nil {
+		h.Reset()
+		h.Write(
+			privacycrypto.HashString(privacytypes.SpendIntentV2FieldDomain),
+			c.ChainDomainHi,
+			c.ChainDomainLo,
+			privacycrypto.HashString(privacytypes.SpendV2CircuitKindFieldDomain),
+			c.MerkleRoot,
+			c.Nullifier,
+			c.Amount,
+			c.AssetID,
+			c.RecipientDigestHi,
+			c.RecipientDigestLo,
+			c.ExpiresAtUnix,
+		)
+		msg := h.Sum()
 
-	h.Reset()
-	if err := eddsa.Verify(curve, c.Signature, msg, c.ReceiverSpendPubKey, &h); err != nil {
-		return err
+		h.Reset()
+		if err := eddsa.Verify(curve, c.Signature, msg, c.ReceiverSpendPubKey, &h); err != nil {
+			return err
+		}
+
 	}
 
 	h.Reset()
@@ -109,6 +117,9 @@ func (c *SpendCircuit) Define(api frontend.API) error {
 	api.AssertIsDifferent(c.Nullifier, 0)
 	api.AssertIsEqual(h.Sum(), c.Nullifier)
 
+	if finish != nil {
+		return finish(noteCommitment)
+	}
 	return nil
 }
 

@@ -127,7 +127,7 @@ func TestJoinSplitCircuitRejectsExactDuplicateInputInflation(t *testing.T) {
 	err := test.IsSolved(&JoinSplitCircuit{}, assignment, ecc.BN254.ScalarField())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "[assertIsDifferent]")
-	require.Contains(t, err.Error(), "circuit.(*JoinSplitCircuit).defineBase")
+	require.Contains(t, err.Error(), "circuit.(*JoinSplitCircuit).defineRelation")
 
 	assert := test.NewAssert(t)
 	assert.ProverFailed(&JoinSplitCircuit{}, assignment, test.WithCurves(ecc.BN254))
@@ -147,7 +147,7 @@ func TestBatchJoinSplit16x32RejectsExactDuplicateInputInflation(t *testing.T) {
 	err := test.IsSolved(&BatchJoinSplit16x32{}, assignment, ecc.BN254.ScalarField())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "[assertIsEqual] 1 == 0")
-	require.Contains(t, err.Error(), "batch_joinsplit_16x32.go:150")
+	require.Contains(t, err.Error(), "circuit.(*BatchJoinSplit16x32).defineRelation")
 
 	assertBatchProductionSolve(t, compiledBatchProductionCCS(t), assignment, false)
 }

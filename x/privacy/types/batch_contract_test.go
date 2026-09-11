@@ -172,8 +172,9 @@ func TestValidateAuditKeyIDV1BoundsAndCanonicalCharset(t *testing.T) {
 
 func referenceBatchVectorRoot(t *testing.T, kind BatchVectorKindV1, count uint32, values []*big.Int) *big.Int {
 	t.Helper()
-	capacity, err := kind.Capacity()
+	_, err := kind.Capacity()
 	require.NoError(t, err)
+	capacity := uint32(len(values))
 	layer := make([]*big.Int, capacity)
 	for i := uint32(0); i < capacity; i++ {
 		enabled := big.NewInt(0)
@@ -255,4 +256,26 @@ func zeroBigIntsForBatchTest(size int) []*big.Int {
 		values[i] = big.NewInt(0)
 	}
 	return values
+}
+
+func TestAuditVectorCapacitiesOneAndTwo(t *testing.T) {
+	for _, kind := range []BatchVectorKindV1{BatchVectorNullifierV1, BatchVectorCommitmentV1, BatchVectorUserDisclosureV1, BatchVectorFullDisclosureV1} {
+		for _, values := range [][]*big.Int{{big.NewInt(11)}, {big.NewInt(11), big.NewInt(13)}} {
+			got, err := ComputeBatchVectorRootV1(kind, uint32(len(values)), values)
+			require.NoError(t, err)
+			require.Equal(t, referenceBatchVectorRoot(t, kind, uint32(len(values)), values).String(), got.String())
+		}
+		_, err := ComputeBatchVectorRootV1(kind, 2, []*big.Int{big.NewInt(11)})
+		require.Error(t, err)
+		_, err = ComputeBatchVectorRootV1(kind, 1, []*big.Int{big.NewInt(11), big.NewInt(13)})
+		require.Error(t, err)
+		_, err = ComputeBatchVectorRootV1(kind, 1, []*big.Int{fr.Modulus()})
+		require.Error(t, err)
+		_, err = ComputeBatchVectorRootV1(kind, 1, []*big.Int{big.NewInt(0)})
+		require.Error(t, err)
+		_, err = ComputeBatchVectorRootV1(kind, 1, []*big.Int{big.NewInt(11), big.NewInt(0)})
+		require.NoError(t, err)
+		_, err = ComputeBatchVectorRootV1(kind, 1, []*big.Int{big.NewInt(11), big.NewInt(0), big.NewInt(0)})
+		require.Error(t, err)
+	}
 }

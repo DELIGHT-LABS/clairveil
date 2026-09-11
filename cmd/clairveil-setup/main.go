@@ -40,7 +40,25 @@ func main() {
 	outDirFlag := flag.String("out", "artifacts/privacy", "output directory for generated zk artifacts")
 	overwriteFlag := flag.Bool("overwrite", false, "overwrite existing artifacts in the output directory")
 	circuitFlag := flag.String("circuit", setupCircuitAll, "artifact circuit to generate: all, deposit, spend, joinsplit, or batch-joinsplit-16x32-v1")
+	setFlag := flag.String("set", zk.ActiveCircuitSetID, "circuit set; audit-field requires -development and a new output directory")
+	developmentFlag := flag.Bool("development", false, "acknowledge untrusted development-only setup")
 	flag.Parse()
+	if *setFlag == zk.AuditFieldCircuitSetID {
+		if !*developmentFlag || *circuitFlag != setupCircuitAll || *overwriteFlag {
+			fmt.Fprintln(os.Stderr, "audit-field setup requires -development, -circuit all, and no -overwrite")
+			os.Exit(1)
+		}
+		if err := generateAuditFieldDevelopment(*outDirFlag); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println("development-only audit-field bundle generated; not authorized for production")
+		return
+	}
+	if *setFlag != zk.ActiveCircuitSetID {
+		fmt.Fprintf(os.Stderr, "unsupported circuit set %q\n", *setFlag)
+		os.Exit(1)
+	}
 	selectedCircuit, err := parseSetupCircuit(*circuitFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid circuit selection: %v\n", err)
@@ -93,6 +111,7 @@ func main() {
 }
 
 type artifactSetOps struct {
+	checksumSet              func(string) (map[string]string, error)
 	copyDirectory            func(string, string) error
 	writeEnvManifest         func(string, string, map[string]string) error
 	writeLegacyChecksumsJSON func(string, string, map[string]string) error
@@ -103,6 +122,7 @@ type artifactSetOps struct {
 
 func defaultArtifactSetOps() artifactSetOps {
 	return artifactSetOps{
+		checksumSet:              checksumArtifactSet,
 		copyDirectory:            copyDirectoryContents,
 		writeEnvManifest:         writeEnvManifest,
 		writeLegacyChecksumsJSON: writeLegacyChecksumsJSON,
@@ -130,7 +150,7 @@ func writeArtifactSet(
 			return nil, fmt.Errorf("write %s: %w", definition.filename, err)
 		}
 	}
-	checksums, err := checksumArtifactSet(targetDir)
+	checksums, err := ops.checksumSet(targetDir)
 	if err != nil {
 		return nil, fmt.Errorf("checksum generated artifact set: %w", err)
 	}
@@ -279,6 +299,10 @@ func copyRegularFile(sourcePath, destinationPath string, mode fs.FileMode) (retu
 }
 
 func buildArtifactDefinitions(selectedCircuit string) ([]artifactDefinition, error) {
+	return buildArtifactDefinitionsForSet(selectedCircuit, zk.ActiveCircuitSetID)
+}
+
+func buildArtifactDefinitionsForSet(selectedCircuit, setID string) ([]artifactDefinition, error) {
 	type circuitDefinition struct {
 		id                        string
 		circuit                   frontend.Circuit
@@ -291,6 +315,20 @@ func buildArtifactDefinitions(selectedCircuit string) ([]artifactDefinition, err
 		{setupCircuitSpend, &circuit.SpendCircuit{}, zk.SpendR1CSFile, zk.SpendR1CSSHA256Env, zk.SpendPKFile, zk.SpendPKSHA256Env, zk.SpendVKFile, zk.SpendVKSHA256Env},
 		{setupCircuitJoinSplit, &circuit.JoinSplitCircuit{}, zk.JoinSplitR1CSFile, zk.JoinSplitR1CSSHA256Env, zk.JoinSplitPKFile, zk.JoinSplitPKSHA256Env, zk.JoinSplitVKFile, zk.JoinSplitVKSHA256Env},
 		{setupCircuitBatchJoinSplit16x32V1, &circuit.BatchJoinSplit16x32{}, zk.BatchJoinSplit16x32R1CSFile, zk.BatchJoinSplit16x32R1CSSHA256Env, zk.BatchJoinSplit16x32PKFile, zk.BatchJoinSplit16x32PKSHA256Env, zk.BatchJoinSplit16x32VKFile, zk.BatchJoinSplit16x32VKSHA256Env},
+	}
+	if setID == zk.AuditFieldCircuitSetID {
+		if selectedCircuit != setupCircuitAll {
+			return nil, fmt.Errorf("audit-field setup generates exactly four circuits")
+		}
+		descriptors := zk.AuditFieldArtifactDescriptors()
+		shapes := []frontend.Circuit{&circuit.DepositAuditFieldV1{}, &circuit.SpendAuditFieldV1{}, &circuit.JoinSplitAuditFieldV1{}, &circuit.BatchJoinSplitAuditFieldV1{}}
+		circuits = nil
+		for i, shape := range shapes {
+			a, b, c := descriptors[3*i], descriptors[3*i+1], descriptors[3*i+2]
+			circuits = append(circuits, circuitDefinition{a.CircuitID, shape, a.Filename, a.ChecksumEnv, b.Filename, b.ChecksumEnv, c.Filename, c.ChecksumEnv})
+		}
+	} else if setID != zk.ActiveCircuitSetID {
+		return nil, fmt.Errorf("unsupported circuit set %q", setID)
 	}
 	definitions := make([]artifactDefinition, 0, len(circuits)*3)
 	for _, definition := range circuits {
@@ -356,7 +394,10 @@ func validateExistingArtifactSet(outDir string) error {
 }
 
 func checksumArtifactSet(outDir string) (map[string]string, error) {
-	descriptors := zk.DefaultArtifactDescriptors()
+	return checksumDescriptors(outDir, zk.DefaultArtifactDescriptors())
+}
+
+func checksumDescriptors(outDir string, descriptors []zk.ArtifactDescriptor) (map[string]string, error) {
 	checksums := make(map[string]string, len(descriptors))
 	for _, descriptor := range descriptors {
 		checksum, err := checksumFile(filepath.Join(outDir, descriptor.Filename))
@@ -499,5 +540,94 @@ func writeFileAtomic(path string, content []byte, mode fs.FileMode) (returnErr e
 	if err := os.Rename(temporaryPath, path); err != nil {
 		return err
 	}
+	return nil
+}
+
+// New audit bundles are staged completely and validated before a single rename.
+// Existing directories (even empty ones) are never replaced by this dev path.
+func generateAuditFieldDevelopment(rawDir string) error {
+	return generateAuditFieldDevelopmentWithOps(rawDir, func() ([]artifactDefinition, error) {
+		return buildArtifactDefinitionsForSet(setupCircuitAll, zk.AuditFieldCircuitSetID)
+	}, defaultArtifactSetOps())
+}
+
+func generateAuditFieldDevelopmentWithOps(rawDir string, build func() ([]artifactDefinition, error), ops artifactSetOps) (returnErr error) {
+	outDir, err := filepath.Abs(rawDir)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(outDir); err == nil {
+		return fmt.Errorf("development output must not exist: %s", outDir)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(outDir), 0700); err != nil {
+		return err
+	}
+	staging, err := os.MkdirTemp(filepath.Dir(outDir), ".audit-field-staging-")
+	if err != nil {
+		return err
+	}
+	cleanupStaging := true
+	defer func() {
+		if cleanupStaging {
+			if err := ops.removeAll(staging); err != nil {
+				returnErr = fmt.Errorf("%w; additionally failed to remove staging artifact set %s: %v", returnErr, staging, err)
+			}
+		}
+	}()
+	definitions, err := build()
+	if err != nil {
+		return err
+	}
+	ops.checksumSet = func(dir string) (map[string]string, error) {
+		return checksumDescriptors(dir, zk.AuditFieldArtifactDescriptors())
+	}
+	ops.writeEnvManifest = func(path, dir string, checksums map[string]string) error {
+		// No default-registry environment selector: consuming this bundle requires
+		// an explicit development ArtifactRegistryConfig.CircuitSetID.
+		content := "# DEVELOPMENT ONLY; not an active production artifact set\n"
+		for _, d := range zk.AuditFieldArtifactDescriptors() {
+			content += fmt.Sprintf("%s=%s\n", d.ChecksumEnv, checksums[d.ChecksumEnv])
+		}
+		return writeFileAtomic(path, []byte(content), 0600)
+	}
+	ops.writeLegacyChecksumsJSON = func(string, string, map[string]string) error { return nil }
+	ops.writeJSONManifest = func(path, dir string, checksums map[string]string) error {
+		m, err := zk.AuditFieldManifestFromChecksums(dir, time.Now().UTC().Format(time.RFC3339), checksums)
+		if err != nil {
+			return err
+		}
+		raw, err := json.MarshalIndent(m, "", "  ")
+		if err != nil {
+			return err
+		}
+		return writeFileAtomic(path, append(raw, '\n'), 0600)
+	}
+	if _, err := writeArtifactSet(staging, outDir, definitions, false, ops); err != nil {
+		return err
+	}
+	registry, err := zk.NewArtifactRegistry(zk.ArtifactRegistryConfig{ArtifactDir: staging, RuntimeEnvironment: zk.ZKRuntimeEnvironmentDevelopment, CircuitSetID: zk.AuditFieldCircuitSetID})
+	if err != nil {
+		return err
+	}
+	identity, err := registry.LocalCircuitSetIdentity()
+	if err != nil {
+		return err
+	}
+	for _, role := range []zk.ArtifactRole{zk.ArtifactRoleProver, zk.ArtifactRoleValidator} {
+		if err := registry.CheckReadiness(role, zk.AuditFieldCircuitIDs(), identity); err != nil {
+			return err
+		}
+	}
+	if _, err := os.Lstat(outDir); err == nil {
+		return fmt.Errorf("development output appeared during setup: %s", outDir)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := ops.rename(staging, outDir); err != nil {
+		return err
+	}
+	cleanupStaging = false
 	return nil
 }
