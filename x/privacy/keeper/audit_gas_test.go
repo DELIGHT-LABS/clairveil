@@ -84,3 +84,19 @@ func TestAuditPrechargeBoundsProjectedScanForAllTransactionKinds(t *testing.T) {
 		})
 	}
 }
+
+func TestAuditPrechargeIncludesDelegatedEventBytes(t *testing.T) {
+	_, normalCtx, _ := setupMsgServerKeeper()
+	_, delegatedCtx, _ := setupMsgServerKeeper()
+	message := &v2.MsgDeposit{
+		Creator: testAddress(1), Amount: "1uclair",
+		Output: &v2.OutputEffect{Commitment: af.Field32FromUint64(1).Bytes(), Ciphertext: testKeeperEnvelopeTB(t, pt.EnvelopeDepositNoteV1)},
+		Proof:  make([]byte, 164), ExpiresAtUnix: msgServerTestExpiry,
+		Audit: &v2.AuditAuthorization{KeyId: make([]byte, 32), Epoch: 1, Envelope: make([]byte, 336)},
+	}
+	_, err := prechargeAuditMessage(normalCtx, message)
+	require.NoError(t, err)
+	_, err = prechargeAuditMessage(delegatedCtx, message, 512)
+	require.NoError(t, err)
+	require.Greater(t, delegatedCtx.GasMeter().GasConsumed(), normalCtx.GasMeter().GasConsumed())
+}

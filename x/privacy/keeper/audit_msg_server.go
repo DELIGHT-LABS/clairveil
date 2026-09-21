@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"math"
 
@@ -26,17 +27,35 @@ type verifiedAuditTransition struct {
 	message        types.ValidatedAuditMessage
 	record         *auditTransitionRecord
 	projectedBound uint64
+	delegated      *delegatedDepositExecution
 	consumed       bool
 }
 
+type delegatedDepositExecution struct {
+	funder  sdk.AccAddress
+	payload []byte
+}
+
+func (d *delegatedDepositExecution) eventBytes() uint64 {
+	if d == nil {
+		return 0
+	}
+	return uint64(base64.StdEncoding.EncodedLen(len(d.payload)) + len(d.funder.String()) +
+		len(types.AttributeKeyDelegatedDepositPayload) + len(types.AttributeKeyDelegatedFunder))
+}
+
 func (k auditMsgServer) executeAudit(ctx sdk.Context, raw sdk.Msg) (uint64, error) {
+	return k.executeAuditWithDelegation(ctx, raw, nil)
+}
+
+func (k auditMsgServer) executeAuditWithDelegation(ctx sdk.Context, raw sdk.Msg, delegated *delegatedDepositExecution) (uint64, error) {
 	if k.audit == nil {
 		return 0, fmt.Errorf("audit-field execution is not configured")
 	}
 	if ctx.Value(auditApplyContextKey{}) != nil {
 		return 0, fmt.Errorf("nested privacy transition is forbidden")
 	}
-	bound, err := prechargeAuditMessage(ctx, raw)
+	bound, err := prechargeAuditMessage(ctx, raw, delegated.eventBytes())
 	if err != nil {
 		return 0, err
 	}
@@ -71,8 +90,43 @@ func (k auditMsgServer) executeAudit(ctx sdk.Context, raw sdk.Msg) (uint64, erro
 	if err := k.audit.registry.VerifyProof(id, m.Proof(), public, k.audit.identity); err != nil {
 		return 0, fmt.Errorf("audit proof verification failed: %w", err)
 	}
-	v := verifiedAuditTransition{owner: k.audit, message: m, record: record, projectedBound: bound}
+	v := verifiedAuditTransition{owner: k.audit, message: m, record: record, projectedBound: bound, delegated: delegated}
 	return k.applyPrivacyTransition(ctx, &v)
+}
+
+// DepositWithFunderV2 is a trusted in-process integration surface. It keeps
+// msg.Creator bound to the proof/public provenance while debiting only the
+// separately authenticated funder supplied by the caller. The caller must
+// authenticate Creator, amount/value, and a fixed escrow funder, and must keep
+// the EVM value movement plus all SDK state and events inside one outer
+// rollback boundary.
+func (k Keeper) DepositWithFunderV2(ctx sdk.Context, msg *privacyv2.MsgDeposit, funder sdk.AccAddress) (*privacyv2.MsgDepositResponse, error) {
+	if err := sdk.VerifyAddressFormat(funder); err != nil || len(funder) == 0 {
+		return nil, fmt.Errorf("invalid delegated deposit funder")
+	}
+	funder = append(sdk.AccAddress(nil), funder...)
+	if funder.Equals(authtypes.NewModuleAddress(types.ModuleName)) || funder.Equals(authtypes.NewModuleAddress(govtypes.ModuleName)) {
+		return nil, fmt.Errorf("invalid delegated deposit funder")
+	}
+	if msg == nil {
+		return nil, fmt.Errorf("nil deposit")
+	}
+	if proto.Size(msg) > types.MaxDelegatedDepositPayloadBytes {
+		return nil, fmt.Errorf("delegated deposit payload exceeds %d-byte cap", types.MaxDelegatedDepositPayloadBytes)
+	}
+	payload, err := proto.Marshal(msg)
+	if err != nil {
+		return nil, fmt.Errorf("marshal delegated deposit: %w", err)
+	}
+	if len(payload) == 0 || len(payload) > types.MaxDelegatedDepositPayloadBytes {
+		return nil, fmt.Errorf("delegated deposit payload exceeds %d-byte cap", types.MaxDelegatedDepositPayloadBytes)
+	}
+	server := auditMsgServer{Keeper: k}
+	_, err = server.executeAuditWithDelegation(ctx, msg, &delegatedDepositExecution{funder: funder, payload: append([]byte(nil), payload...)})
+	if err != nil {
+		return nil, err
+	}
+	return &privacyv2.MsgDepositResponse{}, nil
 }
 func (k auditMsgServer) Deposit(ctx context.Context, m *privacyv2.MsgDeposit) (*privacyv2.MsgDepositResponse, error) {
 	_, err := k.executeAudit(sdk.UnwrapSDKContext(ctx), m)
@@ -106,7 +160,7 @@ func (k auditMsgServer) BatchTransfer(ctx context.Context, m *privacyv2.MsgBatch
 // No point/hash/proof decoding occurs before this deterministic charge. The
 // bound includes maximal varints and actual payload lengths; apply measures the
 // scan state it writes and rejects any bound underestimate.
-func prechargeAuditMessage(ctx sdk.Context, raw sdk.Msg) (uint64, error) {
+func prechargeAuditMessage(ctx sdk.Context, raw sdk.Msg, delegatedEventBytes ...uint64) (uint64, error) {
 	var kind auditfield.Kind
 	var ni int
 	var outputs []*privacyv2.OutputEffect
@@ -144,6 +198,15 @@ func prechargeAuditMessage(ctx sdk.Context, raw sdk.Msg) (uint64, error) {
 		return 0, fmt.Errorf("audit message exceeds shape/byte cap")
 	}
 	aux := uint64(4)
+	if len(delegatedEventBytes) > 1 {
+		return 0, fmt.Errorf("invalid delegated event gas input")
+	}
+	if len(delegatedEventBytes) == 1 {
+		if delegatedEventBytes[0] > types.MaxBatchTransferMessageBytesV1 || aux > math.MaxUint64-delegatedEventBytes[0] {
+			return 0, fmt.Errorf("delegated event exceeds gas bound")
+		}
+		aux += delegatedEventBytes[0]
+	}
 
 	for _, o := range outputs {
 		if o == nil {

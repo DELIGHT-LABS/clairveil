@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	v2 "github.com/DELIGHT-LABS/clairveil/x/privacy/types/v2"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 )
 
 // applyPrivacyTransition commits only the privacy state required to execute a
@@ -37,7 +39,7 @@ func (k Keeper) applyPrivacyTransition(ctx sdk.Context, v *verifiedAuditTransiti
 	cache, publish := ctx.CacheContext()
 	record := v.record
 	if record.Transparent != nil {
-		if err := k.applyAuditPrincipal(cache, v.message); err != nil {
+		if err := k.applyAuditPrincipal(cache, v.message, v.delegated); err != nil {
 			return 0, err
 		}
 	}
@@ -69,7 +71,7 @@ func (k Keeper) applyPrivacyTransition(ctx sdk.Context, v *verifiedAuditTransiti
 	if err := k.runBatchTransitionHook("audit_tree"); err != nil {
 		return 0, err
 	}
-	scanBytes, global, err := k.storeAuditScan(cache, record, v.message)
+	scanBytes, global, err := k.storeAuditScan(cache, record, v.message, v.delegated)
 	if err != nil {
 		return 0, err
 	}
@@ -84,7 +86,7 @@ func (k Keeper) applyPrivacyTransition(ctx sdk.Context, v *verifiedAuditTransiti
 	return global, nil
 }
 
-func (k Keeper) applyAuditPrincipal(ctx sdk.Context, m types.ValidatedAuditMessage) error {
+func (k Keeper) applyAuditPrincipal(ctx sdk.Context, m types.ValidatedAuditMessage, delegated *delegatedDepositExecution) error {
 	coin := m.Coin()
 	before, err := k.GetReserveSnapshot(ctx, coin.Denom)
 	if err != nil {
@@ -99,14 +101,22 @@ func (k Keeper) applyAuditPrincipal(ctx sdk.Context, m types.ValidatedAuditMessa
 	}
 	target := m.Creator()
 	if !deposit {
+		if delegated != nil {
+			return fmt.Errorf("delegated funding is deposit-only")
+		}
 		target = m.Recipient()
 	}
-	address, err := sdk.AccAddressFromBech32(target)
-	if err != nil {
-		return err
+	var address sdk.AccAddress
+	if delegated != nil {
+		address = append(sdk.AccAddress(nil), delegated.funder...)
+	} else {
+		address, err = sdk.AccAddressFromBech32(target)
+		if err != nil {
+			return err
+		}
 	}
 	module := authtypes.NewModuleAddress(types.ModuleName)
-	if address.Equals(module) {
+	if address.Equals(module) || (delegated != nil && address.Equals(authtypes.NewModuleAddress(govtypes.ModuleName))) {
 		return fmt.Errorf("invalid principal endpoint")
 	}
 	externalBefore := k.bankKeeper.GetBalance(ctx, address, coin.Denom).Amount
@@ -169,7 +179,7 @@ func auditEventType(kind auditfield.Kind) string {
 	}
 	return ""
 }
-func (k Keeper) storeAuditScan(ctx sdk.Context, r *auditTransitionRecord, m types.ValidatedAuditMessage) (uint64, uint64, error) {
+func (k Keeper) storeAuditScan(ctx sdk.Context, r *auditTransitionRecord, m types.ValidatedAuditMessage, delegated *delegatedDepositExecution) (uint64, uint64, error) {
 	global, err := k.allocatePrivacyGlobalSequence(ctx)
 	if err != nil {
 		return 0, 0, err
@@ -179,8 +189,9 @@ func (k Keeper) storeAuditScan(ctx sdk.Context, r *auditTransitionRecord, m type
 	if err := k.storePrivacyScan(ctx, summary, outputs); err != nil {
 		return 0, 0, err
 	}
-	// The original tx supplies ciphertext and proof. Events expose only the
-	// successful execution identity and location needed to select that leaf.
+	// Native events expose only successful execution identity and location.
+	// A delegated deposit additionally carries the canonical original message
+	// because it is not a top-level SDK message in the enclosing transaction.
 	attrs := []sdk.Attribute{
 		sdk.NewAttribute("execution_id", hex.EncodeToString(effect[:])),
 		sdk.NewAttribute("global_sequence", fmt.Sprint(global)),
@@ -188,6 +199,15 @@ func (k Keeper) storeAuditScan(ctx sdk.Context, r *auditTransitionRecord, m type
 	}
 	if r.Origin.Kind == 1 {
 		attrs = append(attrs, sdk.NewAttribute("tx_hash", hex.EncodeToString(r.Origin.Anchor[:])))
+	}
+	if delegated != nil {
+		if r.Kind != auditfield.KindDeposit || len(delegated.payload) == 0 || len(delegated.payload) > types.MaxDelegatedDepositPayloadBytes {
+			return 0, 0, fmt.Errorf("invalid delegated deposit event evidence")
+		}
+		attrs = append(attrs,
+			sdk.NewAttribute(types.AttributeKeyDelegatedDepositPayload, base64.StdEncoding.EncodeToString(delegated.payload)),
+			sdk.NewAttribute(types.AttributeKeyDelegatedFunder, delegated.funder.String()),
+		)
 	}
 	ctx.EventManager().EmitEvent(sdk.NewEvent(summary.EventType, attrs...))
 	count := uint64(summary.Size() + 17 + 9 + 8)

@@ -210,25 +210,27 @@ SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipient
 
 ### 5.1 Trusted deposit funding
 
-이 subsection은 legacy-only입니다. `DepositWithFunder`는 non-audit V1 integration surface이며 audit runtime이 켜진 상태에서 usable path로 노출하면 안 됩니다. V2 EVM/policy adapter에는 V2 authorization과 original-transaction provenance를 보존하는 별도 reviewed design이 필요합니다.
-
-In-process EVM precompile 또는 policy adapter는 additive Keeper API를 호출해 actor와 다른 transparent funder를 debit할 수 있습니다.
+In-process V2 EVM precompile 또는 policy adapter는 additive Keeper API를 호출해 proof-bound principal과 다른 고정 transparent escrow를 debit할 수 있습니다.
 
 ```go
-resp, err := app.PrivacyKeeper.DepositWithFunder(ctx, msg, escrow)
+resp, err := app.PrivacyKeeper.DepositWithFunderV2(ctx, msg, escrow)
 ```
 
-이 API는 trusted Go integration surface이며 protobuf Msg service가 아닙니다. Public `MsgDeposit` protobuf, gRPC, CLI, client transaction wire는 바뀌지 않고, public `MsgServer.Deposit`은 계속 `msg.Creator`를 actor와 funder로 모두 사용합니다.
+이 API는 trusted Go integration surface이며 protobuf Msg service가 아닙니다. Public V2 `MsgDeposit` protobuf, gRPC, CLI, proof public input, 일반 `MsgServer.Deposit` path는 바뀌지 않습니다. `msg.Creator`는 authenticated original principal, proof public target, provenance identity로 유지되고 `funder`는 debit 및 `Lock` 대상 account에만 사용됩니다. Funder는 복제되며 canonical account여야 하고 `privacy` 및 governance module account와 달라야 합니다.
 
-`DepositWithFunder`는 address format을 검증하지만 `msg.Creator`를 인증하거나 `funder`를 authorize하지 않으며, deposit proof도 creator를 bind하지 않습니다. 따라서 downstream adapter는 아래 invariant를 모두 강제해야 합니다.
+Proof는 escrow funder를 직접 bind하지 않습니다. 따라서 trusted downstream adapter는 아래 invariant를 모두 강제해야 합니다.
 
-- `msg.Creator`를 user-supplied calldata에서 받지 않고 authenticated EVM caller/operator로부터 canonical Cosmos address로 derive합니다.
-- `funder`에는 app wiring에 고정된 Privacy precompile escrow address만 전달하고 caller-selected funder를 노출하지 않으며, escrow가 Clairveil `privacy` module account와 다른 주소인지 확인합니다. Bank self-transfer는 transparent backing을 추가하지 않으므로 `DepositWithFunder`는 `privacy` module account를 거부합니다.
-- Bank send restriction이 `privacy` module account로 향하는 transfer를 다른 주소로 redirect하지 않게 합니다. Trusted `DepositWithFunder` entry는 module balance가 deposit amount만큼 정확히 증가했는지 검증하고 restriction이 transfer를 redirect하거나 suppress하면 nested cache 전체를 rollback합니다. 이 두 balance read는 trusted entry에만 적용되어 기존 public `MsgServer.Deposit` gas path는 바뀌지 않습니다.
-- Parsed `MsgDeposit.Amount`의 amount가 EVM `msg.value`와 정확히 같고 denom이 runtime native denom과 같은지 확인합니다.
+- `msg.Creator`를 user-supplied calldata에서 받지 않고 original EVM caller/operator로부터 derive하고 인증하며 original provider identity로 유지합니다.
+- `funder`에는 고정된 precompile escrow만 전달하고 caller-selected funder는 노출하지 않습니다.
+- Caller-to-escrow value 이동이 완료됐고 `MsgDeposit.Amount`가 runtime native denom의 `msg.value`와 정확히 같은지 인증합니다.
+- Bank send restriction이 escrow-to-`privacy` module transfer를 redirect 또는 suppress하지 않게 합니다. Clairveil은 nested cache 안에서 escrow와 module의 정확한 balance delta를 검증합니다.
 - Keeper API 호출 전에 downstream-specific EVM-to-Cosmos address mapping과 expected address length를 검증합니다.
 
-Canonical deposit core는 nested SDK cache를 만들거나 bank, reserve, tree, event, index state를 변경하기 전에 proof를 검증합니다. 검증 성공 뒤 해당 cache에서 bank transfer → optional module-balance delta check → reserve record → commitment와 indexed event append → atomic cache commit 순서로 처리합니다. Core failure는 이 cache를 폐기하고 success는 caller의 parent context에만 반영합니다. Downstream adapter는 EVM value transfer, `DepositWithFunder`, 이후 policy check 전체를 하나의 outer SDK/EVM rollback boundary로 감싸야 하며, 뒤늦은 policy failure에서도 escrow, module balance, 모든 Clairveil state와 event를 복구해야 합니다.
+V2 core는 verified transition이 nested apply cache에 도달하기 전에 일반 halt/epoch/gas/public-input/proof/reentrancy 검사를 그대로 재사용합니다. 검증 후에는 deposit bank endpoint만 escrow로 바뀌고 reserve, commitment, typed scan, event write는 atomic하게 유지됩니다. Delegated success event에만 bounded canonical V2 deposit protobuf와 escrow funder가 추가되며 native V2 event는 minimal 상태를 유지합니다. Typed scan state에는 계속 proof 또는 audit ciphertext를 넣지 않고 별도 audit ledger도 만들지 않습니다.
+
+Clairveil success는 caller의 parent context에만 publish합니다. Downstream adapter는 caller-to-escrow value 이동, `DepositWithFunderV2`, event emission, 후속 policy check를 하나의 outer SDK/EVM rollback boundary 안에 둬야 합니다. Parent cache 폐기 시 balance, Clairveil state, event가 모두 사라져야 합니다. 이 repository는 특정 EVM precompile 구현이 event rollback을 제공한다고 주장하지 않으며 downstream wiring에서 별도로 검증해야 합니다.
+
+External auditor가 delegated event를 읽을 때 downstream은 EVM wrapper를 이해하는 `sdk.TxDecoder`와 wrapper/receipt 성공 및 Creator/funder 연결을 인증하는 `VerifyDelegatedExecution` callback을 주입해야 합니다. Cosmos `Code == 0`만으로는 internal EVM call이 revert하지 않았다고 단정할 수 없습니다. Callback이 없거나 evidence를 거부하면 `CosmosTxSource`는 `AUDIT_INCOMPLETE`로 fail closed합니다. Wrapper message index 하나에서 성공한 internal deposit 여러 개는 `global_sequence`와 `execution_id`로 구분하며 native top-level V2 message는 계속 정확한 one-to-one event match가 필요합니다. Standalone downstream EVM decoder와 receipt wiring은 Clairveil 범위 밖입니다.
 
 ## 6. V4 audit configuration과 key epoch
 
@@ -383,4 +385,4 @@ Downstream 통합은 아래가 모두 통과하면 1차 완료로 봅니다.
 - Audit epoch private-key custody와 governance rotation policy가 production 운영 문서에 반영되어 있습니다.
 - wallet storage encryption과 remote prover privacy policy가 JS/TS SDK 또는 web wallet 설계 문서에 반영되어 있습니다.
 - downstream 전용 EVM/policy/precompile 연동은 별도 테스트로 분리되어 있습니다.
-- V2 EVM/policy adapter는 V2 audit authorization과 original-transaction provenance를 별도로 review하며 legacy `DepositWithFunder` path는 audit runtime에서 enable하지 않습니다.
+- V2 EVM/policy adapter는 `DepositWithFunderV2`만 사용하고 Creator/value/fixed escrow를 인증하며 delegated collector decode/receipt verification과 outer state/event rollback을 입증합니다. Legacy V1 `DepositWithFunder` path는 audit runtime에서 계속 비활성입니다.

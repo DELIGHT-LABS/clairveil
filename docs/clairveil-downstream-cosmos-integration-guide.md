@@ -212,25 +212,27 @@ Watch these points.
 
 ### 5.1 Trusted Deposit Funding
 
-This subsection is legacy-only. `DepositWithFunder` is part of the non-audit V1 integration surface and must not be exposed as a usable path when the audit runtime is enabled. A V2 EVM/policy adapter needs a separately reviewed design that preserves V2 authorization and original-transaction provenance.
-
-An in-process EVM precompile or policy adapter may debit a transparent funder that differs from the attributed actor by calling the additive Keeper API:
+An in-process V2 EVM precompile or policy adapter may debit a fixed transparent escrow that differs from the proof-bound principal by calling the additive Keeper API:
 
 ```go
-resp, err := app.PrivacyKeeper.DepositWithFunder(ctx, msg, escrow)
+resp, err := app.PrivacyKeeper.DepositWithFunderV2(ctx, msg, escrow)
 ```
 
-This is a trusted Go integration surface, not a protobuf Msg service. The public `MsgDeposit` protobuf, gRPC, CLI, and client transaction wire remain unchanged, and public `MsgServer.Deposit` continues to use `msg.Creator` as both actor and funder.
+This is a trusted Go integration surface, not a protobuf Msg service. The public V2 `MsgDeposit` protobuf, gRPC, CLI, proof public inputs, and normal `MsgServer.Deposit` path remain unchanged. `msg.Creator` remains the authenticated original principal, proof public target, and provenance identity; `funder` is only the account debited and passed to `Lock`. The funder is copied and must be a canonical account distinct from both the `privacy` and governance module accounts.
 
-`DepositWithFunder` validates address formats but does not authenticate `msg.Creator` or authorize `funder`; the deposit proof also does not bind the creator. The downstream adapter must therefore enforce all of these invariants:
+The proof does not directly bind the escrow funder. The trusted downstream adapter must therefore enforce all of these invariants:
 
-- Derive `msg.Creator` as a canonical Cosmos address from the authenticated EVM caller/operator, never from user-supplied calldata.
-- Pass only the fixed Privacy precompile escrow address as `funder`; do not expose a caller-selected funder, and ensure the escrow is distinct from the Clairveil `privacy` module account. `DepositWithFunder` rejects the `privacy` module account because a bank self-transfer would not add transparent backing.
-- Keep bank send restrictions from redirecting transfers addressed to the `privacy` module account. The trusted `DepositWithFunder` entry verifies that the module balance increases by the exact deposit amount and rolls the nested cache back if a restriction redirects or suppresses the transfer. These two balance reads are limited to the trusted entry so the existing public `MsgServer.Deposit` gas path remains unchanged.
-- Require the parsed `MsgDeposit.Amount` amount to equal EVM `msg.value` exactly and its denom to equal the runtime native denom.
+- Derive and authenticate `msg.Creator` from the original EVM caller/operator, never from user-supplied calldata, and keep it as the original provider identity.
+- Pass only the fixed precompile escrow as `funder`; never expose a caller-selected funder.
+- Authenticate that caller-to-escrow value movement completed and that `MsgDeposit.Amount` equals `msg.value` exactly with the runtime native denom.
+- Keep bank send restrictions from redirecting or suppressing the escrow-to-`privacy` module transfer. Clairveil verifies the exact escrow and module balance deltas inside its nested cache.
 - Verify downstream-specific EVM-to-Cosmos address mapping and expected address length before calling the Keeper API.
 
-The canonical deposit core verifies the proof before creating its nested SDK cache or mutating bank, reserve, tree, event, or index state. After verification succeeds, that cache executes bank transfer → optional module-balance delta check → reserve record → commitment and indexed-event append → atomic cache commit. A core failure discards that cache, while success writes only into the caller's parent context. The downstream adapter must still place the EVM value transfer, `DepositWithFunder`, and any after-call policy checks inside one outer SDK/EVM rollback boundary so a later policy failure restores escrow, module balances, and all Clairveil state and events.
+The V2 core reuses the normal halt/epoch/gas/public-input/proof/reentrancy checks before the verified transition reaches the nested apply cache. After verification, only the deposit bank endpoint changes to the escrow; reserve, commitment, typed scan, and event writes remain atomic. A delegated success event additionally carries the bounded canonical V2 deposit protobuf and escrow funder, while native V2 events remain minimal. Typed scan state still carries no proof or audit ciphertext, and no separate audit ledger is created.
+
+Clairveil success publishes only into the caller's parent context. The downstream adapter must place caller-to-escrow value movement, `DepositWithFunderV2`, event emission, and later policy checks inside one outer SDK/EVM rollback boundary. Discarding that parent cache must remove balances, Clairveil state, and events. This repository does not assert that a particular EVM precompile implementation provides that event rollback; downstream wiring must test it.
+
+When the external auditor reads delegated events, the downstream must inject an `sdk.TxDecoder` that understands its EVM wrapper and a `VerifyDelegatedExecution` callback that authenticates wrapper/receipt success and the Creator/funder relationship. A Cosmos `Code == 0` result alone is insufficient because the internal EVM call may have reverted. `CosmosTxSource` fails closed with `AUDIT_INCOMPLETE` when the callback is absent or rejects the evidence. Multiple successful internal deposits at one wrapper message index are distinguished by `global_sequence` and `execution_id`; native top-level V2 messages still require their exact one-to-one event match. Standalone downstream EVM decoder and receipt wiring are outside Clairveil.
 
 ## 6. V4 Audit Configuration And Key Epochs
 
@@ -385,4 +387,4 @@ Downstream integration is first-pass complete when all of the following pass.
 - Audit epoch private-key custody and governance rotation policy are reflected in production operations docs.
 - Wallet storage encryption and remote prover privacy policy are reflected in JS/TS SDK or web wallet design docs.
 - Downstream-specific EVM/policy/precompile integration is separated into separate tests.
-- Any V2 EVM/policy adapter is separately reviewed for V2 audit authorization and original-transaction provenance; the legacy `DepositWithFunder` path is not enabled under the audit runtime.
+- Any V2 EVM/policy adapter uses only `DepositWithFunderV2`, authenticates Creator/value/fixed escrow, supplies delegated collector decode/receipt verification, and proves outer state-and-event rollback. The legacy V1 `DepositWithFunder` path remains disabled under the audit runtime.

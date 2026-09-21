@@ -66,11 +66,13 @@ func TestCollectorConsumesOriginalSuccessfulTransactionsForAllFourKinds(t *testi
 		id := collectedExecutionID(network, [32]byte{31: byte(i + 1)}, uint64(i+1), uint32(i))
 		rows[i].Event = ExecutionEvent{Height: 100, TxHash: txHash, EventType: eventTypeForKind(auditfield.Kind(i + 1)), GlobalSequence: uint64(i + 1), MessageIndex: uint32(i), ExecutionID: id[:]}
 	}
+	rows[0].Event.Funder = sdk.AccAddress(append(make([]byte, 19), 9)).String()
 
 	collector := Collector{Network: network, Keys: collectorKeys{record: KeyRecord{Epoch: 1, Key: key}}}
 	collected, err := collector.Collect(context.Background(), collectorSource(rows), 0)
 	require.NoError(t, err)
 	require.Len(t, collected, 4)
+	require.Equal(t, rows[0].Event.Funder, collected[0].Funder)
 	require.Equal(t, []auditfield.Kind{auditfield.KindDeposit, auditfield.KindWithdraw, auditfield.KindTransfer2x2, auditfield.KindBatch16x32}, []auditfield.Kind{collected[0].Kind(), collected[1].Kind(), collected[2].Kind(), collected[3].Kind()})
 
 	rows[2].Event.ExecutionID[0] ^= 1

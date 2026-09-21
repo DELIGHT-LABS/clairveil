@@ -104,6 +104,8 @@ Keyring은 lowercase 32-byte hex `{key_id, secret_key}` 쌍을 담은 `0600` ver
 
 Collector는 선택한 CometBFT RPC endpoint를 block/result source로 신뢰하며 light client가 아닙니다. 독립적으로 인증한 block history가 필요한 deployment는 이 작은 collector 바깥에서 trust boundary를 제공해야 합니다. Replay input, runtime archive, persistent audit server는 만들지 않습니다.
 
+기본 `clairveil-auditor`에는 EVM wrapper용 `sdk.TxDecoder`와 `VerifyDelegatedExecution` 연결이 없으므로 delegated V2 deposit을 자체적으로 인증할 수 없습니다. Downstream integration이 wrapper decoding과 receipt-success verification을 모두 제공해야 합니다. [Downstream Cosmos Integration Guide §5.1](clairveil-downstream-cosmos-integration-guide-kr.md#51-trusted-deposit-funding)을 참고하세요.
+
 ## 3. Deposit
 
 transparent coin을 shielded note로 넣습니다.

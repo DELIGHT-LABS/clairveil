@@ -80,6 +80,16 @@ const (
 )
 
 const (
+	// These two attributes are present only when a trusted in-process caller
+	// executes a V2 deposit on behalf of a separately authenticated funder.
+	AttributeKeyDelegatedDepositPayload = "delegated_deposit_payload"
+	AttributeKeyDelegatedFunder         = "delegated_funder"
+	// MaxDelegatedDepositPayloadBytes bounds the canonical protobuf copied into
+	// an event independently of the general audit message cap.
+	MaxDelegatedDepositPayloadBytes = 64 << 10
+)
+
+const (
 	ScanFormatVersion = uint32(1)
 	ViewTagVersion    = uint32(1)
 	ViewTagLength     = 2

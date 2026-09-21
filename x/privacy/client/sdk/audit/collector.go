@@ -10,6 +10,8 @@ import (
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 )
 
 // ExecutionEvent is the minimal event evidence emitted only after a privacy
@@ -22,6 +24,9 @@ type ExecutionEvent struct {
 	GlobalSequence uint64
 	MessageIndex   uint32
 	ExecutionID    []byte
+	// Funder is set only for a trusted delegated V2 deposit. Creator remains
+	// the proof-bound principal and provenance identity in Message.
+	Funder string
 }
 
 // SuccessfulAuditTx supplies the original delivered transaction message and
@@ -73,6 +78,7 @@ type CollectedAuditTx struct {
 	GlobalSequence uint64
 	MessageIndex   uint32
 	ExecutionID    [32]byte
+	Funder         string
 	Message        privacytypes.ValidatedAuditMessage
 	Key            KeyRecord
 }
@@ -100,6 +106,12 @@ func (c Collector) Collect(ctx context.Context, source SuccessfulAuditTxSource, 
 		if event.Height == 0 || event.GlobalSequence <= after || len(event.TxHash) != 32 || len(event.ExecutionID) != 32 || event.EventType != eventTypeForKind(message.Kind()) {
 			return nil, fmt.Errorf("successful audit tx %d has invalid execution event", index)
 		}
+		if event.Funder != "" {
+			funder, err := sdk.AccAddressFromBech32(event.Funder)
+			if err != nil || funder.String() != event.Funder || message.Kind() != auditfield.KindDeposit || funder.Equals(authtypes.NewModuleAddress(privacytypes.ModuleName)) || funder.Equals(authtypes.NewModuleAddress(govtypes.ModuleName)) {
+				return nil, fmt.Errorf("successful audit tx %d has invalid delegated funder", index)
+			}
+		}
 		if _, duplicate := seen[event.GlobalSequence]; duplicate {
 			return nil, fmt.Errorf("duplicate successful audit global sequence %d", event.GlobalSequence)
 		}
@@ -117,7 +129,7 @@ func (c Collector) Collect(ctx context.Context, source SuccessfulAuditTxSource, 
 		if string(executionID[:]) != string(event.ExecutionID) {
 			return nil, fmt.Errorf("successful audit tx %d execution ID mismatch", index)
 		}
-		result = append(result, CollectedAuditTx{Height: event.Height, TxIndex: event.TxIndex, TxHash: txHash, GlobalSequence: event.GlobalSequence, MessageIndex: event.MessageIndex, ExecutionID: executionID, Message: message, Key: key})
+		result = append(result, CollectedAuditTx{Height: event.Height, TxIndex: event.TxIndex, TxHash: txHash, GlobalSequence: event.GlobalSequence, MessageIndex: event.MessageIndex, ExecutionID: executionID, Funder: event.Funder, Message: message, Key: key})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].GlobalSequence < result[j].GlobalSequence })
 	return result, nil

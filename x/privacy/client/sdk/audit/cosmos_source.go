@@ -3,6 +3,7 @@ package audit
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"strconv"
@@ -13,6 +14,9 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	"github.com/cosmos/gogoproto/proto"
 )
 
 // CosmosBlockRPC is the two-call CometBFT boundary required by the collector.
@@ -33,7 +37,29 @@ type CosmosTxSource struct {
 	ChainID    string
 	FromHeight uint64
 	ToHeight   uint64
+	// VerifyDelegatedExecution authenticates the downstream wrapper/receipt
+	// success semantics for an in-process deposit. Code == 0 alone is not
+	// sufficient because an EVM call may have reverted inside a successful
+	// Cosmos transaction. Delegated evidence is rejected when this is nil.
+	VerifyDelegatedExecution DelegatedExecutionVerifier
 }
+
+// DelegatedExecutionEvidence is the narrow downstream verification boundary
+// for one event. The verifier must authenticate that the enclosing wrapper at
+// MessageIndex committed (rather than reverted) using its receipt semantics.
+type DelegatedExecutionEvidence struct {
+	Height         uint64
+	TxIndex        uint32
+	RawTx          []byte
+	Result         abci.ExecTxResult
+	MessageIndex   uint32
+	GlobalSequence uint64
+	ExecutionID    [32]byte
+	Funder         sdk.AccAddress
+	Deposit        *privacyv2.MsgDeposit
+}
+
+type DelegatedExecutionVerifier func(context.Context, DelegatedExecutionEvidence) error
 
 func (s CosmosTxSource) SuccessfulAuditTransactions(ctx context.Context, after uint64) ([]SuccessfulAuditTx, error) {
 	if s.RPC == nil || s.Decoder == nil || s.Cache == nil || s.Network == ([32]byte{}) || s.ChainID == "" || s.FromHeight == 0 || s.ToHeight < s.FromHeight {
@@ -44,7 +70,7 @@ func (s CosmosTxSource) SuccessfulAuditTransactions(ctx context.Context, after u
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.extract(state, 0)
+	existing, err := s.extract(ctx, state, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -109,12 +135,12 @@ func (s CosmosTxSource) SuccessfulAuditTransactions(ctx context.Context, after u
 		// Validate every candidate execution before advancing the durable
 		// checkpoint. A missing/partial event or a forged location leaves this
 		// entire block unprocessed and therefore retryable.
-		newRows, err := s.extract(CosmosCacheState{Transactions: cached}, 0)
+		newRows, err := s.extract(ctx, CosmosCacheState{Transactions: cached}, 0)
 		if err != nil {
 			return nil, err
 		}
 		for _, row := range newRows {
-			location := fmt.Sprintf("%d/%x/%d", row.Event.Height, row.Event.TxHash, row.Event.MessageIndex)
+			location := sourceRowLocation(row)
 			var executionID [32]byte
 			copy(executionID[:], row.Event.ExecutionID)
 			if _, duplicate := seenExecution[executionID]; duplicate {
@@ -138,7 +164,15 @@ func (s CosmosTxSource) SuccessfulAuditTransactions(ctx context.Context, after u
 			break
 		}
 	}
-	return s.extract(state, after)
+	return s.extract(ctx, state, after)
+}
+
+func sourceRowLocation(row SuccessfulAuditTx) string {
+	base := fmt.Sprintf("%d/%x/%d", row.Event.Height, row.Event.TxHash, row.Event.MessageIndex)
+	if row.Event.Funder != "" {
+		return fmt.Sprintf("%s/%x", base, row.Event.ExecutionID)
+	}
+	return base
 }
 
 func sourceRowIdentities(rows []SuccessfulAuditTx) (map[[32]byte]struct{}, map[uint64]struct{}, map[string]struct{}) {
@@ -150,7 +184,7 @@ func sourceRowIdentities(rows []SuccessfulAuditTx) (map[[32]byte]struct{}, map[u
 		copy(executionID[:], row.Event.ExecutionID)
 		executions[executionID] = struct{}{}
 		sequences[row.Event.GlobalSequence] = struct{}{}
-		locations[fmt.Sprintf("%d/%x/%d", row.Event.Height, row.Event.TxHash, row.Event.MessageIndex)] = struct{}{}
+		locations[sourceRowLocation(row)] = struct{}{}
 	}
 	return executions, sequences, locations
 }
@@ -182,7 +216,7 @@ func (s CosmosTxSource) fetchBlock(ctx context.Context, height uint64) (*coretyp
 	return block, results, nil
 }
 
-func (s CosmosTxSource) extract(state CosmosCacheState, after uint64) ([]SuccessfulAuditTx, error) {
+func (s CosmosTxSource) extract(ctx context.Context, state CosmosCacheState, after uint64) ([]SuccessfulAuditTx, error) {
 	rows := make([]SuccessfulAuditTx, 0)
 	seenExecution := map[[32]byte]struct{}{}
 	seenSequence := map[uint64]struct{}{}
@@ -220,9 +254,23 @@ func (s CosmosTxSource) extract(state CosmosCacheState, after uint64) ([]Success
 				return nil, fmt.Errorf("height %d tx %d event %d has invalid message index", cached.Height, cached.Index, eventIndex)
 			}
 			messageIndex := uint32(messageIndex64)
-			message, err := privacytypes.ValidateAuditMessage(msgs[messageIndex])
+			delegated, funder, err := delegatedDepositFromAttributes(attrs)
 			if err != nil {
-				return nil, fmt.Errorf("height %d tx %d event %d does not reference a top-level audit message: %w", cached.Height, cached.Index, eventIndex, err)
+				return nil, fmt.Errorf("height %d tx %d event %d: %w", cached.Height, cached.Index, eventIndex, err)
+			}
+			var rawMessage sdk.Msg = msgs[messageIndex]
+			if delegated != nil {
+				if isAuditMessageType(rawMessage) {
+					return nil, fmt.Errorf("height %d tx %d event %d delegated deposit cannot reference a top-level audit message", cached.Height, cached.Index, eventIndex)
+				}
+				rawMessage = delegated
+			}
+			message, err := privacytypes.ValidateAuditMessage(rawMessage)
+			if err != nil {
+				if delegated == nil {
+					return nil, fmt.Errorf("height %d tx %d event %d does not reference a top-level audit message: %w", cached.Height, cached.Index, eventIndex, err)
+				}
+				return nil, fmt.Errorf("height %d tx %d event %d has invalid audit message: %w", cached.Height, cached.Index, eventIndex, err)
 			}
 			if event.Type != eventTypeForKind(message.Kind()) {
 				return nil, fmt.Errorf("height %d tx %d event %d kind mismatch", cached.Height, cached.Index, eventIndex)
@@ -239,7 +287,23 @@ func (s CosmosTxSource) extract(state CosmosCacheState, after uint64) ([]Success
 			if executionID != want {
 				return nil, fmt.Errorf("height %d tx %d event %d execution ID mismatch", cached.Height, cached.Index, eventIndex)
 			}
+			funderString := ""
 			location := fmt.Sprintf("%d/%x/%d", cached.Height, cached.Hash, messageIndex)
+			if delegated != nil {
+				if s.VerifyDelegatedExecution == nil {
+					return nil, fmt.Errorf("AUDIT_INCOMPLETE: delegated deposit execution verifier is required")
+				}
+				evidence := DelegatedExecutionEvidence{
+					Height: cached.Height, TxIndex: cached.Index, RawTx: bytes.Clone(cached.Raw), Result: cloneExecTxResult(&cached.Result),
+					MessageIndex: messageIndex, GlobalSequence: global, ExecutionID: executionID,
+					Funder: append(sdk.AccAddress(nil), funder...), Deposit: proto.Clone(delegated).(*privacyv2.MsgDeposit),
+				}
+				if err := s.VerifyDelegatedExecution(ctx, evidence); err != nil {
+					return nil, fmt.Errorf("AUDIT_INCOMPLETE: height %d tx %d event %d delegated execution: %w", cached.Height, cached.Index, eventIndex, err)
+				}
+				funderString = funder.String()
+				location = fmt.Sprintf("%s/%x", location, executionID)
+			}
 			if _, duplicate := seenExecution[executionID]; duplicate {
 				return nil, fmt.Errorf("duplicate successful audit execution ID %x", executionID)
 			}
@@ -252,13 +316,15 @@ func (s CosmosTxSource) extract(state CosmosCacheState, after uint64) ([]Success
 			seenExecution[executionID] = struct{}{}
 			seenSequence[global] = struct{}{}
 			seenLocation[location] = struct{}{}
-			matched[messageIndex] = struct{}{}
+			if delegated == nil {
+				matched[messageIndex] = struct{}{}
+			}
 			if global <= after {
 				continue
 			}
-			rows = append(rows, SuccessfulAuditTx{Message: msgs[messageIndex], Event: ExecutionEvent{
+			rows = append(rows, SuccessfulAuditTx{Message: rawMessage, Event: ExecutionEvent{
 				Height: cached.Height, TxIndex: cached.Index, TxHash: bytes.Clone(cached.Hash), EventType: event.Type,
-				GlobalSequence: global, MessageIndex: messageIndex, ExecutionID: bytes.Clone(executionID[:]),
+				GlobalSequence: global, MessageIndex: messageIndex, ExecutionID: bytes.Clone(executionID[:]), Funder: funderString,
 			}})
 		}
 		for index, message := range msgs {
@@ -286,7 +352,7 @@ func isAuditMessageType(message sdk.Msg) bool {
 }
 
 func executionAttributes(event abci.Event) (map[string]string, bool, error) {
-	keys := []string{"execution_id", "global_sequence", "message_index", "tx_hash"}
+	keys := []string{"execution_id", "global_sequence", "message_index", "tx_hash", privacytypes.AttributeKeyDelegatedDepositPayload, privacytypes.AttributeKeyDelegatedFunder}
 	wanted := map[string]bool{}
 	for _, key := range keys {
 		wanted[key] = true
@@ -304,10 +370,49 @@ func executionAttributes(event abci.Event) (map[string]string, bool, error) {
 	if len(attrs) == 0 {
 		return nil, false, nil
 	}
-	if len(attrs) != len(keys) {
+	core := 0
+	for _, key := range []string{"execution_id", "global_sequence", "message_index", "tx_hash"} {
+		if _, ok := attrs[key]; ok {
+			core++
+		}
+	}
+	_, payload := attrs[privacytypes.AttributeKeyDelegatedDepositPayload]
+	_, funder := attrs[privacytypes.AttributeKeyDelegatedFunder]
+	if core != 4 || payload != funder {
 		return nil, false, fmt.Errorf("partial privacy execution attributes")
 	}
 	return attrs, true, nil
+}
+
+func delegatedDepositFromAttributes(attrs map[string]string) (*privacyv2.MsgDeposit, sdk.AccAddress, error) {
+	encoded, delegated := attrs[privacytypes.AttributeKeyDelegatedDepositPayload]
+	if !delegated {
+		return nil, nil, nil
+	}
+	if encoded == "" || base64.StdEncoding.EncodedLen(privacytypes.MaxDelegatedDepositPayloadBytes) < len(encoded) {
+		return nil, nil, fmt.Errorf("delegated deposit payload exceeds event cap")
+	}
+	payload, err := base64.StdEncoding.Strict().DecodeString(encoded)
+	if err != nil || len(payload) == 0 || len(payload) > privacytypes.MaxDelegatedDepositPayloadBytes {
+		return nil, nil, fmt.Errorf("invalid delegated deposit payload encoding")
+	}
+	message := &privacyv2.MsgDeposit{}
+	if err := proto.Unmarshal(payload, message); err != nil {
+		return nil, nil, fmt.Errorf("invalid delegated deposit protobuf: %w", err)
+	}
+	canonical, err := proto.Marshal(message)
+	if err != nil || !bytes.Equal(canonical, payload) {
+		return nil, nil, fmt.Errorf("noncanonical delegated deposit protobuf")
+	}
+	funderRaw := attrs[privacytypes.AttributeKeyDelegatedFunder]
+	funder, err := sdk.AccAddressFromBech32(funderRaw)
+	if err != nil || funder.String() != funderRaw || len(funder) == 0 {
+		return nil, nil, fmt.Errorf("invalid delegated deposit funder")
+	}
+	if funder.Equals(authtypes.NewModuleAddress(privacytypes.ModuleName)) || funder.Equals(authtypes.NewModuleAddress(govtypes.ModuleName)) {
+		return nil, nil, fmt.Errorf("invalid delegated deposit funder")
+	}
+	return message, funder, nil
 }
 
 func isPrivacyExecutionEvent(eventType string) bool {

@@ -106,6 +106,8 @@ The keyring must be a `0600` version-1 JSON file containing `{key_id, secret_key
 
 The collector trusts the selected CometBFT RPC endpoint as its block/result source; it is not a light client. Deployments that need independently authenticated block history must provide that trust boundary outside this small collector. No replay input, runtime archive, or persistent audit server is created.
 
+The stock `clairveil-auditor` does not wire an EVM-wrapper `sdk.TxDecoder` or `VerifyDelegatedExecution`, so it cannot authenticate delegated V2 deposits by itself. A downstream integration must supply both wrapper decoding and receipt-success verification; see [Downstream Cosmos Integration Guide §5.1](clairveil-downstream-cosmos-integration-guide.md#51-trusted-deposit-funding).
+
 ## 3. Deposit
 
 Moves transparent coins into a shielded note.

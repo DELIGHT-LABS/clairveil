@@ -1,7 +1,9 @@
 package keeper
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -125,6 +127,13 @@ func (f auditApplyBoundaryFixture) apply() (uint64, error) {
 	return f.k.applyPrivacyTransition(f.ctx, &verifiedAuditTransition{owner: f.k.audit, message: f.validated, record: f.record, projectedBound: 1 << 20})
 }
 
+func delegatedAuditFixture(t testing.TB, fixture auditApplyBoundaryFixture, funder sdk.AccAddress) *delegatedDepositExecution {
+	t.Helper()
+	payload, err := proto.Marshal(fixture.msg)
+	require.NoError(t, err)
+	return &delegatedDepositExecution{funder: append(sdk.AccAddress(nil), funder...), payload: payload}
+}
+
 type auditApplyBoundarySnapshot struct {
 	leaves, sequence         uint64
 	actor, recipient, module string
@@ -178,6 +187,97 @@ func TestAuditApplyBoundaryAcceptsAllFourKinds(t *testing.T) {
 				require.True(t, found)
 			}
 			require.Len(t, fixture.ctx.EventManager().Events(), 1)
+		})
+	}
+}
+
+func TestAuditApplyBoundaryDelegatedDepositDebitsOnlyFunder(t *testing.T) {
+	fixture := newAuditApplyBoundaryFixture(t, auditfield.KindDeposit)
+	funder := sdk.AccAddress(bytes.Repeat([]byte{0x63}, 20))
+	fixture.bank.setTestBalance(t, fixture.ctx, funder, "uclair", 40)
+	delegated := delegatedAuditFixture(t, fixture, funder)
+
+	_, err := fixture.k.applyPrivacyTransition(fixture.ctx, &verifiedAuditTransition{
+		owner: fixture.k.audit, message: fixture.validated, record: fixture.record,
+		projectedBound: 1 << 20, delegated: delegated,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "100", fixture.bank.testBalance(t, fixture.ctx, fixture.actor, "uclair").String())
+	require.Equal(t, "33", fixture.bank.testBalance(t, fixture.ctx, funder, "uclair").String())
+	require.Equal(t, funder, fixture.bank.lastAccountSender)
+
+	events := fixture.ctx.EventManager().Events()
+	require.Len(t, events, 1)
+	attrs := map[string]string{}
+	for _, attr := range events[0].Attributes {
+		attrs[attr.Key] = attr.Value
+	}
+	require.Equal(t, funder.String(), attrs[privacytypes.AttributeKeyDelegatedFunder])
+	require.Equal(t, base64.StdEncoding.EncodeToString(delegated.payload), attrs[privacytypes.AttributeKeyDelegatedDepositPayload])
+}
+
+func TestAuditApplyBoundaryNormalDepositStillDebitsCreator(t *testing.T) {
+	fixture := newAuditApplyBoundaryFixture(t, auditfield.KindDeposit)
+	_, err := fixture.apply()
+	require.NoError(t, err)
+	require.Equal(t, "93", fixture.bank.testBalance(t, fixture.ctx, fixture.actor, "uclair").String())
+	event := fixture.ctx.EventManager().Events()[0]
+	for _, attr := range event.Attributes {
+		require.NotEqual(t, privacytypes.AttributeKeyDelegatedFunder, attr.Key)
+		require.NotEqual(t, privacytypes.AttributeKeyDelegatedDepositPayload, attr.Key)
+	}
+}
+
+func TestAuditApplyBoundaryDelegatedFailureRollsBack(t *testing.T) {
+	fixture := newAuditApplyBoundaryFixture(t, auditfield.KindDeposit)
+	funder := sdk.AccAddress(bytes.Repeat([]byte{0x64}, 20))
+	fixture.bank.setTestBalance(t, fixture.ctx, funder, "uclair", 40)
+	before := snapshotAuditApplyBoundary(t, fixture)
+	fixture.k.batchTransitionHook = func(stage string) error {
+		if stage == "audit_scan" {
+			return errors.New("injected delegated failure")
+		}
+		return nil
+	}
+	_, err := fixture.k.applyPrivacyTransition(fixture.ctx, &verifiedAuditTransition{
+		owner: fixture.k.audit, message: fixture.validated, record: fixture.record,
+		projectedBound: 1 << 20, delegated: delegatedAuditFixture(t, fixture, funder),
+	})
+	require.ErrorContains(t, err, "injected delegated failure")
+	require.Equal(t, before, snapshotAuditApplyBoundary(t, fixture))
+	require.Equal(t, "40", fixture.bank.testBalance(t, fixture.ctx, funder, "uclair").String())
+}
+
+func TestAuditApplyBoundaryOuterCacheDiscardDropsStateAndEvents(t *testing.T) {
+	fixture := newAuditApplyBoundaryFixture(t, auditfield.KindDeposit)
+	funder := sdk.AccAddress(bytes.Repeat([]byte{0x65}, 20))
+	fixture.bank.setTestBalance(t, fixture.ctx, funder, "uclair", 40)
+	parent := fixture.ctx
+	outer, _ := parent.CacheContext()
+	fixture.ctx = outer
+	_, err := fixture.k.applyPrivacyTransition(outer, &verifiedAuditTransition{
+		owner: fixture.k.audit, message: fixture.validated, record: fixture.record,
+		projectedBound: 1 << 20, delegated: delegatedAuditFixture(t, fixture, funder),
+	})
+	require.NoError(t, err)
+	require.Len(t, outer.EventManager().Events(), 1)
+
+	fixture.ctx = parent
+	require.Equal(t, "40", fixture.bank.testBalance(t, parent, funder, "uclair").String())
+	require.EqualValues(t, 0, fixture.k.GetLeafCount(parent))
+	require.Empty(t, parent.EventManager().Events())
+}
+
+func TestDepositWithFunderV2RejectsModuleFunders(t *testing.T) {
+	fixture := newAuditApplyBoundaryFixture(t, auditfield.KindDeposit)
+	message := fixture.msg.(*privacyv2.MsgDeposit)
+	for name, funder := range map[string]sdk.AccAddress{
+		"privacy":    authtypes.NewModuleAddress(privacytypes.ModuleName),
+		"governance": authtypes.NewModuleAddress(govtypes.ModuleName),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := fixture.k.DepositWithFunderV2(fixture.ctx, message, funder)
+			require.ErrorContains(t, err, "invalid delegated deposit funder")
 		})
 	}
 }
