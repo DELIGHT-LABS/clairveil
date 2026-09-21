@@ -2,6 +2,8 @@
 
 This document gathers the contracts needed by JS/TS SDK or web wallet developers implementing Clairveil privacy features. Its goal is to clearly separate what the Go core provides from what the JS SDK must implement.
 
+Current runtime integration uses V2 asset messages, V2 audit configuration/key queries, and the single `/v2/prover/audit-field` route. Detailed NoteV1 payloads, disclosure modes, staged batch commands, and `/v1` prover paths retained later in this document are legacy fixture guidance only; they must not be emitted as current V2 transactions.
+
 Korean version: [clairveil-js-sdk-handoff-kr.md](clairveil-js-sdk-handoff-kr.md)
 
 ## 1. User Features The JS SDK Must Provide
@@ -29,8 +31,9 @@ daemon: clairveild
 transparent account prefix: clair
 shielded address prefix: clairs
 reference denom: uclair
-default local chain-id: clairveil-local-1
-proto package: clairveil.privacy.v1
+chain-id: supplied by the required audit configuration
+current message/audit-query package: clairveil.privacy.v2
+wallet scan/tree query package: clairveil.privacy.v1
 ```
 
 If a downstream chain changes denom, chain-id, or gas policy, the JS SDK should receive those values through a chain registry or runtime config. Keeping the `clairs` shielded address prefix and proto package as the Clairveil privacy module contract is the simplest path.
@@ -43,15 +46,20 @@ The JS SDK must generate or directly model bindings for these proto files.
 proto/clairveil/privacy/v1/tx.proto
 proto/clairveil/privacy/v1/query.proto
 proto/clairveil/privacy/v1/genesis.proto
+proto/clairveil/privacy/v2/tx.proto
+proto/clairveil/privacy/v2/query.proto
 ```
 
-The Msg service uses:
+The current Msg service uses:
 
 ```text
-/clairveil.privacy.v1.Msg/Deposit
-/clairveil.privacy.v1.Msg/Transfer
-/clairveil.privacy.v1.Msg/Withdraw
-/clairveil.privacy.v1.Msg/BatchTransfer
+/clairveil.privacy.v2.Msg/Deposit
+/clairveil.privacy.v2.Msg/Transfer
+/clairveil.privacy.v2.Msg/Withdraw
+/clairveil.privacy.v2.Msg/BatchTransfer
+/clairveil.privacy.v2.Msg/ScheduleAuditKeyEpoch
+/clairveil.privacy.v2.Msg/CancelPendingAuditEpoch
+/clairveil.privacy.v2.Msg/SetPrivacyHalt
 ```
 
 The core tx messages are:
@@ -63,13 +71,9 @@ MsgWithdraw
 MsgBatchTransfer
 ```
 
-`MsgDeposit` includes a `proof` field. Clients must build or obtain a `DepositCircuit` Groth16 proof binding `amount`, `asset_id`, and `note_commitment`; proof-less deposits are not part of the current contract.
+All four V2 asset messages carry mandatory `AuditAuthorization {key_id, epoch, envelope}`. Deposit includes `creator`, amount, an `OutputEffect`, proof, and expiry. Withdraw includes creator, amount, recipient, root, nullifier, proof, expiry, and audit authorization. Transfer and batch carry root, ordered nullifiers/output effects, proof, expiry, and audit authorization. Generate bindings from the compiled V2 proto instead of copying the retained V1 field descriptions below.
 
-`MsgTransfer` contains `expires_at_unix`, user disclosure, audit disclosure, and sender self-view disclosure fields. Audit disclosure is not optional. Sender self-view disclosure is included by default and omitted only by explicit opt-out. `creator` is the replaceable fee payer/relayer; it is deliberately excluded from the owner intent.
-
-`MsgWithdraw` is an exact-match withdraw message and does not contain output note fields. JS/TS clients must not model the legacy `new_note_commitment` or `encrypted_note` withdraw fields, and they must not send dummy output-note values.
-
-`MsgBatchTransfer` atomically consumes 1..16 input notes and creates 1..32 ordered outputs under one `BatchJoinSplit16x32` proof. JS/TS clients must preserve canonical output order, active-prefix counts, disabled-slot sentinels, and the payload/proof versions defined in the batch transfer addendum in section 17.
+The V1 Msg service is not registered when the audit runtime is enabled and legacy calls fail with `legacy privacy service is disabled`. Governance may use only the three V2 management messages; governance execution of the four asset messages is blocked.
 
 ## 4. Query/API Contract
 
@@ -81,7 +85,6 @@ GET /clairveil/privacy/v1/commitment/{commitment_hex}
 GET /clairveil/privacy/v1/events
 GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 POST /clairveil/privacy/v1/commitment_paths_at_root
-GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
 GET /clairveil/privacy/v1/reserve/{denom=**}
@@ -92,6 +95,9 @@ GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
 GET /clairveil/privacy/v1/scan_events
 POST /clairveil/privacy/v1/privacy_scan
+GET /clairveil/privacy/v2/audit/configuration
+GET /clairveil/privacy/v2/audit/key_schedule
+GET /clairveil/privacy/v2/audit/keys/{epoch}
 ```
 
 The Go SDK provider contract is in:
@@ -114,7 +120,7 @@ A web wallet needs at least these provider roles.
 - `PrivacyScanV2`: the primary wallet-sync path. Invoke `PrivacyScan` to read typed deposit, JoinSplit2x2 transfer, and batch-transfer outputs with the global `(height, global_sequence, output_index)` cursor.
 - `ScanEvents`: legacy compatibility projection for deposit and JoinSplit2x2 transfer only; it is not a batch-capable or primary wallet-sync API.
 - `PrivacyEvents`: raw legacy event inspection for compatibility and diagnostics, not a wallet-sync projection.
-- `AuditConfig`: fetch the master auditor pubkey configured on-chain.
+- `AuditConfiguration`, `AuditKeySchedule`, and `AuditKey`: fetch the public runtime configuration, active/pending epochs, cancellations, and historical public keys through V2. The V1 `audit_config` contract is legacy compatibility material, not the current configuration source.
 - `DisclosureConfig`: display user disclosure policy/mode and payload version.
 - `CircuitConfig`: read the consensus `CircuitSetIdentity`, active set, ordered VK hashes, and public-input schema hashes. Do not infer consensus identity from a node-local manifest path or checksum environment variable.
 - `Reserve`: compare privacy module-account balance to recorded deposit/withdraw totals for a denom.
@@ -218,11 +224,13 @@ last_scan_output_index
 
 ## 7. Deposit Implementation
 
-This legacy filename remains a discovery handoff, not a prover specification. Use the [general prover HTTP API](clairveil-proverd-http-api.md) and [deposit API](clairveil-proverd-http-api.md#deposit) for the language-neutral contract.
+The older deposit SDK filenames and NoteV1 examples remain discovery and fixture handoffs, not the current wire or prover specification. Current clients build the V2 output effect, query nonce/initial height/active audit epoch/circuit identity, and use the shared [audit-field route](clairveil-proverd-http-api.md#current-route).
 
-A client creates the note/commitment and encrypted note, obtains a proof locally or through the canonical deposit route, validates the returned commitment/proof, then builds and broadcasts `MsgDeposit`. Only the circuit witness belongs in a remote deposit request; encrypted note, creator, denom, memo, seed, and chain ID stay on the client/chain side. Do not treat a package/provider API, release state, or migration recipe as authoritative.
+A current client builds the V2 `OutputEffect` and `AuditAuthorization`, obtains an audit-field proof locally or from `/v2/prover/audit-field`, verifies the repeated response binding, exact artifact identity, and final PI23 locally, then broadcasts `clairveil.privacy.v2.MsgDeposit`. Use the [current HTTP contract](clairveil-proverd-http-api.md#current-route) and compiled V2 proto as authority; the old per-deposit route and its client-field split are retained fixtures only.
 
-## 8. Transfer Implementation
+## 8. Legacy NoteV1 Transfer Reference
+
+This section preserves the V1 prepared-payload and inner-relation details used by retained fixtures. Do not encode it as a current transaction. Current V2 clients use `clairveil.privacy.v2.MsgTransfer`, mandatory `AuditAuthorization`, and `/v2/prover/audit-field`.
 
 Transfer uses only the latest single model. Legacy `transfer-v2` and `transfer-v3` commands are not part of the downstream/JS SDK contract.
 
@@ -242,7 +250,7 @@ A JS SDK transfer builder gathers:
 - target amount and denom;
 - current tree root;
 - Merkle path for selected notes;
-- chain audit master pubkey;
+- active audit epoch public key (for legacy fixture comparison only);
 - optional user disclosure target pubkey;
 - user disclosure policy and mode.
 
@@ -448,7 +456,7 @@ The JS SDK handoff is complete when the following work.
 - Bulk payroll clients reproduce the reservation transitions and operation success rules in `privacy_note_reservation_contract.json`.
 - User disclosure, audit disclosure, and sender self-view disclosure decode with `verified=true`.
 - Exact-match withdraw and relayed withdraw payload validation work.
-- A JS SDK integration test can follow the same flow as Clairveil repo's `make privacy-e2e-smoke`.
+- A JS SDK integration test completes deposit, transfer, batch, withdraw, rescan, and auditor verification against a separately documented native V2 flow. No checked-in Make target currently supplies this live evidence.
 
 ## 14. What The JS SDK Can Treat As Stable From The Go Core
 
@@ -456,23 +464,19 @@ The JS SDK can currently treat these as stable contracts.
 - Current prover integration is `POST` `/v2/prover/audit-field` with request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 `[]byte` fields, and final PI23.
 - A client must perform local verification with the exact artifact identity after checking the repeated response binding. The older `/v1` example contracts below are legacy-only fixture references, not a live V2 SDK surface.
 
-- `clairveil.privacy.v1` proto package
-- `MsgDeposit`, `MsgTransfer`, `MsgWithdraw`, `MsgBatchTransfer`
+- current `clairveil.privacy.v2` asset/admin messages and V2 audit queries
+- retained `clairveil.privacy.v1` wallet scan/tree/reserve queries
 - gRPC/HTTP query paths
 - typed `privacy_scan`, single-snapshot `commitment_paths_at_root`, and bidirectional asset-registry queries
 - transparent prefix `clair`, shielded prefix `clairs`
 - reference denom `uclair`
 - full shielded address-based transfer UX
-- mandatory audit disclosure
+- mandatory V2 audit authorization with active key epoch
 - user disclosure policy/mode labels
-- deposit proof requirement for `MsgDeposit`
-- deposit payload/proof/request/response `v1`
-- transfer payload `v5` and transfer proof/request/response `v2`
-- withdraw prover/final payload and proof/request/response `v2`
-- batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, and request/response `v1`
-- disclosure plaintext/query version `privacy-fixed-v1`
-- active circuit set `privacy-note-v1` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
-- prover HTTP paths `/v1/prover/deposit`, `/v1/prover/transfer`, `/v1/prover/withdraw`, `/v1/proofs/batch-transfer`
+- current V2 asset messages require audit-field proof and authorization under the shared envelope `v1`/PI23 contract
+- retained legacy fixtures: deposit payload/proof/request/response `v1`; transfer payload `v5` and proof/request/response `v2`; withdraw payload/proof/request/response `v2`; batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, and request/response `v1`; disclosure plaintext/query `privacy-fixed-v1`. These are not the current V2 wire.
+- active circuit set `privacy-note-v1-audit-field-v1` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
+- sole live prover HTTP path `/v2/prover/audit-field`; the listed `/v1` routes are retained fixtures only
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
 - `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error codes and completed production 2x2 circuit/native/prepared/structured pre-sign enforcement; downstream signers must preserve the fail-before-release contract, including rejection of SDK-wide secret reuse and non-canonical field aliases. The security, protocol, chain-core, client-integration, and independent-publication-validation gates have passed, and the source is `PUBLICATION_READY_EXPERIMENTAL`
 - note reservation status and operation evidence contract in `privacy_note_reservation_contract.json`
@@ -497,6 +501,8 @@ docs/clairveil-downstream-cosmos-integration-guide.md
 docs/clairveil-operations-guide.md#6-prover-operations
 proto/clairveil/privacy/v1/tx.proto
 proto/clairveil/privacy/v1/query.proto
+proto/clairveil/privacy/v2/tx.proto
+proto/clairveil/privacy/v2/query.proto
 x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json
 x/privacy/client/sdk/conformance/testdata/privacy_browser_signer_provider_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json
@@ -508,8 +514,9 @@ Check Go core sanity with:
 
 ```bash
 make test
-make privacy-e2e-smoke
 ```
+
+Use a separately documented native V2 harness for live evidence; the repository exposes no end-to-end live smoke Make target.
 
 ## 16. Reference Consumer Examples
 

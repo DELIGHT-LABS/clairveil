@@ -64,8 +64,10 @@ deleting it.
 
 ## 8. Legacy BatchJoinSplit16x32 reference
 
-The retained restartable multi-message batch/payroll commands and their
-`/v1/proofs/batch-transfer` endpoint are compatibility and regression tools,
-not the current one-proof audit-field workflow. Do not use their output as V2
-audit provenance or capacity evidence. The active `MsgBatchTransfer` contract
-is documented in the [BatchJoinSplit16x32 reference](clairveil-batch-joinsplit-16x32.md).
+The retained restartable multi-message batch/payroll code, V1 contract text,
+and fixtures are compatibility and regression references. The former
+`/v1/proofs/batch-transfer` route is not served by the current prover and is not
+a fallback endpoint. Current V2 uses `clairveil.privacy.v2.MsgBatchTransfer`
+and `POST /v2/prover/audit-field`. Do not use legacy fixture output as V2 audit
+provenance or capacity evidence. The historical circuit relation is documented
+in the [BatchJoinSplit16x32 reference](clairveil-batch-joinsplit-16x32.md).

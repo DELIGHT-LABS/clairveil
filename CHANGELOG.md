@@ -13,6 +13,18 @@ All notable changes to Clairveil are documented in this file.
 ### Changed
 
 - Added role-based documentation entry paths, expanded the JS SDK handoff with retry/failover and payroll/wallet contracts, and made static, live one-proof, legacy regression, and actual-capacity gates explicit in testing, operations, maintenance, and release-pack metadata.
+- Replaced the replay/archive-oriented audit runtime with small public V4 genesis metadata, native Cosmos init/start/export/upgrade state, V2 asset and governance audit-management messages, and external auditor provenance derived from original successful transactions plus execution events.
+- Consolidated live proving on `POST /v2/prover/audit-field`; retained NoteV1, V1 prover contracts, batch/payroll code, and fixtures are now explicitly historical compatibility evidence rather than live fallback routes.
+- Limited `make release-check` to CI, vulnerability, static legacy batch conformance, and static/unit/synthetic readiness gates; live V2 and capacity evidence must come from a separately documented native harness.
+
+### Removed
+
+- Removed broken localnet/E2E wrappers, their dependent V1 localnet/latency benchmark entrypoints, and the legacy live payroll script. Static fixtures, simulations, benchmark consumers, and historical report families remain available without being advertised as current V2 execution.
+
+### Fixed
+
+- Corrected native bootstrap, audit configuration/artifact wiring, and user-facing documentation for automatic nonce/initial-height/key/circuit discovery.
+- Removed the obsolete live smoke entrypoints, made `RUN_LOCALNET` fail closed on the retained static/simulation gates, and separated `release-check` from live V2 evidence; the static batch fixture gate remains available.
 
 ## v0.4.0 - 2026-08-02
 

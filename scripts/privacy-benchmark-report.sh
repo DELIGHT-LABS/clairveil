@@ -13,10 +13,6 @@ if [[ -z "$reports" ]]; then
     "benchmarks/privacy-proverd/latest.json"
     "benchmarks/privacy-proverd-load/latest.json"
     "benchmarks/privacy-proverd-scale/latest.json"
-    "benchmarks/privacy-localnet/latest.json"
-    "benchmarks/privacy-transfer-batch-localnet/latest.json"
-    "benchmarks/privacy-localnet-tps/latest.json"
-    "benchmarks/privacy-user-latency/latest.json"
     "benchmarks/privacy-bulk-transfer/latest.json"
     "benchmarks/public-capacity/latest.json"
   )

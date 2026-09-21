@@ -4,6 +4,11 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+if [[ "${RUN_LOCALNET:-0}" != "0" ]]; then
+  echo "RUN_LOCALNET is no longer supported; this readiness check contains static/unit/synthetic gates only" >&2
+  exit 1
+fi
+
 bench_out_dir="${BENCH_OUT_DIR:-benchmarks/privacy-bulk-readiness}"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 steps_file="$bench_out_dir/readiness-steps-$stamp.jsonl"
@@ -90,13 +95,6 @@ run_step "reservation-failure-invariants" "1" \
 
 run_step "bulk-synthetic-bench" "1" \
   env BENCH_OUT_DIR="$bench_out_dir/bulk-transfer" ./scripts/privacy-bulk-transfer-bench.sh || failed=1
-
-if [[ "${RUN_LOCALNET:-0}" == "1" ]]; then
-  run_step "audit-v2-localnet" "1" \
-    ./scripts/privacy-audit-v2-smoke.sh || failed=1
-else
-  skip_step "audit-v2-localnet" "skipped; set RUN_LOCALNET=1 to include the V2 localnet transfer batch smoke"
-fi
 
 if [[ "${RUN_PROVER_SCALE:-0}" == "1" || -n "${PROVERD_URLS:-}" ]]; then
   if [[ -z "${PROVERD_URLS:-}" ]]; then

@@ -31,7 +31,6 @@ init: install
 proto:
 	./scripts/generate-proto.sh
 
-.PHONY: localnet-smoke
 .PHONY: privacy-batch-joinsplit-localnet
 privacy-batch-joinsplit-localnet:
 	./scripts/privacy-batch-joinsplit-localnet.sh
@@ -39,18 +38,6 @@ privacy-batch-joinsplit-localnet:
 .PHONY: privacy-bench
 privacy-bench:
 	./scripts/privacy-bench.sh
-
-.PHONY: privacy-bench-localnet
-privacy-bench-localnet:
-	./scripts/privacy-bench-localnet.sh
-
-.PHONY: privacy-localnet-tps-bench
-privacy-localnet-tps-bench:
-	./scripts/privacy-localnet-tps-bench.sh
-
-.PHONY: privacy-transfer-batch-localnet-bench
-privacy-transfer-batch-localnet-bench:
-	./scripts/privacy-transfer-batch-localnet-bench.sh
 
 .PHONY: privacy-proverd-bench
 privacy-proverd-bench:
@@ -64,10 +51,6 @@ privacy-proverd-load-bench:
 privacy-proverd-scale-bench:
 	./scripts/privacy-proverd-scale-bench.sh
 
-.PHONY: privacy-user-latency-bench
-privacy-user-latency-bench:
-	./scripts/privacy-user-latency-bench.sh
-
 .PHONY: privacy-bulk-transfer-bench
 privacy-bulk-transfer-bench:
 	./scripts/privacy-bulk-transfer-bench.sh
@@ -79,10 +62,6 @@ privacy-bulk-readiness-check:
 .PHONY: reference-payroll-demo
 reference-payroll-demo:
 	./scripts/reference-payroll-demo.sh
-
-.PHONY: reference-payroll-live-localnet
-reference-payroll-live-localnet:
-	./scripts/reference-payroll-live-localnet.sh
 
 .PHONY: reservation-sql-integration
 reservation-sql-integration:
@@ -125,7 +104,7 @@ release-check:
 	$(MAKE) ci
 	$(MAKE) vulncheck
 	$(MAKE) privacy-batch-joinsplit-localnet
-	RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 $(MAKE) privacy-bulk-readiness-check
+	$(MAKE) privacy-bulk-readiness-check
 
 .PHONY: release-pack
 release-pack:
@@ -145,4 +124,4 @@ docker-proverd-build:
 
 .PHONY: clean
 clean:
-	rm -f clairveild clairveil-setup clairveil-verify clairveil-proverd clairveil-benchreport clairveil-proverload clairveil-localnetload clairveil-userlatency clairveil-bulktransferbench clairveil-payroll clairveil-payrolld
+	rm -f clairveild clairveil-setup clairveil-verify clairveil-auditor clairveil-proverd clairveil-benchreport clairveil-proverload clairveil-localnetload clairveil-userlatency clairveil-bulktransferbench clairveil-payroll clairveil-payrolld

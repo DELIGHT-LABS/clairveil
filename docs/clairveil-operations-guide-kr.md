@@ -12,22 +12,20 @@
 | Reference node | `clairveild` local 검증 | validator 운영, sentry, snapshot, upgrade, monitoring |
 | ZK artifact | 생성/검증 tooling | artifact signing, provenance, reproducible build, release custody |
 | Prover | `clairveil-proverd` reference service | topology, auth, quota, deployment, logging, retention |
-| Audit disclosure | genesis pubkey와 decode flow | master auditor private-key custody, rotation, access control |
+| Audit disclosure | public initial key, epoch lifecycle, decode flow | audit private-key custody, governance rotation, access control |
 | Wallet | CLI/SDK helper와 fixture | browser/mobile storage encryption, UX, telemetry redaction |
 
 ## 2. Node 운영 baseline
 
-Production-like node는 genesis의 audit master pubkey, `strict` ZK artifact preflight, 올바른 bank module account로 등록한 privacy module을 갖춰야 합니다. 또한 `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom=**}`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, batch `nullifiers` query를 노출하고 release 전 snapshot/restore rehearsal을 완료해야 합니다.
+Production-like node는 initial audit key와 proof of possession을 담은 public V4 audit configuration을 입력받고, privacy module account를 bank module account로 등록하며, configured circuit identity를 supplied artifact manifest에 결합해야 합니다. Wallet 동기화용 V1 scan/tree/reserve/asset query와 별도로 live audit configuration/key history용 V2 `audit/configuration`, `audit/key_schedule`, `audit/keys/{epoch}` query를 노출합니다. Release 전 snapshot/restore rehearsal도 완료해야 합니다. 이 store는 일반 Cosmos state와 wallet scan state이며 transaction replay archive나 audit ledger가 아닙니다.
 
 V2 audit transfer는 four-circuit `privacy-note-v1-audit-field-v1` consensus identity와 일치하는 local audit-field VK가 있을 때만 활성화합니다.
 
 ```bash
-set -a
-source artifacts/privacy/privacy_zk_checksums.env
-set +a
-export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
-
-clairveild start --minimum-gas-prices 0uclair
+clairveild start \
+  --audit-config /secure/config/audit-config.json \
+  --audit-artifacts /opt/clairveil/privacy-artifacts \
+  --minimum-gas-prices 0uclair
 ```
 
 ## 3. ZK artifact 운영
@@ -42,7 +40,7 @@ clairveil-setup --out artifacts/privacy --development
 
 `privacy-note-v1-audit-field-v1`은 `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, `batch-joinsplit-16x32-audit-field-v1` exact order의 descriptor를 요구합니다. Validator는 consensus identity를 비교하고 네 VK만 load하며 prover readiness는 선택한 R1CS/PK pair만 lazy load합니다. `privacy_zk_manifest.json` schema `v2`는 ordered descriptor, VK SHA-256, public-input schema SHA-256을 포함해 `CircuitSetIdentity` schema `v1`과 일치해야 합니다. Environment checksum은 추가 consistency check일 뿐 consensus identity를 override할 수 없고, mismatch는 startup/readiness를 실패시켜야 합니다.
 
-Repository artifact는 development artifact이며 formal trusted setup이나 production distribution이 아닙니다. Production release는 circuit source commit, generation command, checksum manifest, signer를 기록하고 artifact를 read-only mount하며 `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict`를 사용하고 stale artifact 또는 chain verifier mismatch를 release blocker로 처리해야 합니다. 기록된 batch artifact hash와 resource history는 [clairveil-batch-joinsplit-16x32-kr.md](clairveil-batch-joinsplit-16x32-kr.md)에 남아 있습니다.
+Repository artifact는 development artifact이며 formal trusted setup이나 production distribution이 아닙니다. Production release는 circuit source commit, generation command, checksum manifest, signer를 기록하고 artifact를 read-only mount하며 directory를 `--audit-artifacts`로 전달하고 stale artifact 또는 chain verifier mismatch를 release blocker로 처리해야 합니다. Node startup은 manifest와 consensus identity 검사를 자동으로 수행합니다. 기록된 batch artifact hash와 resource history는 [clairveil-batch-joinsplit-16x32-kr.md](clairveil-batch-joinsplit-16x32-kr.md)에 남아 있습니다.
 
 ## 4. Merkle tree 운영
 
@@ -91,7 +89,7 @@ Configured prover endpoint 하나를 사용하고 automatic failover를 비활�
 
 ### Production HTTP 경계
 
-Remote prover를 private network 또는 edge proxy 뒤에 둡니다. Non-loopback witness traffic은 HTTPS를 사용해야 하며 TLS는 edge proxy, load balancer, service mesh, mTLS에서 terminate해도 됩니다. Proof route는 bearer token, mTLS identity, session-bound API token 등으로 보호하고 user, wallet, IP, API token별 quota를 둡니다. Bearer token은 최소 128-bit random entropy를 사용하고 secret manager 또는 동등한 injection path로 제공하며 rotation 절차를 문서화합니다.
+Remote prover를 private network 또는 edge proxy 뒤에 둡니다. Non-loopback witness traffic은 HTTPS를 사용해야 하며 TLS는 edge proxy, load balancer, service mesh, mTLS에서 terminate해도 됩니다. Reference prover는 bearer token을 설정한 경우에만 이를 강제하며 token 미설정 상태에서는 해당 검사가 비활성화됩니다. Production remote deployment는 bearer authentication을 설정하거나 동등한 mTLS/session-bound control 뒤에 두고 user, wallet, IP, API token별 quota를 둡니다. Bearer token은 최소 128-bit random entropy를 사용하고 secret manager 또는 동등한 injection path로 제공하며 rotation 절차를 문서화합니다.
 
 Edge와 application body limit을 맞춥니다. `max_request_bytes=8388608`(8 MiB)이 reference default이며 반드시 positive여야 합니다. `0`은 invalid이고 unlimited가 아닙니다. Gzip wire와 decompressed-body limit을 모두 두고 read-header/read/idle/write timeout 정책, worker 수, queue depth를 설정합니다. Long synchronous proof에는 benchmark한 finite write timeout 또는 async job id 반환을 선택합니다. `/healthz`, `/readyz`, `/debug/vars`는 loopback, private network, 인증된 operations plane으로 제한합니다.
 
@@ -113,7 +111,7 @@ BatchJoinSplit16x32의 `/v1/proofs/batch-transfer` 경계는 legacy-only입니�
 
 ## 7. Audit key 운영
 
-모든 transfer에는 mandatory audit disclosure가 포함됩니다. Audit master private key는 모든 shielded transfer의 from/to/amount/asset 정보를 읽을 수 있습니다. Production에는 key-generation ceremony, HSM/KMS 또는 동등한 custody, decrypt 권한 분리, access log와 approval workflow, rotation/migration plan, compromised-key incident response, disclosure verification을 강제하는 auditor UX가 필요합니다. Clairveil은 private-key custody를 구현하지 않습니다.
+모든 asset transaction에는 mandatory audit authorization이 포함됩니다. Active audit epoch의 private key는 해당 envelope가 보호하는 transaction field를 읽을 수 있습니다. Production에는 key-generation ceremony, HSM/KMS 또는 동등한 custody, decrypt 권한 분리, access log와 approval workflow, governance-controlled future epoch activation/cancellation, compromised-key incident response, original successful transaction과 execution event를 대조하는 auditor UX가 필요합니다. Clairveil은 private-key custody나 replay ledger를 구현하지 않습니다.
 
 ## 8. Wallet 운영
 
@@ -130,11 +128,10 @@ Private seed, mnemonic, scalar, viewing key, disclosure private key, prepared pa
 | Gate | 제공하는 증적 | 경계 |
 | --- | --- | --- |
 | `make privacy-batch-joinsplit-localnet` | Static BatchJoinSplit16x32 fixture/conformance | node나 prover를 시작하지 않고 actual proof를 생성하지 않음 |
-| `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` | Actual one-proof node/prover functional workflow | Production-capacity measurement가 아님 |
 | `reference-payroll-*` | Legacy multi-message/simulation regression 및 capacity planning | One-proof production capacity 증적이 아님 |
-| `make release-check` | `ci`, `vulncheck`, `localnet-smoke`, `privacy-e2e-smoke`, static batch gate, `RUN_LOCALNET=1 TRANSFER_BATCH_COUNT=2 make privacy-bulk-readiness-check` | Actual one-proof batch gate, `reference-payroll-*`, 16x32 production-capacity workload를 실행하지 않음 |
+| `make release-check` | `ci`, `vulncheck`, static legacy batch conformance, static/unit/synthetic bulk readiness | Node/prover를 시작하지 않으며 live V2 또는 production-capacity 증적을 제공하지 않음 |
 
-Final downstream release와 mainnet acceptance는 `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`의 live one-proof 증적을 별도로 요구합니다. Production-capacity claim은 actual 16x32 workload의 tag/commit-bound artifact로 뒷받침해야 하며 proof/sec, tx/sec, item/sec, RSS, CPU, shape distribution, retry/replan/manual-review 결과, circuit/artifact identity, checksum, 실행 environment를 기록합니다. Synthetic 또는 legacy `reference-payroll-*` 결과를 one-proof production-capacity evidence로 재분류하면 안 됩니다.
+Final downstream release와 mainnet acceptance에는 별도로 기록한 live native V2 증적이 필요하며 checked-in Make target은 이를 제공하지 않습니다. Production-capacity claim은 actual 16x32 workload의 tag/commit-bound artifact로 뒷받침해야 하며 proof/sec, tx/sec, item/sec, RSS, CPU, shape distribution, retry/replan/manual-review 결과, circuit/artifact identity, checksum, 실행 environment를 기록합니다. Synthetic 또는 legacy `reference-payroll-*` 결과를 one-proof production-capacity evidence로 재분류하면 안 됩니다.
 
 ## 11. Release 운영
 
@@ -178,4 +175,4 @@ Clairveil core를 downstream mainnet에 붙이기 전:
 8. Chain-specific threat model이 작성되어 있습니다.
 9. Release commit 기준 `TestBatchTransferDirectCoreIntegration`, atomic scan-failure test, cross-message 2x2+batch/batch+batch rollback test가 통과합니다.
 10. SDK, remote batch prover route, typed scanner/decrypt path, one-proof payroll integration, CLI/tutorial, conformance fixture, actual localnet workflow가 함께 통과하며 formal setup, production artifact release, external audit, downstream wallet product는 별도 gate입니다.
-11. `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet`의 tag/commit-bound live one-proof 기록을 승인하고, 모든 production-capacity claim이 10절을 충족합니다.
+11. 작동하는 명시적 external flow의 tag/commit-bound live native V2 기록을 승인하고, 모든 production-capacity claim이 10절을 충족합니다. Static Make target은 이 gate를 충족하지 않습니다.

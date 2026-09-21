@@ -25,26 +25,24 @@ make release-check
 | --- | --- |
 | `make test` | all Go unit and integration tests |
 | `make build` | all project binaries and build-only load tools |
-| `make init` | a manual development-chain home; its default home is `~/.clairveil` |
+| `make init` | builds/installs binaries and prints the required `clairveild init --audit-config ... --chain-id ...` command shape; it does not initialize a home |
 | `make docs-check` | Markdown, EN/KR pairs, manifests, and prover schema fixtures |
 | `make examples` | JS audit key, fixture validator, and prover HTTP client checks |
-| `make localnet-smoke` | reviewed audit-field V2 localnet smoke; requires the reviewed daemon/prover binaries and matching runtime inputs |
-| `make privacy-e2e-smoke` | reviewed V2 deposit, transfer, withdraw, and small one-proof batch smoke with DeliverTx/rescan checks |
+| `make privacy-batch-joinsplit-localnet` | static legacy batch fixture and SDK conformance; starts no node/prover |
+| `make privacy-bulk-readiness-check` | focused unit/reservation checks and synthetic legacy capacity planning; rejects `RUN_LOCALNET` |
 | `make docker-proverd-build` | Dockerfile and compose build validation |
 
-`make release-check` runs the reviewed V2 smoke plus the default static batch fixture gate and V2 bulk-readiness live step. Export matching `CLAIRVEILD_BIN`, `CLAIRVEIL_PROVERD_BIN`, `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`, `CLAIRVEIL_AUDIT_RUNTIME_DIR`, and `CLAIRVEIL_AUDIT_SECRET_FILE`; the static fixture remains conformance coverage, not a capacity claim.
+`make release-check` runs `ci`, `vulncheck`, the static legacy batch conformance gate, and default static/unit/synthetic bulk-readiness checks. It starts no node or prover and therefore provides no live V2 or capacity evidence.
 
 ## Batch and payroll gates
 
 | Gate | It verifies | It does not verify |
 | --- | --- | --- |
 | `make privacy-batch-joinsplit-localnet` | Static legacy fixture and SDK conformance; it starts no process. | V2 runtime validation. |
-| `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` | One small V2 `transfer-batch-16x32` proof through the reviewed runner. | Throughput or 16x32 capacity. |
 | `make reference-payroll-demo` | Legacy multi-message repository-local regression. | A real node or one-proof batch transfer. |
-| `make reference-payroll-live-localnet` | Legacy multi-message `transfer-batch` localnet regression. | The one-proof workflow or a production-capacity claim. |
-| `make reference-payroll-rehearsal` | Legacy simulation, regression, and capacity-planning reports. | One-proof production capacity. |
+| `make reference-payroll-rehearsal` | Legacy simulation and capacity-planning reports. | A live node, V2 runtime validation, or one-proof production capacity. |
 
-Do not treat `RUN_LOCALNET=1` as a throughput or mainnet-capacity claim.
+`privacy-batch-joinsplit-localnet`, `privacy-bulk-readiness-check`, and `reference-payroll-rehearsal` reject nonzero `RUN_LOCALNET` before their work. A native CLI walkthrough is separate from these gates and requires the public audit config, matching artifact bundle, node startup, transaction execution, rescan, and auditor checks to be recorded explicitly.
 
 A 16x32 production-capacity claim needs a tag/commit-bound artifact from the actual
 16x32 workload. Record proof/sec, tx/sec, item/sec, RSS, CPU, shape distribution,
@@ -109,29 +107,9 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 
 ## Local homes and ports
 
-The V2 smoke commands below create an isolated temporary home and require the reviewed binary/runtime inputs; separately labelled legacy load examples remain reference-only.
+There is no checked-in end-to-end native V2 smoke target. Keep historical localnet/latency reports and legacy load examples reference-only.
 
-`make localnet-smoke` and `make privacy-e2e-smoke` create independent temporary
-homes/work directories and do not attach to an existing `~/.clairveil` node. They
-can still collide with another process using their default Tendermint/RPC service
-ports. Use the relevant port overrides for an E2E run:
-
-```bash
-RPC_PORT=27657 P2P_PORT=27656 GRPC_PORT=9190 API_PORT=1417 make privacy-e2e-smoke
-```
-
-For repeatable local initialization without changing the default home:
-
-```bash
-tmp="$(mktemp -d)"
-GOBIN="$tmp/bin" CLAIRVEIL_HOME="$tmp/home" make init
-source "$tmp/home/clairveil.env"
-"$tmp/bin/clairveild" start --home "$tmp/home"
-```
-
-`CLAIRVEIL_V2_SMOKE_WORK_DIR` or `CLAIRVEIL_E2E_WORK_DIR`, `KEEP_WORK_DIR=1`, port variables,
-and `V2_SMOKE_READY_ATTEMPTS` configure the runner. It always requires reviewed
-`CLAIRVEILD_BIN` and `CLAIRVEIL_PROVERD_BIN` plus matching artifact/runtime/secret inputs.
+`make init` does not create a home or `clairveil.env`; it only installs binaries and prints the next command. For a manual V2 native run, follow the [getting-started initialization](clairveil-getting-started.md#initialize-and-start), choose an explicit `--home` when isolation is needed, and complete the normal Cosmos account/genesis-account/gentx/collect-gentxs preparation required by the selected chain mode before start. Pass the public audit configuration to `init/start`, the artifact directory to `start`, and point `clairveil-proverd` at the same artifacts with `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`. The private audit key belongs to the external auditor, not node initialization.
 
 ## Release pack and documentation changes
 
@@ -155,6 +133,6 @@ make docs-check
 git diff --check
 ```
 
-Run the relevant smoke test whenever its commands or expected behavior changes. For
+Run an available relevant check whenever its commands or expected behavior changes; do not report the unavailable wrappers as passing evidence. For
 remote profiles and Merkle restore/recovery boundaries, use the
 [operations guide](clairveil-operations-guide.md).

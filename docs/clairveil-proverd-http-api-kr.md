@@ -48,7 +48,7 @@ Client는 반복된 field가 prepared request와 모두 같은지 거부-우선�
 
 ## 전송과 error
 
-Route는 `POST` JSON만 받고 `identity`/`gzip` body encoding을 지원하며 raw/decompressed body limit(기본 8 MiB)을 적용합니다. Bearer token이 설정되면 모든 proof route에 필요합니다. 응답에는 `Content-Type: application/json`, `Cache-Control: no-store`가 붙고 caller는 finite timeout을 설정하며 다른 prover로 자동 failover하면 안 됩니다.
+Route는 `POST` JSON만 받고 `identity`/`gzip` body encoding을 지원하며 raw/decompressed body limit(기본 8 MiB)을 적용합니다. Bearer token을 설정한 경우 모든 proof request가 이를 제시해야 하며, token을 설정하지 않으면 이 인증 검사가 비활성화됩니다. 응답에는 `Content-Type: application/json`, `Cache-Control: no-store`가 붙고 caller는 finite timeout을 설정하며 다른 prover로 자동 failover하면 안 됩니다.
 
 Error는 아래 strict `v1` envelope입니다. Unknown/duplicate/trailing JSON field, unsupported version, invalid base64/framing, non-canonical field element, witness/PI23 mismatch는 `400 invalid_request`입니다. Valid request 뒤 prover failure는 `500 proof_failed`입니다.
 

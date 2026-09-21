@@ -67,7 +67,7 @@ final-report.json:
 
 This demo is the legacy multi-message control-plane path: `transfer-batch` and `clairveil-payroll ... settle-transfer-batch` place several independent native 2x2 `MsgTransfer` messages and proofs in one Cosmos transaction. It is a regression/tutorial path and must never be described, submitted, reconciled, or capacity-planned as a one-proof batch.
 
-The payroll batch integration and its `/v1/proofs/batch-transfer` route are legacy-only, not current V2 workflow. See the [legacy reference boundary](../../docs/clairveil-getting-started.md#8-legacy-batchjoinsplit16x32-reference).
+The payroll batch integration and its `/v1/proofs/batch-transfer` route are legacy-only, not the current V2 workflow. Current V2 uses `clairveil.privacy.v2.MsgBatchTransfer` and the shared `/v2/prover/audit-field` route. See the [legacy reference boundary](../../docs/clairveil-getting-started.md#8-legacy-batchjoinsplit16x32-reference).
 
 ## Authority and ownership
 
@@ -111,9 +111,9 @@ Portable evidence includes:
 go test ./x/privacy/client/sdk/conformance/... -count=1
 go test ./x/privacy/client/sdk/... -count=1
 make privacy-batch-joinsplit-localnet
-RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
-make reference-payroll-live-localnet
 make privacy-bulk-readiness-check
 ```
 
-For staging, record the environment, pinned commit/artifact identity, configuration, and results. Completion requires fixture-compatible one-proof construction/proving/submission/scanning; exclusive active-note reservation; stale-worker protection; leases that survive long proof/broadcast work; encrypted replay-safe artifacts; tx-hash-first reconciliation of unknown outcomes; matching item evidence; enforced approval/disclosure/retention/operator-review policies; and demonstrated capacity for the proposed deployment. The legacy localnet target proves only legacy `transfer-batch` behavior.
+These are static/unit/synthetic legacy checks only. They reject nonzero `RUN_LOCALNET` and provide no live V2 evidence; use a separately documented native V2 harness for that boundary.
+
+For staging, record the environment, pinned commit/artifact identity, configuration, and results. Completion requires fixture-compatible one-proof construction/proving/submission/scanning; exclusive active-note reservation; stale-worker protection; leases that survive long proof/broadcast work; encrypted replay-safe artifacts; tx-hash-first reconciliation of unknown outcomes; matching item evidence; enforced approval/disclosure/retention/operator-review policies; and demonstrated capacity for the proposed deployment. No checked-in payroll target proves live V2 behavior.

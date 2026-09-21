@@ -35,36 +35,46 @@ Before integration, check that the downstream app and Clairveil `go.mod` do not 
 
 ## 3. Proto Contract
 
-The privacy proto package is:
+The current transaction and audit-query proto package is:
 
 ```text
-clairveil.privacy.v1
+clairveil.privacy.v2
 ```
 
-The generated Go package is:
-
-```text
-github.com/DELIGHT-LABS/clairveil/x/privacy/types
-```
+Its generated Go package is `github.com/DELIGHT-LABS/clairveil/x/privacy/types/v2`. The retained V1 wallet scan/tree/reserve queries and legacy contracts use `clairveil.privacy.v1` and `github.com/DELIGHT-LABS/clairveil/x/privacy/types`.
 
 The main proto files are:
 
 ```text
-proto/clairveil/privacy/v1/tx.proto
+proto/clairveil/privacy/v2/tx.proto
+proto/clairveil/privacy/v2/query.proto
 proto/clairveil/privacy/v1/query.proto
 proto/clairveil/privacy/v1/genesis.proto
 ```
 
-The Msg service provides:
+The current V2 Msg service provides:
 
 ```text
-/clairveil.privacy.v1.Msg/Deposit
-/clairveil.privacy.v1.Msg/Transfer
-/clairveil.privacy.v1.Msg/Withdraw
-/clairveil.privacy.v1.Msg/BatchTransfer
+/clairveil.privacy.v2.Msg/Deposit
+/clairveil.privacy.v2.Msg/Transfer
+/clairveil.privacy.v2.Msg/Withdraw
+/clairveil.privacy.v2.Msg/BatchTransfer
+/clairveil.privacy.v2.Msg/ScheduleAuditKeyEpoch
+/clairveil.privacy.v2.Msg/CancelPendingAuditEpoch
+/clairveil.privacy.v2.Msg/SetPrivacyHalt
 ```
 
-The Query service provides these HTTP gateway paths.
+The audit runtime does not register the V1 Msg service; legacy calls fail with `legacy privacy service is disabled`. Governance may execute the three audit-management messages, but the four asset messages are explicitly blocked from governance execution.
+
+The live V2 audit queries are:
+
+```text
+GET /clairveil/privacy/v2/audit/configuration
+GET /clairveil/privacy/v2/audit/key_schedule
+GET /clairveil/privacy/v2/audit/keys/{epoch}
+```
+
+The V1 Query service remains registered for wallet scan, tree, reserve, and asset reads and provides these HTTP gateway paths.
 
 ```text
 GET /clairveil/privacy/v1/nullifier/{nullifier}
@@ -73,7 +83,6 @@ GET /clairveil/privacy/v1/commitment/{commitment_hex}
 GET /clairveil/privacy/v1/events
 GET /clairveil/privacy/v1/scan_events
 GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
-GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
 GET /clairveil/privacy/v1/reserve/{denom=**}
@@ -85,7 +94,7 @@ POST /clairveil/privacy/v1/privacy_scan
 POST /clairveil/privacy/v1/commitment_paths_at_root
 ```
 
-If the downstream repo has its own proto generation pipeline, include `proto/clairveil/privacy/v1/*.proto` and update generated output in the same commit so stale generated files do not remain.
+If the downstream repo has its own proto generation pipeline, include both `proto/clairveil/privacy/v1/*.proto` and `proto/clairveil/privacy/v2/*.proto`, and update generated output in the same commit so stale generated files do not remain.
 
 `scan_events` uses a `(height, sequence)` cursor. Its `limit` bounds the scan cursor page budget, so filtered pages can return `events=[]` with `has_more=true`. Wallet clients must advance to `next_height` and `next_sequence` and continue instead of treating an empty page as scan completion.
 
@@ -93,13 +102,17 @@ If the downstream repo has its own proto generation pipeline, include `proto/cla
 
 Downstream web and mobile clients should use the POST JSON body binding for batch `nullifiers` checks, chunking requests at 1000 nullifiers. GET is retained for small compatibility calls, but large nullifier batches are likely to exceed common URL length limits.
 
-`MsgWithdraw` does not contain output note fields. Downstream clients upgrading from older generated bindings must drop legacy `new_note_commitment` and `encrypted_note` withdraw values instead of sending dummy output-note bytes.
+The detailed NoteV1 field descriptions below document retained V1 fixtures and inner circuit relations; they are not the current transaction wire. Current V2 asset messages carry `AuditAuthorization`, proof/expiry, and structured output effects as defined in `proto/clairveil/privacy/v2/tx.proto`.
 
-`MsgTransfer` contains two encrypted output notes and two 2-byte `view_tags`. The tags are untrusted local-scan hints, not server-filterable ownership tags. Safe default wallet sync must full-decrypt on a tag mismatch unless the product explicitly enables a fast mode with recovery/rescan support. Downstream EVM precompiles, bindings, and generated clients must keep `new_commitments`, `cipher_texts`, and `view_tags` aligned by output index.
+The legacy `MsgWithdraw` does not contain output note fields. Downstream clients handling retained V1 fixtures must drop older `new_note_commitment` and `encrypted_note` withdraw values instead of sending dummy output-note bytes.
 
-`MsgBatchTransfer` contains one proof, one historical root, 1..16 ordered nullifiers, 1..32 structured `BatchTransferOutput` values, exact audit key ID/epoch/target, and expiry. Counts come only from repeated-field lengths. The keeper re-derives the frozen 12 public values, precharges `BatchGasModelV1`, verifies the batch VK, and atomically writes nullifiers, globally unique commitments, root snapshot, typed scan state, and a minimal event. The public-input schema SHA-256 is `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333`.
+The legacy `MsgTransfer` fixture contains two encrypted output notes and two 2-byte `view_tags`. The tags are untrusted local-scan hints, not server-filterable ownership tags. Safe default wallet sync must full-decrypt on a tag mismatch unless the product explicitly enables a fast mode with recovery/rescan support.
+
+The retained V1 `MsgBatchTransfer` fixture contains one proof, one historical root, ordered nullifiers, and structured outputs. Current V2 represents the same asset transition with V2 output effects and mandatory `AuditAuthorization`; use the compiled V2 proto for wire fields. The legacy public-input schema SHA-256 remains historical conformance evidence, not a V2 message schema.
 
 ## 4. App Wiring Checklist
+
+The current audit runtime must be wired through the audited reference path, including `privacy.AppModuleBasic{AuditRuntime: true}` and `ConfigureAuditRuntime`; a plain legacy `NewKeeper`/`AppModuleBasic{}` setup does not register the V2 services. Use `app.NewAuditFieldApp` and the current reference app wiring as the executable integration example. The snippets below show only the common Cosmos module-account/store scaffolding.
 
 Add these imports to the downstream app.
 
@@ -199,6 +212,8 @@ Watch these points.
 
 ### 5.1 Trusted Deposit Funding
 
+This subsection is legacy-only. `DepositWithFunder` is part of the non-audit V1 integration surface and must not be exposed as a usable path when the audit runtime is enabled. A V2 EVM/policy adapter needs a separately reviewed design that preserves V2 authorization and original-transaction provenance.
+
 An in-process EVM precompile or policy adapter may debit a transparent funder that differs from the attributed actor by calling the additive Keeper API:
 
 ```go
@@ -217,44 +232,15 @@ This is a trusted Go integration surface, not a protobuf Msg service. The public
 
 The canonical deposit core verifies the proof before creating its nested SDK cache or mutating bank, reserve, tree, event, or index state. After verification succeeds, that cache executes bank transfer → optional module-balance delta check → reserve record → commitment and indexed-event append → atomic cache commit. A core failure discards that cache, while success writes only into the caller's parent context. The downstream adapter must still place the EVM value transfer, `DepositWithFunder`, and any after-call policy checks inside one outer SDK/EVM rollback boundary so a later policy failure restores escrow, module balances, and all Clairveil state and events.
 
-## 6. Genesis Audit Key
+## 6. V4 Audit Configuration And Key Epochs
 
-The latest transfer model includes mandatory master-auditor disclosure in every shielded transfer. A production-like chain must therefore set the complete audit key identity in privacy genesis state.
+Current initialization consumes a small public V4 configuration through `--audit-config`. It contains `chain_id`, `network_nonce32`, `initial_height`, a public `initial_audit_key` (`epoch`, `key_id`, `suite`, `public_key`, `pop`), and `circuit_set_identity`. It contains no audit private key, replay archive, or runtime bundle. `clairveild init` validates and writes this public metadata; `start` and `export` require the same configuration plus `--audit-artifacts`.
 
-The genesis field is:
-
-```json
-{
-  "app_state": {
-    "privacy": {
-      "audit_master_pubkey": "<base64-bytes>",
-      "audit_key_id": "master",
-      "audit_key_epoch": "1"
-    }
-  }
-}
-```
-
-For local development, the disclosure key can be shown with the CLI.
-
-```bash
-clairveild tx privacy show-disclosure-pubkey \
-  --from auditor \
-  --keyring-backend test \
-  --output json
-```
-
-The CLI output `public_key_hex` is hex. Genesis stores bytes in JSON, so convert it to base64 before inserting it.
-
-```bash
-printf '%s' '<public_key_hex>' | xxd -r -p | base64
-```
-
-A development chain with an empty audit key may still pass query or genesis validation, but it is not the target state for the latest transfer UX. Downstream e2e should run with an audit key configured.
+After genesis, governance schedules a future key epoch, cancels a pending epoch, or changes the privacy halt through the three V2 management messages. Clients query V2 audit configuration, the key schedule, and epoch history. `show-disclosure-pubkey` is a user/self-view disclosure helper and must not be used to manufacture the initial audit key.
 
 ### 6.1 Audit Private Key Custody
 
-The Clairveil repo provides the flow for putting an audit master public key in genesis/config and decoding audit disclosure. Creation, storage, access control, rotation, and incident response for the audit master private key are the responsibility of the downstream production project.
+Clairveil accepts the public initial key/PoP and provides an external auditor that verifies original successful transactions and execution events. Creation, storage, access control, epoch rotation, and incident response for audit private keys are the responsibility of the downstream production project.
 
 This key must not be treated like a normal relayer key or a development test key. If it leaks, transfer metadata encrypted to mandatory audit disclosure on that chain can be read.
 
@@ -291,11 +277,14 @@ A web wallet or external wallet SDK must decide at least:
 
 ## 7. ZK Artifact Runtime Configuration
 
-The node must know proving/verifying artifact locations and checksum policy.
+The node and prover must use the same identity-pinned artifact directory.
 
 ```bash
-export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=/path/to/zk_artifacts
-export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
+clairveild start \
+  --audit-config /path/to/audit-config.json \
+  --audit-artifacts /path/to/zk_artifacts
+
+CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=/path/to/zk_artifacts clairveil-proverd
 ```
 
 Create artifact checksum env files with:
@@ -304,26 +293,19 @@ Create artifact checksum env files with:
 go run ./cmd/clairveil-setup \
   --out /path/to/zk_artifacts --development
 
-set -a
-source /path/to/zk_artifacts/privacy_zk_checksums.env
-set +a
 ```
 
 The current development order is `privacy-note-v1-audit-field-v1`: `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, `batch-joinsplit-16x32-audit-field-v1`. Validators load the four matching VKs after exact consensus identity comparison; the prover lazily loads a selected R1CS/PK pair. `clairveil-setup` supports only `--out` and `--development`; the old `--circuit`/`--overwrite` procedure and batch artifact measurements are legacy records, not current runtime evidence.
 
-Recommended modes:
-
-- `strict`: Use in CI, release candidates, and production-like nodes. Missing artifacts or checksum mismatch are blocked before start.
-- `warn`: Use only when you want artifact problems to appear as logs during development.
-- `off`: Not recommended except for special debugging.
+Node startup validates the manifest and consensus circuit identity automatically. The generated checksum env file may be used by external release tooling, but there is no required `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE` runtime switch.
 
 ## 8. CLI/API Wiring
 
 The downstream daemon should expose module tx/query commands from the root command. The privacy module `AppModuleBasic` provides:
 
 ```go
-privacy.AppModuleBasic{}.GetTxCmd()
-privacy.AppModuleBasic{}.GetQueryCmd()
+privacy.AppModuleBasic{AuditRuntime: true}.GetTxCmd()
+privacy.AppModuleBasic{AuditRuntime: true}.GetQueryCmd()
 ```
 
 Current user-facing tx CLI commands to check are:
@@ -346,7 +328,7 @@ tx privacy prove-batch-transfer
 tx privacy broadcast-batch-transfer
 ```
 
-The current batch reference integration surface includes the one-proof `MsgBatchTransfer` commands `transfer-batch-16x32`, `prepare-batch-transfer`, `prove-batch-transfer`, and `broadcast-batch-transfer`, plus the companion prover route `POST /v1/proofs/batch-transfer`. The older `transfer-batch` command is intentionally different: it sends multiple independent `MsgTransfer` messages in one Cosmos transaction envelope. Do not document or wire that legacy command as the one-proof batch protocol.
+Current one-proof V2 batch submission uses `clairveil.privacy.v2.MsgBatchTransfer` and the shared companion prover route `POST /v2/prover/audit-field`. The older `/v1/proofs/batch-transfer` route and V1 staged contracts are retained documentation/fixtures and are not live fallback endpoints. Likewise, legacy `transfer-batch` sends multiple independent V1 messages and is not the current batch protocol.
 
 The query CLI currently exposed directly is:
 
@@ -355,7 +337,7 @@ query privacy check-nullifier
 query privacy reserve uclair
 ```
 
-The remaining `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, and batch `nullifiers` queries are available through gRPC/HTTP gateway queries. If the downstream chain needs an operator CLI, add separate CLI wrappers for those queries.
+The remaining V1 wallet scan/tree/reserve/asset queries are available through gRPC/HTTP gateway. The V2 audit runtime exposes `audit/configuration`, `audit/key_schedule`, and `audit/keys/{epoch}` separately. If the downstream chain needs an operator CLI, add wrappers without collapsing the V1 wallet and V2 audit contracts into one version.
 
 ## 9. Downstream Test Order
 
@@ -365,10 +347,10 @@ The remaining `tree_state`, `commitment_info`, `events`, `scan_events`, `merkle_
 
 Do not mix everything with target-chain-specific features from the start. Bring it up in this order.
 
-1. Confirm `make privacy-e2e-smoke` passes in the Clairveil repo.
+1. Record a manual native V2 flow or another working audited harness. No checked-in Make target currently provides end-to-end native V2 evidence.
 2. Add only module import and app wiring to the downstream app.
 3. Confirm the downstream node can `init`, add genesis accounts, gentx, collect-gentxs, and `start`.
-4. Add the audit master pubkey to genesis, then check that gRPC/HTTP gateway `audit_config` returns it after the first block.
+4. Initialize with the public V4 audit configuration, then check V2 `audit/configuration`, `audit/key_schedule`, and `audit/keys/{epoch}` after the first block.
 5. Verify `show-address`, `deposit`, and `list-notes` first through the downstream CLI.
 6. Verify `tree_state`, `events`, `scan_events`, `merkle_path`, `disclosure_config`, `circuit_config`, `reserve/{denom=**}`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` through gRPC/HTTP gateway.
 7. Verify user disclosure and audit disclosure through `transfer` and `decode-transfer-disclosure`.
@@ -382,8 +364,8 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 - If proto package, generated Go package, and service descriptor drift, Msg service registration or signing can fail.
 - If `TxConfig` is not configured in the root command's client context, gentx/signing commands can break.
 - Immediately after node start, before the first block, privacy txs can fail with `invalid height`, so e2e harnesses must wait for the first block.
-- Without the audit master pubkey, the latest transfer UX with mandatory audit disclosure cannot be properly verified.
-- If the audit master private key is operated as a development keyring/test mnemonic, the disclosure custody boundary collapses.
+- If the public initial audit key/PoP or active epoch history is missing, V2 asset transactions cannot obtain valid audit authorization.
+- If an audit epoch private key is operated as a development keyring/test mnemonic, the custody boundary collapses.
 - If a web wallet leaves note cache or prepared payload in plaintext browser storage and telemetry, the practical privacy of the shielded UX becomes much weaker.
 - If module account permissions or blocked-address policy are wrong, deposit/withdraw bank transfers fail.
 - If direct bank sends or manual top-ups do not match recorded deposit/withdraw accounting, `reserve/{denom=**}` returns `invariant_holds=false`.
@@ -395,12 +377,12 @@ Do not mix everything with target-chain-specific features from the start. Bring 
 Downstream integration is first-pass complete when all of the following pass.
 
 - The downstream daemon builds with privacy store, keeper, module, query gateway, and tx command included.
-- Privacy state and audit master pubkey are present in genesis.
+- The small V4 privacy metadata and public initial audit key/PoP are present in genesis.
 - A local single-node chain passes deposit, transfer, disclosure decode, and withdraw.
-- `tree_state`, `events`, `scan_events`, `merkle_path`, `audit_config`, `disclosure_config`, `circuit_config`, `reserve/{denom=**}`, `assets/by_denom/{canonical_denom=**}`, `assets/by_id`, `privacy_scan`, `commitment_paths_at_root`, `nullifier/{nullifier}`, and `nullifiers` queries respond correctly.
+- V1 wallet scan/tree/reserve/asset queries and the separate V2 audit configuration/key-schedule/key-history queries respond correctly.
 - The four-circuit identity, batch development artifact readiness, direct core integration, deterministic gas, atomic rollback, and typed scan/minimal-event tests pass.
 - The integration record distinguishes the implemented Go SDK/prover/wallet/payroll/CLI reference surfaces for batch integration from work still owned by the downstream product, and states that formal production artifacts are not supplied.
-- Audit master private key custody policy is reflected in production operations docs.
+- Audit epoch private-key custody and governance rotation policy are reflected in production operations docs.
 - Wallet storage encryption and remote prover privacy policy are reflected in JS/TS SDK or web wallet design docs.
 - Downstream-specific EVM/policy/precompile integration is separated into separate tests.
-- Trusted deposit integration proves that only the fixed escrow is debited, creator attribution comes from the authenticated operator, exact value/denom binding holds, and both core-local and downstream outer rollback leave no partial state or events.
+- Any V2 EVM/policy adapter is separately reviewed for V2 audit authorization and original-transaction provenance; the legacy `DepositWithFunder` path is not enabled under the audit runtime.

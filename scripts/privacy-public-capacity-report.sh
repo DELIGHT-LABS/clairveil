@@ -25,19 +25,10 @@ if [[ -z "$reports" ]]; then
   elif [[ -f "benchmarks/privacy-proverd-load/latest.json" ]]; then
     prover_report="benchmarks/privacy-proverd-load/latest.json"
   fi
-  candidates=(
-    "benchmarks/privacy-localnet-tps/latest.json"
-    "benchmarks/privacy-user-latency/latest.json"
-  )
   existing=()
   if [[ -n "$prover_report" ]]; then
     existing+=("$prover_report")
   fi
-  for candidate in "${candidates[@]}"; do
-    if [[ -f "$candidate" ]]; then
-      existing+=("$candidate")
-    fi
-  done
   if [[ ${#existing[@]} -eq 0 ]]; then
     echo "no default component reports found; set REPORTS=path1.json,path2.json" >&2
     exit 1

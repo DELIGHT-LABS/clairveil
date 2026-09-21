@@ -4,17 +4,17 @@
 
 ## 1. Status and scope
 
-This document is normative for NoteV1, domain separation, fixed encodings, the 16-input/32-output statement, aggregate vector roots, disclosure digests, scan state, artifact identity, and resource accounting.
+This document is normative only for the frozen legacy NoteV1 fixtures and inner 16-input/32-output relation: domain separation, fixed encodings, aggregate vector roots, disclosure digests, scan state, artifact identity, and resource accounting. Current runtime messages use `clairveil.privacy.v2.MsgBatchTransfer` and the audit-field wrapper/PI23 contract.
 
 The repository implements the circuit/keeper and reference Go planner, prover, scanner, payroll workers and CLI. Its status is `PUBLICATION_READY_EXPERIMENTAL`; downstream JS/TS products, formal trusted setup, external audit, signed production artifacts and production operations remain separate requirements.
 
-The active circuit set is `privacy-note-v1`, in Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1` order. Development artifact identities are not production trust anchors. **MUST**, **MUST NOT**, **SHOULD**, and **MAY** carry their usual protocol meaning.
+The frozen legacy circuit set is `privacy-note-v1`, in Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1` order. Development artifact identities are not production trust anchors. **MUST**, **MUST NOT**, **SHOULD**, and **MAY** carry their usual protocol meaning inside that frozen contract.
 
 ## 2. Frozen versions and capacities
 
 | Contract | Frozen value |
 | --- | --- |
-| Active circuit set | `privacy-note-v1` |
+| Frozen legacy circuit set | `privacy-note-v1` |
 | Module consensus version | `2` |
 | Privacy state version | `2` |
 | Fixed payload version | `privacy-fixed-v1` / binary version `1` |
@@ -26,7 +26,7 @@ The active circuit set is `privacy-note-v1`, in Deposit, Spend, JoinSplit2x2, `b
 | Batch capacity | inputs `1..16`, outputs `1..32` |
 | Batch circuit ID | `batch-joinsplit-16x32-v1` |
 | Batch public-input schema SHA-256 | `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333` |
-| Batch proto/API | `clairveil.privacy.v1.Msg/BatchTransfer`; canonical payload format `1` |
+| Legacy batch proto/API | `clairveil.privacy.v1.Msg/BatchTransfer`; canonical payload format `1` |
 | Disclosure-blinding separation | `v1`; `DBS-01..03` plus exact all-private/disabled sentinels |
 | JoinSplit2x2 public-input schema SHA-256 | `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82` (unchanged) |
 

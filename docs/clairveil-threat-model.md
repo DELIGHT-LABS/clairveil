@@ -1,6 +1,6 @@
 # Clairveil Threat Model
 
-This document summarizes the security boundaries of the Clairveil repository itself. Clairveil is not a production chain. It is a standalone privacy core that provides a reusable `x/privacy` module, reference `clairveild`, companion `clairveil-proverd`, fixtures, walkthroughs, and SDK handoff material. The downstream project that imports Clairveil decides and owns the real production chain, bespoke feature coupling, validator operations, master auditor key custody, and remote prover exposure policy.
+This document summarizes the security boundaries of the Clairveil repository itself. Clairveil is not a production chain. It is a standalone privacy core that provides a reusable `x/privacy` module, reference `clairveild`, companion `clairveil-proverd`, fixtures, walkthroughs, and SDK handoff material. The downstream project that imports Clairveil decides and owns the real production chain, bespoke feature coupling, validator operations, audit epoch-key custody, and remote prover exposure policy.
 
 Korean version: [clairveil-threat-model-kr.md](clairveil-threat-model-kr.md)
 
@@ -12,7 +12,7 @@ Korean version: [clairveil-threat-model-kr.md](clairveil-threat-model-kr.md)
 - External projects use Clairveil by forking it or importing `x/privacy`, proto, Go SDK helpers, fixtures, and prover contracts.
 - `clairveil-proverd` is a reference companion prover that supports both local daemon and remote sidecar models.
 - The downstream wallet/chain decides whether to deploy a local prover, remote prover, browser/WASM prover, or hybrid model.
-- Custody, access control, rotation, and incident response for the master auditor private key are downstream production responsibilities.
+- Custody, access control, governance rotation, and incident response for audit epoch private keys are downstream production responsibilities.
 - This is a repo-grounded threat model, not a formal third-party audit report.
 
 ## 2. Architecture
@@ -25,8 +25,8 @@ flowchart LR
   Prover -->|"load proving artifacts"| Artifacts["ZK artifacts: R1CS/PK/VK/manifest"]
   Node --> Privacy["x/privacy keeper"]
   Privacy --> State["Commitments, roots, nullifiers, events"]
-  Auditor["Master auditor operator"] -->|"private disclosure key"| Wallet
-  Privacy -->|"audit master pubkey from genesis"| Node
+  Auditor["External auditor operator"] -->|"retained epoch private keys"| Wallet
+  Privacy -->|"public initial key and epoch schedule"| Node
 ```
 
 ## 3. Main Protected Assets
@@ -40,7 +40,7 @@ flowchart LR
 | Transfer view tags | Public 2-byte scan hints included in the signed canonical transfer effect but not ownership evidence | Treats tags as untrusted hints; safe default wallet scan full-decrypts on mismatch |
 | ZK proving/verifying artifacts | Trust base for proof generation/verification | Consensus pins circuit set, VK hashes, and public-input schema digests; local verifier identity must match before startup/readiness |
 | On-chain privacy state | commitments, historical roots, nullifiers, indexed privacy events | Keeper performs canonical field validation, nullifier replay checks, and Merkle capacity/corrupt-state guards |
-| Audit master private key | Can decrypt every mandatory audit disclosure | Private key custody is downstream responsibility; repo provides public key genesis/config and decode flow |
+| Audit epoch private keys | Can decrypt the V2 envelopes addressed to their epochs | Private-key custody is downstream responsibility; repo accepts public key/PoP configuration and provides external provenance verification |
 | Prover bearer token | Access control for remote proof API | Provides env-var based optional bearer auth; production auth policy is downstream responsibility |
 
 ## 4. Trust Boundary
@@ -52,7 +52,7 @@ flowchart LR
 | Wallet to prover | oversized JSON, stale/tampered authority-equivalent witness payload, endpoint correlation | payload/proof hash validation, body limit, optional bearer auth, single endpoint/no failover by default; failover requires explicit opt-in |
 | Prover/validator to artifact files | missing/tampered/stale R1CS/PK/VK | exact consensus identity comparison; validators require VK only, provers lazily load R1CS/PK; environment checksums cannot override identity |
 | Restore/migration to Merkle state | partial `MerkleNode/*`, missing leaf, oversized rebuild | fixed-capacity guard, missing leaf/node explicit failure, `docs/clairveil-operations-guide.md#5-merkle-restore-validation` requiring sampled path verification |
-| Downstream chain integration | wrong genesis audit pubkey, wrong denom/prefix, missing query routes, custom policy conflict | integration guide, reference app, conformance fixture, walkthrough |
+| Downstream chain integration | wrong public initial audit key/PoP, wrong denom/prefix, missing V1/V2 query routes, custom policy conflict | integration guide, reference app, conformance fixture, walkthrough |
 
 ## 5. Threat Table
 
@@ -66,14 +66,14 @@ flowchart LR
 | Submit proof for unknown root | Spend from non-existing tree state | keeper checks historical root before proof acceptance | Preserve historical root store through migration and snapshot restore |
 | Fill or overflow Merkle tree | Undefined root/path behavior or consensus risk | fixed depth 32 capacity guard, batch capacity check for 2-output transfer, explicit overflow failure | Monitor `leaf_count`, `remaining_leaves`, usage thresholds; plan new pool/circuit before exhaustion |
 | Restore partial Merkle state | Path or append may silently use zero sibling if state is corrupt | required leaf/node checks on path/append/rebuild; `docs/clairveil-operations-guide.md#5-merkle-restore-validation` requires sampled path recomputation | Restore `Leaf/*`, `MerkleNode/*`, `CommitmentIndex/*`, `HistoricalRoot/*`, and verify samples before resuming |
-| Omit mandatory audit disclosure | Auditor cannot inspect transfer | transfer validation requires configured audit pubkey, audit digest, audit target pubkey, audit payload | Set audit master pubkey in genesis for any production-like chain |
+| Omit or forge V2 audit authorization | Auditor cannot verify/decrypt an asset transition | V2 asset validation requires the active epoch/key and a bound authorization envelope | Initialize the public key/PoP and preserve governance-controlled epoch history |
 | Dictionary-attack a small disclosure space or violate disclosure/note secret separation | Recover metadata offline or create later linkability | versioned plaintext carries CSPRNG blindings; `DISCLOSURE-BLINDING-SEPARATION` V1 defines per-slot user-vs-note, full-vs-note, and full-vs-user inequalities plus exact sentinels; production circuit/native/prepared/structured pre-sign validation rejects `DBS_*` vectors | Wallets verify after decryption and before signing/proving; pin the rotated JoinSplit VK identity and discard old proof jobs (implementation of `DISCLOSURE-BLINDING-SEPARATION` is complete) |
 | Expose sender self-view target pubkey | Observers can cluster sender transactions | self-view events omit the target pubkey and store only digest/payload | Do not add static sender disclosure pubkeys to downstream event/indexer schemas |
 | Treat view tag mismatch as authoritative | Wallet may miss an owned note if a tx/event carries a tag whose exact bytes are authenticated but whose ownership derivation is not circuit-constrained | SDK safe default full-decrypts on tag mismatch and only allows skip behavior as explicit fast mode | Web/mobile wallets must keep recovery/rescan support before enabling any skip-on-mismatch mode |
 | Expose remote prover without auth/rate limit | DoS, cost abuse, metadata leakage | sample service supports body limits, read timeouts, optional bearer auth | Put remote prover behind TLS, mandatory auth, network ACL, quota/rate limit, monitoring |
 | Remote prover learns proof payload data | Privacy metadata exposure to prover operator | architecture keeps proof generation separable but payload is still sensitive | Prefer local prover for high privacy, or treat remote prover as a trusted service with contractual/logging controls |
 | Tamper or substitute ZK artifacts | Consensus split or attacker-controlled verifier/prover setup | genesis/state pins exact ordered descriptors, VK SHA-256, and public-input schema SHA-256; mismatch blocks startup/readiness | Also use signed releases and reproducible generation/provenance policy |
-| Compromise master auditor private key | All mandatory audit disclosures become readable by attacker | repo does not custody production private keys | Use HSM/KMS or equivalent, least privilege, rotation, break-glass, audit logs |
+| Compromise an audit epoch private key | Envelopes for that retained epoch become readable by attacker | repo does not custody production private keys | Use HSM/KMS or equivalent, least privilege, governance rotation, break-glass, audit logs |
 | Compromise sender disclosure private key | Sent-transfer self-view payloads become readable by attacker | self-view uses the same derived disclosure key custody boundary as other disclosure flows | Protect disclosure keys with the same secure storage policy as spend/view material |
 
 ## 6. Code Evidence
@@ -106,10 +106,10 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 1. Decide prover topology: browser/WASM, local daemon, remote sidecar, or hybrid.
 2. Define remote prover authentication, TLS, rate limit, timeout, logging, and data-retention policy.
 3. Define wallet storage encryption and seed/key derivation custody policy.
-4. Define master auditor private key custody, rotation, and incident response.
-5. Pin and verify the consensus `privacy-note-v1` identity, use strict preflight, and add signed artifact release metadata.
+4. Define audit epoch private-key custody, governance rotation, and incident response.
+5. Pin and verify the consensus `privacy-note-v1-audit-field-v1` identity through the manifest/startup checks, and add signed artifact release metadata.
 6. Run Clairveil conformance fixtures against the downstream JS/TS SDK.
-7. Run local node e2e with downstream prefixes, denoms, genesis audit pubkey, and query routes.
+7. Run local node e2e with downstream prefixes, denoms, public V4 audit configuration, and V1 wallet/V2 audit query routes.
 8. Add chain-specific threat model for EVM, policy module, precompile, relayer, and frontend integrations.
 9. Keep prover failover disabled unless the user explicitly accepts sending the same private witness to additional endpoints.
 

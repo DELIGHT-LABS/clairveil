@@ -2,6 +2,8 @@
 
 이 문서는 JS/TS SDK 또는 웹월렛 개발자가 Clairveil privacy 기능을 구현할 때 필요한 계약을 한 곳에 모은 문서입니다. 목표는 “Go core가 무엇을 제공하고, JS SDK가 무엇을 구현해야 하는지”를 분명하게 나누는 것입니다.
 
+Current runtime integration은 V2 asset message, V2 audit configuration/key query, 단일 `/v2/prover/audit-field` route를 사용합니다. 뒤에서 보존하는 상세 NoteV1 payload, disclosure mode, staged batch command, `/v1` prover path는 legacy fixture guidance일 뿐 current V2 transaction으로 보내면 안 됩니다.
+
 ## 1. JS SDK가 제공해야 하는 사용자 기능
 
 웹월렛이 최종적으로 제공해야 하는 privacy 기능은 아래입니다.
@@ -27,8 +29,9 @@ daemon: clairveild
 transparent account prefix: clair
 shielded address prefix: clairs
 reference denom: uclair
-default local chain-id: clairveil-local-1
-proto package: clairveil.privacy.v1
+chain-id: 필수 audit configuration에서 제공
+current message/audit-query package: clairveil.privacy.v2
+wallet scan/tree query package: clairveil.privacy.v1
 ```
 
 Downstream 체인이 denom, chain-id, gas policy를 바꾸면 JS SDK는 chain registry 또는 runtime config로 그 값을 받아야 합니다. `clairs` shielded address prefix와 proto package는 Clairveil privacy module 계약으로 유지하는 편이 가장 단순합니다.
@@ -41,15 +44,20 @@ JS SDK는 아래 proto를 생성하거나 직접 type binding으로 표현해야
 proto/clairveil/privacy/v1/tx.proto
 proto/clairveil/privacy/v1/query.proto
 proto/clairveil/privacy/v1/genesis.proto
+proto/clairveil/privacy/v2/tx.proto
+proto/clairveil/privacy/v2/query.proto
 ```
 
-Msg service는 아래 메시지를 사용합니다.
+Current Msg service는 아래 message를 사용합니다.
 
 ```text
-/clairveil.privacy.v1.Msg/Deposit
-/clairveil.privacy.v1.Msg/Transfer
-/clairveil.privacy.v1.Msg/Withdraw
-/clairveil.privacy.v1.Msg/BatchTransfer
+/clairveil.privacy.v2.Msg/Deposit
+/clairveil.privacy.v2.Msg/Transfer
+/clairveil.privacy.v2.Msg/Withdraw
+/clairveil.privacy.v2.Msg/BatchTransfer
+/clairveil.privacy.v2.Msg/ScheduleAuditKeyEpoch
+/clairveil.privacy.v2.Msg/CancelPendingAuditEpoch
+/clairveil.privacy.v2.Msg/SetPrivacyHalt
 ```
 
 핵심 tx message는 아래입니다.
@@ -61,13 +69,9 @@ MsgWithdraw
 MsgBatchTransfer
 ```
 
-`MsgDeposit`에는 `proof` 필드가 있습니다. Client는 `amount`, `asset_id`, `note_commitment`를 binding하는 `DepositCircuit` Groth16 proof를 만들거나 받아와야 하며, proof 없는 deposit은 현재 계약에 포함되지 않습니다.
+V2 asset message 네 개는 모두 mandatory `AuditAuthorization {key_id, epoch, envelope}`를 가집니다. Deposit은 `creator`, amount, `OutputEffect`, proof, expiry를 포함합니다. Withdraw는 creator, amount, recipient, root, nullifier, proof, expiry, audit authorization을 포함합니다. Transfer와 batch는 root, ordered nullifier/output effect, proof, expiry, audit authorization을 포함합니다. 아래 보존 V1 field 설명을 복사하지 말고 compiled V2 proto에서 binding을 생성하세요.
 
-`MsgTransfer`에는 `expires_at_unix`, user disclosure, audit disclosure, sender self-view disclosure 필드가 있습니다. Audit disclosure는 필수이고 sender self-view disclosure는 기본 포함되며 명시적 opt-out에서만 빠집니다. `creator`는 replaceable fee payer/relayer이며 owner intent에서 의도적으로 제외됩니다.
-
-`MsgWithdraw`는 exact-match withdraw 메시지이며 output note 필드를 갖지 않습니다. JS/TS client는 legacy withdraw 필드인 `new_note_commitment`, `encrypted_note`를 모델링하지 말아야 하며, dummy output note 값을 보내지 않아야 합니다.
-
-`MsgBatchTransfer`는 하나의 `BatchJoinSplit16x32` proof로 input note 1..16개를 atomic하게 소비하고 ordered output 1..32개를 생성합니다. JS/TS client는 17절의 batch transfer addendum이 정의하는 canonical output 순서, active-prefix count, disabled-slot sentinel, payload/proof version을 보존해야 합니다.
+Audit runtime에서는 V1 Msg service가 등록되지 않고 legacy 호출은 `legacy privacy service is disabled`로 실패합니다. Governance는 V2 management message 세 개만 사용할 수 있으며 asset message 네 개의 governance 실행은 차단됩니다.
 
 ## 4. Query/API 계약
 
@@ -79,7 +83,6 @@ GET /clairveil/privacy/v1/commitment/{commitment_hex}
 GET /clairveil/privacy/v1/events
 GET /clairveil/privacy/v1/merkle_path/{commitment_hex}
 POST /clairveil/privacy/v1/commitment_paths_at_root
-GET /clairveil/privacy/v1/audit_config
 GET /clairveil/privacy/v1/disclosure_config
 GET /clairveil/privacy/v1/circuit_config
 GET /clairveil/privacy/v1/reserve/{denom=**}
@@ -90,6 +93,9 @@ GET /clairveil/privacy/v1/nullifiers
 POST /clairveil/privacy/v1/nullifiers
 GET /clairveil/privacy/v1/scan_events
 POST /clairveil/privacy/v1/privacy_scan
+GET /clairveil/privacy/v2/audit/configuration
+GET /clairveil/privacy/v2/audit/key_schedule
+GET /clairveil/privacy/v2/audit/keys/{epoch}
 ```
 
 Go SDK 기준 provider contract는 아래 파일에 있습니다.
@@ -112,7 +118,7 @@ x/privacy/client/sdk/provider/tx.go
 - `PrivacyScanV2`: primary wallet-sync 경로입니다. `PrivacyScan`을 호출하여 global `(height, global_sequence, output_index)` cursor로 typed deposit, JoinSplit2x2 transfer, batch-transfer output을 읽습니다.
 - `ScanEvents`: deposit과 JoinSplit2x2 transfer만을 위한 legacy compatibility projection입니다. batch를 지원하지 않으며 primary wallet-sync API가 아닙니다.
 - `PrivacyEvents`: compatibility와 diagnostics를 위한 raw legacy event inspection API이며 wallet-sync projection이 아닙니다.
-- `AuditConfig`: chain에 설정된 master auditor pubkey를 가져옵니다.
+- `AuditConfiguration`, `AuditKeySchedule`, `AuditKey`: V2에서 public runtime configuration, active/pending epoch, cancellation, historical public key를 가져옵니다. V1 `audit_config` contract는 legacy compatibility 자료이며 current configuration source가 아닙니다.
 - `DisclosureConfig`: user disclosure policy/mode와 payload version을 표시합니다.
 - `CircuitConfig`: consensus `CircuitSetIdentity`, active set, ordered VK hash, public-input schema hash를 읽습니다. Node-local manifest path나 checksum environment variable에서 consensus identity를 추론하지 않습니다.
 - `Reserve`: denom별 privacy module-account balance와 기록된 deposit/withdraw 총량을 비교합니다.
@@ -216,11 +222,13 @@ last_scan_output_index
 
 ## 7. Deposit 구현
 
-이 legacy filename은 발견을 위한 handoff이며 prover specification이 아닙니다. Language-neutral 계약은 [general prover HTTP API](clairveil-proverd-http-api-kr.md)와 [deposit API](clairveil-proverd-http-api-kr.md#deposit)를 사용합니다.
+이전 deposit SDK filename과 NoteV1 예시는 보존 fixture handoff이며 current wire/prover specification이 아닙니다. Current client는 V2 output effect를 만들고 nonce/initial height/active audit epoch/circuit identity를 query한 뒤 공통 [audit-field route](clairveil-proverd-http-api-kr.md#현재-route)를 사용합니다.
 
-Client는 note/commitment와 encrypted note를 만들고, local 또는 canonical deposit route에서 proof를 얻어 response commitment/proof를 검증한 다음 `MsgDeposit`을 조립·전파합니다. Remote deposit request에는 회로 witness만 들어가며 encrypted note, creator, denom, memo, seed, chain ID는 client/chain 쪽에 남습니다. 특정 package/provider API, release 상태, migration 절차를 source of truth로 취급하지 않습니다.
+Current client는 V2 `OutputEffect`와 `AuditAuthorization`을 만들고 local 또는 `/v2/prover/audit-field`에서 audit-field proof를 얻습니다. 이어 repeated response binding, exact artifact identity, final PI23을 local verify한 뒤 `clairveil.privacy.v2.MsgDeposit`을 broadcast합니다. [Current HTTP contract](clairveil-proverd-http-api-kr.md#현재-route)와 compiled V2 proto를 authority로 사용하며 기존 per-deposit route와 client-field 분리는 보존 fixture일 뿐입니다.
 
-## 8. Transfer 구현
+## 8. Legacy NoteV1 transfer reference
+
+이 section은 보존 fixture가 사용하는 V1 prepared-payload와 inner-relation detail을 남깁니다. Current transaction으로 encode하면 안 됩니다. Current V2 client는 `clairveil.privacy.v2.MsgTransfer`, mandatory `AuditAuthorization`, `/v2/prover/audit-field`를 사용합니다.
 
 Transfer는 현재 최신 단일 모델만 사용합니다. legacy `transfer-v2`, `transfer-v3` command는 downstream/JS SDK 계약에 포함하지 않습니다.
 
@@ -240,7 +248,7 @@ JS SDK의 transfer builder는 아래 입력을 모읍니다.
 - target amount and denom
 - current tree root
 - Merkle path for selected notes
-- chain audit master pubkey
+- active audit epoch public key(legacy fixture 비교 전용)
 - optional user disclosure target pubkey
 - user disclosure policy and mode
 
@@ -446,7 +454,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - bulk payroll client가 `privacy_note_reservation_contract.json`의 reservation 전이와 operation 성공 규칙을 재현합니다.
 - user disclosure, audit disclosure, sender self-view disclosure를 decode하고 `verified=true`를 확인합니다.
 - exact-match withdraw와 relayed withdraw payload 검증이 동작합니다.
-- Clairveil repo의 `make privacy-e2e-smoke`와 같은 흐름을 JS SDK integration test가 따라갈 수 있습니다.
+- JS SDK integration test가 별도로 문서화한 native V2 flow에서 deposit, transfer, batch, withdraw, rescan, auditor verification을 완료합니다. 현재 checkout에는 이 live 증적을 제공하는 Make target이 없습니다.
 
 ## 14. Go core 쪽에서 JS SDK가 믿어도 되는 것
 
@@ -454,23 +462,19 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - 현재 prover integration은 `POST` `/v2/prover/audit-field`, request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 `[]byte` field, final PI23입니다.
 - Client는 반복 response binding 뒤 exact artifact identity로 local verification을 수행해야 합니다. 아래의 이전 `/v1` example contract는 live V2 SDK surface가 아닌 legacy-only fixture reference입니다.
 
-- `clairveil.privacy.v1` proto package
-- `MsgDeposit`, `MsgTransfer`, `MsgWithdraw`, `MsgBatchTransfer`
+- current `clairveil.privacy.v2` asset/admin message와 V2 audit query
+- 보존 `clairveil.privacy.v1` wallet scan/tree/reserve query
 - gRPC/HTTP query path
 - typed `privacy_scan`, single-snapshot `commitment_paths_at_root`, bidirectional asset-registry query
 - transparent prefix `clair`, shielded prefix `clairs`
 - reference denom `uclair`
 - full shielded address 기반 transfer UX
-- mandatory audit disclosure
+- active key epoch의 mandatory V2 audit authorization
 - user disclosure policy/mode label
-- `MsgDeposit` deposit proof requirement
-- deposit payload/proof/request/response `v1`
-- transfer payload `v5`, transfer proof/request/response `v2`
-- withdraw prover/final payload와 proof/request/response `v2`
-- batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, request/response `v1`
-- disclosure plaintext/query version `privacy-fixed-v1`
-- active circuit set `privacy-note-v1`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
-- prover HTTP path `/v1/prover/deposit`, `/v1/prover/transfer`, `/v1/prover/withdraw`, `/v1/proofs/batch-transfer`
+- current V2 asset message는 공통 envelope `v1`/PI23 contract의 audit-field proof와 authorization을 요구
+- 보존 legacy fixture: deposit payload/proof/request/response `v1`, transfer payload `v5`와 proof/request/response `v2`, withdraw payload/proof/request/response `v2`, batch payload `batch-transfer-payload-v1`·proof `batch-transfer-proof-v1`·request/response `v1`, disclosure plaintext/query `privacy-fixed-v1`. Current V2 wire가 아님
+- active circuit set `privacy-note-v1-audit-field-v1`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
+- sole live prover HTTP path `/v2/prover/audit-field`; 나열된 `/v1` route는 보존 fixture 전용
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
 - `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error code와 완료된 production 2x2 circuit/native/prepared/structured pre-sign enforcement. Downstream signer도 SDK-wide secret reuse와 non-canonical field alias 거부를 포함한 fail-before-release contract를 유지해야 함. security, protocol, chain-core, and client-integration gates와 독립 공개 검증은 PASS했고 source는 `PUBLICATION_READY_EXPERIMENTAL`
 - `privacy_note_reservation_contract.json`의 note reservation status와 operation evidence contract
@@ -495,6 +499,8 @@ docs/clairveil-downstream-cosmos-integration-guide-kr.md
 docs/clairveil-operations-guide-kr.md#6-prover-운영
 proto/clairveil/privacy/v1/tx.proto
 proto/clairveil/privacy/v1/query.proto
+proto/clairveil/privacy/v2/tx.proto
+proto/clairveil/privacy/v2/query.proto
 x/privacy/client/sdk/conformance/testdata/privacy_wallet_golden_vectors.json
 x/privacy/client/sdk/conformance/testdata/privacy_browser_signer_provider_contract.json
 x/privacy/client/sdk/conformance/testdata/privacy_prover_http_api_contract.json
@@ -506,8 +512,9 @@ x/privacy/client/sdk/conformance/testdata/privacy_note_reservation_contract.json
 
 ```bash
 make test
-make privacy-e2e-smoke
 ```
+
+Live 증적에는 별도로 문서화한 native V2 harness를 사용합니다. Repository에는 end-to-end live smoke Make target이 없습니다.
 
 ## 16. Reference Consumer 예제
 

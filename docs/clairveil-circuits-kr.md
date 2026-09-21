@@ -2,7 +2,7 @@
 
 > 현재 runtime: `x/privacy/circuit/audit_field.go`와 네 audit-field descriptor가 development-only V2 identity를 사용합니다. 각 request는 exact artifact hash와 final PI23을 bind하며 [Proverd HTTP API](clairveil-proverd-http-api-kr.md#현재-route)를 참고합니다. 아래 NoteV1/BatchJoinSplit relation은 live-route 안내가 아닌 legacy specification입니다.
 
-이 문서는 Clairveil의 ZK 회로가 무엇을 증명하고, 무엇을 증명하지 않는지 설명합니다. 대상 독자는 core chain 개발자, prover 운영자, JS/TS SDK 개발자, 보안 리뷰어입니다.
+이 문서는 audit-field wrapper가 사용하는 보존 inner NoteV1 relation이 무엇을 증명하고 증명하지 않는지 설명합니다. Current external contract는 위 audit-field descriptor set과 PI23 framing입니다. 대상 독자는 core chain 개발자, prover 운영자, JS/TS SDK 개발자, 보안 리뷰어입니다.
 
 회로는 `gnark` + Groth16 + BN254를 사용합니다. Hash는 circuit 내부에서 MiMC를 사용하고, note 소유권 서명 검증에는 gnark twisted Edwards EdDSA verifier를 사용합니다.
 
@@ -10,7 +10,8 @@
 
 | 파일                             | 회로               | 사용처                                                                |
 | -------------------------------- | ------------------ | --------------------------------------------------------------------- |
-| `x/privacy/circuit/deposit.go`   | `DepositCircuit`   | deposit 시 transparent coin amount/asset을 shielded note commitment에 binding |
+| `x/privacy/circuit/audit_field.go` | four audit-field wrappers | deposit, spend, 2x2, 16x32의 current V2 descriptor/PI23 boundary |
+| `x/privacy/circuit/deposit.go`   | `DepositCircuit`   | transparent coin amount/asset을 shielded note commitment에 binding하는 보존 inner relation |
 | `x/privacy/circuit/spend.go`     | `SpendCircuit`     | shielded note를 transparent account로 withdraw할 때 사용              |
 | `x/privacy/circuit/joinsplit.go` | `JoinSplitCircuit` | shielded transfer에서 input note 2개를 output note 2개로 바꿀 때 사용 |
 | `x/privacy/circuit/batch_joinsplit_16x32.go` | `BatchJoinSplit16x32` | `MsgBatchTransfer`에서 note 1..16개를 소비하고 note 1..32개를 atomic하게 생성 |

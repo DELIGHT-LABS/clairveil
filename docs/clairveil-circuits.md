@@ -2,7 +2,7 @@
 
 > Current runtime: `x/privacy/circuit/audit_field.go` and four audit-field descriptors use the development-only V2 identity. Each request binds its exact artifact hash and final PI23; see [Proverd HTTP API](clairveil-proverd-http-api.md#current-route). NoteV1/BatchJoinSplit relations below are legacy specifications, not live-route guidance.
 
-This document explains what Clairveil's current ZK circuits prove and what they do not prove. The intended readers are core chain developers, prover operators, JS/TS SDK developers, and security reviewers.
+This document explains the retained inner NoteV1 relations that the audit-field wrappers build on and what those relations do not prove. The current external contract is the audit-field descriptor set and PI23 framing above. The intended readers are core chain developers, prover operators, JS/TS SDK developers, and security reviewers.
 
 The circuits use `gnark` + Groth16 + BN254. Circuit-internal hashing uses MiMC, and note ownership signatures are verified with the gnark twisted-Edwards EdDSA verifier.
 
@@ -12,7 +12,8 @@ Korean version: [clairveil-circuits-kr.md](clairveil-circuits-kr.md)
 
 | File | Circuit | Usage |
 | --- | --- | --- |
-| `x/privacy/circuit/deposit.go` | `DepositCircuit` | Used by deposit to bind a transparent coin amount/asset to the shielded note commitment |
+| `x/privacy/circuit/audit_field.go` | four audit-field wrappers | Current V2 descriptor/PI23 boundary for deposit, spend, 2x2, and 16x32 |
+| `x/privacy/circuit/deposit.go` | `DepositCircuit` | Retained inner relation binding a transparent coin amount/asset to a shielded note commitment |
 | `x/privacy/circuit/spend.go` | `SpendCircuit` | Used when withdrawing a shielded note to a transparent account |
 | `x/privacy/circuit/joinsplit.go` | `JoinSplitCircuit` | Used by shielded transfer to turn 2 input notes into 2 output notes |
 | `x/privacy/circuit/batch_joinsplit_16x32.go` | `BatchJoinSplit16x32` | Used by `MsgBatchTransfer` to atomically consume 1..16 notes and create 1..32 notes |

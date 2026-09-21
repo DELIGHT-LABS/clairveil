@@ -74,7 +74,7 @@ clairveild tx privacy show-disclosure-pubkey \
   --output json
 ```
 
-이는 V4 genesis audit master key가 아닙니다. Fresh V4 genesis는 reviewed runtime flow에서 offline audit-secret으로 audit-field public key와 proof of possession을 파생합니다. 이 command는 user/self-view disclosure에만 사용하세요.
+이는 V4 audit epoch key가 아닙니다. Fresh V4 initialization은 `--audit-config`에서 public initial audit key와 proof of possession을 입력받으며 offline secret에서 이를 파생하지 않습니다. 이 command는 user/self-view disclosure에만 사용하세요. Audit private key는 node initialization 외부에 둡니다.
 
 ### Audit-field V2 runtime 구성
 
@@ -398,7 +398,7 @@ clairveild query privacy reserve uclair \
   --node tcp://localhost:26657
 ```
 
-다른 query는 gRPC/HTTP gateway와 generated client로 사용할 수 있습니다.
+다른 query는 gRPC/HTTP gateway와 generated client로 사용할 수 있습니다. V1은 wallet scan/tree/reserve/asset query surface로 유지되고, live audit runtime configuration과 epoch history는 별도 V2 surface입니다.
 
 | Query | Method | HTTP path |
 | --- | --- | --- |
@@ -409,7 +409,6 @@ clairveild query privacy reserve uclair \
 | events | GET | `/clairveil/privacy/v1/events` |
 | scan events | GET | `/clairveil/privacy/v1/scan_events` |
 | Merkle path | GET | `/clairveil/privacy/v1/merkle_path/{commitment_hex}` |
-| audit config | GET | `/clairveil/privacy/v1/audit_config` |
 | disclosure config | GET | `/clairveil/privacy/v1/disclosure_config` |
 | circuit config | GET | `/clairveil/privacy/v1/circuit_config` |
 | reserve | GET | `/clairveil/privacy/v1/reserve/{denom=**}` |
@@ -417,6 +416,12 @@ clairveild query privacy reserve uclair \
 | asset by ID | GET | `/clairveil/privacy/v1/assets/by_id/{asset_id_hex}` |
 | typed privacy scan | POST | `/clairveil/privacy/v1/privacy_scan` |
 | commitment paths at root | POST | `/clairveil/privacy/v1/commitment_paths_at_root` |
+
+| V2 audit query | Method | HTTP path |
+| --- | --- | --- |
+| audit configuration | GET | `/clairveil/privacy/v2/audit/configuration` |
+| audit key schedule | GET | `/clairveil/privacy/v2/audit/key_schedule` |
+| audit key history entry | GET | `/clairveil/privacy/v2/audit/keys/{epoch}` |
 
 ## 10. Companion binary
 
@@ -460,7 +465,6 @@ Companion prover HTTP service를 실행합니다.
 
 ```bash
 export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=artifacts/audit-field
-export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 export CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN="$(openssl rand -hex 32)"
 
 clairveil-proverd \
@@ -474,7 +478,7 @@ clairveil-proverd \
 
 Remote production profile은 [clairveil-operations-guide-kr.md](clairveil-operations-guide-kr.md#6-prover-운영)를 따릅니다.
 
-`clairveil-proverd`는 audit-field V2만 제공하며 artifact directory가 필요합니다. local VK/public-input schema hash를 runtime `CircuitSetIdentity`와 비교하고 checksum env로 override할 수 없습니다. Validator는 VK만 필요하고 `clairveil-proverd`는 proof 생성 시 R1CS/PK를 lazy load합니다. Bundle은 development-grade로 남으며 prover endpoint failover는 기본 off이고 explicit privacy opt-in이 필요합니다.
+`clairveil-proverd`는 audit-field V2만 제공하며 artifact directory가 필요합니다. local VK/public-input schema hash를 runtime `CircuitSetIdentity`와 비교하고 checksum env로 override할 수 없습니다. Validator는 VK만 필요하고 `clairveil-proverd`는 proof 생성 시 R1CS/PK를 lazy load합니다. Bearer token 검사는 이 production-oriented 예시처럼 `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN`을 설정한 경우에만 강제됩니다. Bundle은 development-grade로 남으며 prover endpoint failover는 기본 off이고 explicit privacy opt-in이 필요합니다.
 
 ### clairveil-payroll
 
@@ -530,19 +534,15 @@ clairveil-payrolld \
 make reference-payroll-demo
 ```
 
-실제 localnet에서 payroll transfer-batch까지 실행하는 live 튜토리얼은 아래처럼 실행합니다.
-
-```bash
-make reference-payroll-live-localnet
-```
-
 대규모 payroll rehearsal simulation은 아래처럼 실행합니다.
 
 ```bash
 make reference-payroll-rehearsal
 ```
 
-위 Make target이 localnet과 rehearsal flow의 maintained runnable interface입니다.
+Rehearsal은 0이 아닌 `RUN_LOCALNET`을 거절하는 legacy simulation입니다. Current V2 runtime용 checked-in live payroll target은 없습니다.
+
+위 Make target은 repository-local demo와 legacy rehearsal simulation의 maintained runnable interface입니다.
 
 ## 11. Batch protocol compatibility
 

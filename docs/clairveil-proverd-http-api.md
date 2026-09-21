@@ -48,7 +48,7 @@ Clients must reject a response unless all repeated fields equal their prepared r
 
 ## Transport and errors
 
-The route accepts `POST` JSON, supports `identity` or `gzip` body encoding, and applies the configured raw and decompressed body limit (8 MiB by default). A configured bearer token is required for every proof route. Responses use `Content-Type: application/json` and `Cache-Control: no-store`; callers set a finite timeout and must not automatically fail over to another prover.
+The route accepts `POST` JSON, supports `identity` or `gzip` body encoding, and applies the configured raw and decompressed body limit (8 MiB by default). When a bearer token is configured, every proof request must present it; an unset token disables this authentication check. Responses use `Content-Type: application/json` and `Cache-Control: no-store`; callers set a finite timeout and must not automatically fail over to another prover.
 
 Errors use the strict `v1` envelope below. Unknown fields, duplicate fields, trailing JSON, an unsupported version, invalid base64/framing, a non-canonical field element, or witness/PI23 mismatch return `400 invalid_request`. A prover failure after a valid request returns `500 proof_failed`.
 

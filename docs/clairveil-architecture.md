@@ -2,7 +2,7 @@
 
 > Korean version: [clairveil-architecture-kr.md](clairveil-architecture-kr.md)
 
-This document explains the current repository boundaries and data flow. Normative wire fields and hashes remain in `proto/clairveil/privacy/v1`, the circuit contract, schemas, and conformance fixtures linked from the [documentation index](README.md).
+This document explains the current repository boundaries and data flow. Current asset and audit-management messages plus live audit configuration queries are in `proto/clairveil/privacy/v2`; wallet scan/tree/reserve queries remain in `proto/clairveil/privacy/v1`. Circuit contracts, schemas, and conformance fixtures are linked from the [documentation index](README.md).
 
 ## 1. System Boundary
 
@@ -17,7 +17,7 @@ downstream Cosmos app or clairveild ---- optional HTTP ----> clairveil-proverd
      x/privacy -------------------------------------- ZK artifact set
         |
         +-- consensus verification and atomic state transition
-        +-- Merkle/nullifier/reserve/asset/scan/audit state
+        +-- Merkle/nullifier/reserve/asset/scan state and audit-key schedule
         +-- bank keeper transfers to/from the privacy module account
 ```
 
@@ -37,7 +37,8 @@ downstream Cosmos app or clairveild ---- optional HTTP ----> clairveil-proverd
 | `x/privacy/client/sdk` | Go wallet, prepared-payload, scanner, prover transport, and conformance helpers |
 | `cmd/clairveil-proverd` | Bounded reference HTTP prover service |
 | `cmd/clairveil-payroll*` | Reference payroll control plane and daemon |
-| `proto/clairveil/privacy/v1` | Public Msg, Query, and genesis wire API |
+| `proto/clairveil/privacy/v1` | Wallet scan/tree/reserve query API and retained legacy contracts |
+| `proto/clairveil/privacy/v2` | Current asset/admin Msg API and live audit configuration/key query API |
 | `scripts/` | Setup, localnet/e2e, evidence, benchmark, and release automation |
 | `docs/`, `tmpdocs/` | Current public knowledge and ignored plans/archives/drafts |
 
@@ -59,7 +60,7 @@ Deposit and withdraw move transparent coins through the privacy module account u
 
 ### Deposit
 
-The wallet derives a shielded recipient, creates a note commitment and deposit proof, then broadcasts `MsgDeposit`. The keeper verifies the proof/asset binding, moves transparent funds into the module account, appends the commitment, updates reserve/scan state, and emits the encrypted note event.
+The wallet derives a shielded recipient, creates an output effect and deposit proof, then broadcasts the V2 `MsgDeposit` with mandatory audit authorization. The keeper verifies proof, asset, and authorization binding; moves transparent funds into the module account; appends the commitment; and updates reserve/typed scan state. Its execution event contains minimal original-transaction location metadata for the external auditor, not an encrypted payload archive.
 
 ### JoinSplit2x2 transfer
 
@@ -89,7 +90,7 @@ The only current remote route is `POST /v2/prover/audit-field`. Its request/resp
 
 Wallet ownership is recovered by scanning typed chain data and attempting note decryption; `view_tags` are only untrusted performance hints. Clients must persist cursors, support rescan, keep prepared payloads and note caches encrypted, and treat nullifier queries as privacy-sensitive.
 
-Every transfer carries mandatory audit disclosure. User-selected disclosure and sender self-view disclosure are distinct envelopes. On-chain validation verifies the frozen digest/envelope contract; custody and authorization for the audit private key remain external operational responsibilities.
+Every V2 asset transaction carries mandatory audit authorization. User-selected disclosure and sender self-view disclosure are distinct envelopes. On-chain validation verifies the frozen digest/envelope contract; custody and authorization for audit epoch private keys remain external operational responsibilities. Provenance comes from the original successful transaction and its execution event in an external atomic cache; consensus state contains no transaction audit ledger or replay archive.
 
 ## 7. Compatibility And Authority
 

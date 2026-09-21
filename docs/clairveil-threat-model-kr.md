@@ -1,6 +1,6 @@
 # Clairveil Threat Model
 
-이 문서는 Clairveil repository 자체의 보안 경계를 정리합니다. Clairveil은 production chain이 아니라 reusable `x/privacy` module, reference `clairveild`, companion `clairveil-proverd`, fixture, walkthrough, SDK handoff를 제공하는 standalone privacy core입니다. 실제 production chain, bespoke features 결합, validator 운영, master auditor key custody, remote prover 노출 정책은 Clairveil을 가져다 쓰는 downstream project가 결정하고 책임집니다.
+이 문서는 Clairveil repository 자체의 보안 경계를 정리합니다. Clairveil은 production chain이 아니라 reusable `x/privacy` module, reference `clairveild`, companion `clairveil-proverd`, fixture, walkthrough, SDK handoff를 제공하는 standalone privacy core입니다. 실제 production chain, bespoke features 결합, validator 운영, audit epoch-key custody, remote prover 노출 정책은 Clairveil을 가져다 쓰는 downstream project가 결정하고 책임집니다.
 
 > 현재 runtime 범위: live prover surface는 development-only `POST /v2/prover/audit-field`입니다. 아래 NoteV1, batch, `/v1/prover/*` 설명은 current deployment guidance가 아닌 보존 legacy threat-analysis context입니다.
 
@@ -10,7 +10,7 @@
 - 외부 프로젝트는 Clairveil을 fork 하거나 `x/privacy`, proto, Go SDK helper, fixture, prover contract를 import 해서 사용합니다.
 - `clairveil-proverd`는 local daemon과 remote sidecar 양쪽 모델을 지원하는 reference companion prover입니다.
 - local prover, remote prover, browser/WASM prover 중 어떤 배포 모델을 쓸지는 downstream wallet/chain이 결정합니다.
-- master auditor private key의 custody, 접근 제어, rotation, incident response는 downstream production project의 책임입니다.
+- Audit epoch private key의 custody, 접근 제어, governance rotation, incident response는 downstream production project의 책임입니다.
 - 이 문서는 formal third-party audit report가 아니라 repo-grounded threat model입니다.
 
 ## 2. Architecture
@@ -23,8 +23,8 @@ flowchart LR
   Prover -->|"load proving artifacts"| Artifacts["ZK artifacts: R1CS/PK/VK/manifest"]
   Node --> Privacy["x/privacy keeper"]
   Privacy --> State["Commitments, roots, nullifiers, events"]
-  Auditor["Master auditor operator"] -->|"private disclosure key"| Wallet
-  Privacy -->|"audit master pubkey from genesis"| Node
+  Auditor["External auditor operator"] -->|"retained epoch private keys"| Wallet
+  Privacy -->|"public initial key and epoch schedule"| Node
 ```
 
 ## 3. 주요 보호 대상
@@ -38,7 +38,7 @@ flowchart LR
 | Transfer view tag                           | signed canonical transfer effect에는 포함되지만 ownership 증거는 아닌 public 2-byte scan hint | tag를 untrusted hint로 취급하며 안전한 기본 wallet scan은 mismatch에서도 full decrypt 수행 |
 | ZK proving/verifying artifacts               | proof 생성/검증 신뢰 기반 | consensus가 circuit set, VK hash, public-input schema digest를 고정하며 local verifier identity가 startup/readiness 전에 일치해야 함 |
 | On-chain privacy state                       | commitments, historical roots, nullifiers, indexed privacy events                  | keeper가 canonical field validation, nullifier replay check, Merkle capacity/corrupt-state guard 수행 |
-| Audit master private key                     | 모든 mandatory audit disclosure 복호화 가능                                        | private key custody는 downstream 책임, repo는 public key genesis/config와 decode flow 제공            |
+| Audit epoch private key                      | 해당 retained epoch의 V2 envelope 복호화 가능                                       | private-key custody는 downstream 책임, repo는 public key/PoP configuration과 external provenance verification 제공 |
 | Prover bearer token                          | remote proof API 접근 제어                                                         | env var 기반 optional bearer auth 제공, production auth policy는 downstream 책임                      |
 
 ## 4. Trust Boundary
@@ -50,7 +50,7 @@ flowchart LR
 | Wallet to prover                  | oversized JSON, stale/tampered authority-equivalent witness payload, endpoint correlation | payload/proof hash, body limit, optional bearer auth, default single endpoint/no failover; failover는 explicit opt-in |
 | Prover/validator to artifact files | missing/tampered/stale R1CS/PK/VK | exact consensus identity 비교; validator는 VK만 필요하고 prover는 R1CS/PK를 lazy load하며 env checksum은 identity를 override하지 못함 |
 | Restore/migration to Merkle state | partial `MerkleNode/*`, missing leaf, oversized rebuild                                                 | fixed-capacity guard, missing leaf/node explicit failure, `docs/clairveil-operations-guide-kr.md#5-merkle-복구-검증` requiring sampled path verification |
-| Downstream chain integration      | wrong genesis audit pubkey, wrong denom/prefix, missing query routes, custom policy conflict            | integration guide, reference app, conformance fixture, walkthrough                                                                      |
+| Downstream chain integration      | wrong public initial audit key/PoP, wrong denom/prefix, missing V1/V2 query routes, custom policy conflict | integration guide, reference app, conformance fixture, walkthrough |
 
 ## 5. Threat Table
 
@@ -64,14 +64,14 @@ flowchart LR
 | Submit proof for unknown root                | Spend from non-existing tree state                               | keeper checks historical root before proof acceptance                                                                           | Preserve historical root store through migration and snapshot restore                                               |
 | Fill or overflow Merkle tree                 | Undefined root/path behavior or consensus risk                   | fixed depth 32 capacity guard, batch capacity check for 2-output transfer, explicit overflow failure                            | Monitor `leaf_count`, `remaining_leaves`, usage thresholds; plan new pool/circuit before exhaustion                 |
 | Restore partial Merkle state                 | Path or append may silently use zero sibling if state is corrupt | required leaf/node checks on path/append/rebuild; `docs/clairveil-operations-guide-kr.md#5-merkle-복구-검증` requires sampled path recomputation | Restore `Leaf/*`, `MerkleNode/*`, `CommitmentIndex/*`, `HistoricalRoot/*`, and verify samples before resuming       |
-| Omit mandatory audit disclosure              | Auditor cannot inspect transfer                                  | transfer validation requires configured audit pubkey, audit digest, audit target pubkey, audit payload                          | Set audit master pubkey in genesis for any production-like chain                                                    |
+| V2 audit authorization 누락/위조             | Auditor가 asset transition을 검증·복호화할 수 없음                | V2 asset validation이 active epoch/key와 bound authorization envelope를 요구 | Public key/PoP를 initialize하고 governance-controlled epoch history를 보존 |
 | 작은 disclosure space dictionary attack 또는 disclosure/note secret separation 위반 | offline metadata recovery 또는 이후 linkability | versioned plaintext가 CSPRNG blinding을 전달하고 `DISCLOSURE-BLINDING-SEPARATION` V1이 slot별 user-vs-note, full-vs-note, full-vs-user inequality와 exact sentinel을 정의하며 production circuit/native/prepared/structured pre-sign validation이 `DBS_*` vector를 거부 | decrypt 후와 signing/proving 전에 검증하고 rotated JoinSplit VK identity를 pin하며 old proof job을 폐기함 (`DISCLOSURE-BLINDING-SEPARATION` 구현 완료) |
 | Expose sender self-view target pubkey        | Observers can cluster sender transactions                         | self-view event omits target pubkey and stores only digest/payload                                                              | Do not add static sender disclosure pubkey to downstream event/indexer schemas                                      |
 | Treat view tag mismatch as authoritative     | exact byte는 인증되지만 ownership derivation은 circuit constraint가 없는 tag 때문에 wallet이 자기 note를 놓칠 수 있음 | SDK safe default는 tag mismatch에서도 full decrypt하고 skip 동작은 explicit fast mode로만 허용                                  | Web/mobile wallet은 skip-on-mismatch mode를 켜기 전에 recovery/rescan 지원을 유지해야 함                           |
 | Expose remote prover without auth/rate limit | DoS, cost abuse, metadata leakage                                | sample service supports body limits, read timeouts, optional bearer auth                                                        | Put remote prover behind TLS, mandatory auth, network ACL, quota/rate limit, monitoring                             |
 | Remote prover learns proof payload data      | Privacy metadata exposure to prover operator                     | architecture keeps proof generation separable but payload is still sensitive                                                    | Prefer local prover for high privacy, or treat remote prover as a trusted service with contractual/logging controls |
 | ZK artifact tamper/substitution | consensus split 또는 attacker-controlled setup | genesis/state가 ordered descriptor, VK SHA-256, public-input schema SHA-256을 고정하고 mismatch startup/readiness 차단 | signed release와 reproducible provenance도 추가 |
-| Compromise master auditor private key        | All mandatory audit disclosures become readable by attacker      | repo does not custody production private keys                                                                                   | Use HSM/KMS or equivalent, least privilege, rotation, break-glass, audit logs                                       |
+| Compromise audit epoch private key           | 해당 retained epoch envelope를 attacker가 읽을 수 있음            | repo does not custody production private keys | Use HSM/KMS or equivalent, least privilege, governance rotation, break-glass, audit logs |
 | Compromise sender disclosure private key     | Sent-transfer self-view payloads become readable by attacker     | self-view uses the same derived disclosure key custody boundary as other disclosure flows                                       | Protect disclosure keys with the same secure storage policy as spend/view material                                  |
 
 ## 6. Code Evidence
@@ -104,10 +104,10 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 1. Decide prover topology: browser/WASM, local daemon, remote sidecar, or hybrid.
 2. Define remote prover authentication, TLS, rate limit, timeout, logging, and data-retention policy.
 3. Define wallet storage encryption and seed/key derivation custody policy.
-4. Define master auditor private key custody, rotation, and incident response.
-5. Consensus `privacy-note-v1` identity를 고정·검증하고 strict preflight와 signed artifact release metadata를 사용합니다.
+4. Audit epoch private-key custody, governance rotation, incident response를 정의합니다.
+5. Manifest/startup check로 consensus `privacy-note-v1-audit-field-v1` identity를 고정·검증하고 signed artifact release metadata를 사용합니다.
 6. Run Clairveil conformance fixtures against the downstream JS/TS SDK.
-7. Run local node e2e with downstream prefixes, denoms, genesis audit pubkey, and query routes.
+7. Downstream prefix, denom, public V4 audit configuration, V1 wallet/V2 audit query route로 local node e2e를 실행합니다.
 8. Add chain-specific threat model for EVM, policy module, precompile, relayer, and frontend integrations.
 9. 사용자가 같은 private witness를 추가 endpoint에 보내는 것을 명시적으로 수락하지 않는 한 prover failover를 비활성화합니다.
 

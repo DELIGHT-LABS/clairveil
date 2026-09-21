@@ -10,7 +10,11 @@ prover_units="${BULK_PROVER_UNITS:-1}"
 proofs_per_sec="${BULK_PROOFS_PER_SEC:-6.92638}"
 tx_per_sec="${BULK_TX_PER_SEC:-1}"
 run_localnet="${RUN_LOCALNET:-0}"
-localnet_count="${LOCALNET_PAYROLL_ITEM_COUNT:-2}"
+
+if [[ "$run_localnet" != "0" ]]; then
+	echo "RUN_LOCALNET is no longer supported; reference payroll rehearsal is a legacy simulation only" >&2
+	exit 1
+fi
 
 mkdir -p "$out_dir/scenarios"
 
@@ -38,15 +42,7 @@ run_scenario "single-company-10k" 1 10000 0
 run_scenario "single-company-100k" 1 100000 0
 run_scenario "hundred-companies-1k" 100 0 1000
 
-localnet_summary=""
-if [[ "$run_localnet" == "1" ]]; then
-	echo "running optional live localnet payroll smoke with $localnet_count items"
-	localnet_dir="$out_dir/live-localnet"
-	CLAIRVEIL_PAYROLL_LIVE_WORK_DIR="$localnet_dir" PAYROLL_ITEM_COUNT="$localnet_count" ./scripts/reference-payroll-live-localnet.sh
-	localnet_summary="$localnet_dir/out/payroll-final-report.json"
-fi
-
-python3 - "$out_dir" "$chunk_size" "$prover_units" "$proofs_per_sec" "$tx_per_sec" "$run_localnet" "$localnet_summary" <<'PY'
+python3 - "$out_dir" "$chunk_size" "$prover_units" "$proofs_per_sec" "$tx_per_sec" <<'PY'
 import json
 import sys
 from datetime import datetime, timezone
@@ -57,8 +53,6 @@ chunk_size = int(sys.argv[2])
 prover_units = int(sys.argv[3])
 proofs_per_sec = float(sys.argv[4])
 tx_per_sec = float(sys.argv[5])
-run_localnet = sys.argv[6] == "1"
-localnet_summary = sys.argv[7]
 
 def metric(summary, name):
     return summary["metric_summaries"][name]["mean"]
@@ -91,8 +85,8 @@ report = {
     },
     "scenarios": scenarios,
     "localnet_smoke": {
-        "enabled": run_localnet,
-        "final_report": localnet_summary if run_localnet else "",
+        "enabled": False,
+        "final_report": "",
     },
     "interpretation": {
         "single_company_100k": "legacy multi-message comparison keeps proof_count at 100000; tx envelopes shrink by chunk_size",

@@ -25,26 +25,24 @@ make release-check
 | --- | --- |
 | `make test` | 전체 Go unit/integration test |
 | `make build` | 모든 project binary와 build-only load tool |
-| `make init` | 수동 development-chain home 준비. 기본 home은 `~/.clairveil` |
+| `make init` | binary를 build/install하고 필요한 `clairveild init --audit-config ... --chain-id ...` command 형태만 안내. Home은 초기화하지 않음 |
 | `make docs-check` | Markdown, EN/KR pair, manifest, prover schema fixture |
 | `make examples` | JS audit key, fixture validator, prover HTTP client 검사 |
-| `make localnet-smoke` | reviewed audit-field V2 localnet smoke. reviewed daemon/prover binary와 일치 runtime input 필요 |
-| `make privacy-e2e-smoke` | DeliverTx/rescan을 포함하는 reviewed V2 deposit, transfer, withdraw, 작은 one-proof batch smoke |
+| `make privacy-batch-joinsplit-localnet` | node/prover를 시작하지 않는 static legacy batch fixture와 SDK conformance |
+| `make privacy-bulk-readiness-check` | focused unit/reservation check와 synthetic legacy capacity planning. `RUN_LOCALNET` 거절 |
 | `make docker-proverd-build` | Dockerfile/compose build 검증 |
 
-`make release-check`는 reviewed V2 smoke, default static batch fixture gate, V2 bulk-readiness live step을 실행합니다. 일치하는 `CLAIRVEILD_BIN`, `CLAIRVEIL_PROVERD_BIN`, `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`, `CLAIRVEIL_AUDIT_RUNTIME_DIR`, `CLAIRVEIL_AUDIT_SECRET_FILE`를 export해야 합니다. Static fixture는 capacity claim이 아닌 conformance coverage로 남습니다.
+`make release-check`는 `ci`, `vulncheck`, static legacy batch conformance gate, default static/unit/synthetic bulk-readiness check를 실행합니다. Node/prover를 시작하지 않으므로 live V2 또는 capacity 증적을 제공하지 않습니다.
 
 ## Batch와 payroll gate
 
 | Gate | 검증하는 것 | 검증하지 않는 것 |
 | --- | --- | --- |
 | `make privacy-batch-joinsplit-localnet` | process를 시작하지 않는 static legacy fixture와 SDK conformance | V2 runtime validation |
-| `RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet` | reviewed runner를 통한 작은 V2 `transfer-batch-16x32` proof 1회 | Throughput 또는 16x32 capacity |
 | `make reference-payroll-demo` | Legacy multi-message repository-local regression | 실제 node 또는 one-proof batch transfer |
-| `make reference-payroll-live-localnet` | Legacy multi-message `transfer-batch` localnet regression | One-proof workflow 또는 production-capacity claim |
-| `make reference-payroll-rehearsal` | Legacy simulation, regression, capacity-planning report | One-proof production capacity |
+| `make reference-payroll-rehearsal` | Legacy simulation과 capacity-planning report | Live node, V2 runtime validation 또는 one-proof production capacity |
 
-`RUN_LOCALNET=1` 결과를 throughput 또는 mainnet capacity claim으로 취급하면 안 됩니다.
+`privacy-batch-joinsplit-localnet`, `privacy-bulk-readiness-check`, `reference-payroll-rehearsal`은 0이 아닌 `RUN_LOCALNET`을 작업 전에 거절합니다. Native CLI walkthrough는 이 gate와 별개이며 public audit config, 일치 artifact bundle, node startup, transaction 실행, rescan, auditor 검사를 명시적으로 기록해야 합니다.
 
 16x32 production-capacity claim에는 실제 16x32 workload의 tag/commit-bound artifact가
 필요합니다. proof/sec, tx/sec, item/sec, RSS, CPU, shape distribution,
@@ -109,29 +107,9 @@ npm --prefix examples/js-sdk-prover-http-client run demo
 
 ## Local home과 port
 
-아래 V2 smoke command는 격리 temporary home과 reviewed binary/runtime input을 사용합니다. 별도로 legacy라고 표시한 load example만 reference 전용입니다.
+현재 checkout에는 end-to-end native V2 smoke target이 없습니다. Historical localnet/latency report와 legacy load example은 reference 전용으로 유지합니다.
 
-`make localnet-smoke`와 `make privacy-e2e-smoke`는 독립 temporary home/work
-directory를 만들며 실행 중인 `~/.clairveil` node에 연결하지 않습니다. 다만 다른
-process가 default Tendermint/RPC service port를 사용하면 충돌할 수 있습니다. E2E에는
-다음처럼 port override를 사용합니다.
-
-```bash
-RPC_PORT=27657 P2P_PORT=27656 GRPC_PORT=9190 API_PORT=1417 make privacy-e2e-smoke
-```
-
-기본 home을 바꾸지 않는 반복 가능한 local init 예시는 다음과 같습니다.
-
-```bash
-tmp="$(mktemp -d)"
-GOBIN="$tmp/bin" CLAIRVEIL_HOME="$tmp/home" make init
-source "$tmp/home/clairveil.env"
-"$tmp/bin/clairveild" start --home "$tmp/home"
-```
-
-`CLAIRVEIL_V2_SMOKE_WORK_DIR` 또는 `CLAIRVEIL_E2E_WORK_DIR`, `KEEP_WORK_DIR=1`, port 변수,
-`V2_SMOKE_READY_ATTEMPTS`로 runner를 설정합니다. 일치하는 artifact/runtime/secret input과
-reviewed `CLAIRVEILD_BIN`, `CLAIRVEIL_PROVERD_BIN`은 항상 필요합니다.
+`make init`은 home이나 `clairveil.env`를 만들지 않고 binary를 install한 뒤 다음 command만 출력합니다. 수동 V2 native run은 [시작 가이드의 초기화](clairveil-getting-started-kr.md#초기화와-시작)를 따르고, 격리가 필요하면 explicit `--home`을 선택하며, 선택한 chain mode에 필요한 일반 Cosmos account/genesis-account/gentx/collect-gentxs 준비를 start 전에 완료합니다. Public audit configuration은 `init/start`에, artifact directory는 `start`에 전달하고 같은 artifact를 `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`로 `clairveil-proverd`에 지정합니다. Private audit key는 node initialization이 아니라 external auditor에 속합니다.
 
 ## Release pack과 문서 변경
 
@@ -155,5 +133,5 @@ make docs-check
 git diff --check
 ```
 
-명령이나 기대 동작이 바뀌면 관련 smoke test도 실행합니다. Remote profile과 Merkle
+명령이나 기대 동작이 바뀌면 사용 가능한 관련 검사를 실행하며, 사용 불가 wrapper를 통과 증적으로 보고하면 안 됩니다. Remote profile과 Merkle
 restore/recovery 경계는 [operations guide](clairveil-operations-guide-kr.md)를 따릅니다.

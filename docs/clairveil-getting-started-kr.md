@@ -41,4 +41,4 @@ make build
 
 ## 8. Legacy BatchJoinSplit16x32 reference
 
-보존된 restartable multi-message batch/payroll command와 `/v1/proofs/batch-transfer` endpoint는 compatibility/regression 도구이며 현재 one-proof audit-field workflow가 아닙니다. 그 결과를 V2 audit provenance나 capacity evidence로 사용하면 안 됩니다. Active `MsgBatchTransfer` contract는 [BatchJoinSplit16x32 reference](clairveil-batch-joinsplit-16x32-kr.md)에 설명되어 있습니다.
+보존된 restartable multi-message batch/payroll code, V1 contract 문서, fixture는 compatibility/regression reference입니다. 기존 `/v1/proofs/batch-transfer` route는 current prover가 제공하지 않으며 fallback endpoint도 아닙니다. Current V2는 `clairveil.privacy.v2.MsgBatchTransfer`와 `POST /v2/prover/audit-field`를 사용합니다. Legacy fixture 결과를 V2 audit provenance나 capacity evidence로 사용하면 안 됩니다. 역사적 circuit relation은 [BatchJoinSplit16x32 reference](clairveil-batch-joinsplit-16x32-kr.md)에 설명되어 있습니다.

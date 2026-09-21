@@ -4,17 +4,17 @@
 
 ## 1. 상태와 범위
 
-이 문서는 NoteV1, domain separation, 고정 인코딩, 16-input/32-output statement, aggregate vector root, disclosure digest, scan state, artifact identity, resource accounting에 대한 normative 문서다.
+이 문서는 frozen legacy NoteV1 fixture와 inner 16-input/32-output relation의 domain separation, 고정 인코딩, aggregate vector root, disclosure digest, scan state, artifact identity, resource accounting에만 normative하다. Current runtime message는 `clairveil.privacy.v2.MsgBatchTransfer`와 audit-field wrapper/PI23 contract를 사용한다.
 
 Repository는 circuit/keeper와 reference Go planner, prover, scanner, payroll worker, CLI를 구현한다. 상태는 `PUBLICATION_READY_EXPERIMENTAL`이며 downstream JS/TS product, formal trusted setup, external audit, signed production artifact와 production 운영은 별도 요건이다.
 
-Active circuit set은 `privacy-note-v1`이고 Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1` 순서다. Development artifact identity는 production trust anchor가 아니다. **MUST**, **MUST NOT**, **SHOULD**, **MAY**는 일반적인 프로토콜 규범 의미를 갖는다.
+Frozen legacy circuit set은 `privacy-note-v1`이고 Deposit, Spend, JoinSplit2x2, `batch-joinsplit-16x32-v1` 순서다. Development artifact identity는 production trust anchor가 아니다. **MUST**, **MUST NOT**, **SHOULD**, **MAY**는 해당 frozen contract 안에서 일반적인 프로토콜 규범 의미를 갖는다.
 
 ## 2. 동결된 version과 capacity
 
 | 계약 | 동결 값 |
 | --- | --- |
-| Active circuit set | `privacy-note-v1` |
+| Frozen legacy circuit set | `privacy-note-v1` |
 | Module consensus version | `2` |
 | Privacy state version | `2` |
 | Fixed payload version | `privacy-fixed-v1` / binary version `1` |
@@ -26,7 +26,7 @@ Active circuit set은 `privacy-note-v1`이고 Deposit, Spend, JoinSplit2x2, `bat
 | Batch capacity | input `1..16`, output `1..32` |
 | Batch circuit ID | `batch-joinsplit-16x32-v1` |
 | Batch public-input schema SHA-256 | `5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333` |
-| Batch proto/API | `clairveil.privacy.v1.Msg/BatchTransfer`, canonical payload format `1` |
+| Legacy batch proto/API | `clairveil.privacy.v1.Msg/BatchTransfer`, canonical payload format `1` |
 | Disclosure-blinding separation | `v1`, `DBS-01..03`과 exact all-private/disabled sentinel |
 | JoinSplit2x2 public-input schema SHA-256 | `4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82` (변경 없음) |
 

@@ -27,16 +27,17 @@ It packages shielded identity derived from transparent accounts, shielded deposi
 | Transparent prefix | `clair` |
 | Shielded prefix | `clairs` |
 | Reference denom | `uclair` |
-| Proto package | `clairveil.privacy.v1` |
-| Default local chain-id | `clairveil-local-1` |
+| Proto packages | current Msg/audit query `clairveil.privacy.v2`; scan/tree query `clairveil.privacy.v1` |
+| Local chain-id | supplied by the required audit configuration |
 
 ## Current Status And Compatibility
 
 | Item | Current baseline |
 | --- | --- |
 | Publication status | `PUBLICATION_READY_EXPERIMENTAL`; source/reference publication, not production deployment approval |
-| Consensus circuit set | `privacy-note-v1-audit-field-v1` with audited V2 runtime state |
-| Fixed client contract | `privacy-fixed-v1`; transfer payload `v5`, proof/prover contract `v2` |
+| Consensus circuit set | `privacy-note-v1-audit-field-v1` with audit-field V2 runtime state |
+| Current client contract | V2 asset messages; audit-field request/response envelope `v1` with exact artifact binding and final PI23 |
+| Retained legacy fixtures | `privacy-fixed-v1`; transfer payload `v5`, proof/prover contract `v2` |
 | Batch surface | `BatchJoinSplit16x32`, `MsgBatchTransfer`; Go SDK/prover/scanner/payroll/CLI reference implementation for batch integration |
 | Upgrade boundary | Earlier artifacts, proof jobs, note/scan caches, and non-audited genesis are incompatible; use fresh genesis/reset and rescan |
 | Outstanding production gates | Formal trusted setup, external security/circuit audit, signed production artifacts, and downstream chain/product validation |

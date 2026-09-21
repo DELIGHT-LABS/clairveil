@@ -73,7 +73,7 @@ final-report.json:
 
 이 demo는 legacy multi-message control-plane 경로다. `transfer-batch`와 `clairveil-payroll ... settle-transfer-batch`는 하나의 Cosmos transaction에 독립 native 2x2 `MsgTransfer` message/proof 여러 개를 넣는다. 이 경로는 regression/tutorial 용도이며 one-proof batch라고 설명·제출·reconcile·capacity plan하면 안 된다.
 
-현재 payroll integration은 `transfer-batch-16x32`, `prepare-batch-transfer`, `prove-batch-transfer`, `broadcast-batch-transfer`를 사용한다. 이는 `MsgBatchTransfer` 하나, `BatchJoinSplit16x32` proof 하나, input 1..16개, output 1..32개이며 remote proof route는 `POST /v1/proofs/batch-transfer`다. 해당 localnet workflow는 repository 시작 가이드를 사용한다.
+Payroll batch integration과 `/v1/proofs/batch-transfer` route는 legacy-only이며 현행 V2 workflow가 아니다. Current V2는 `clairveil.privacy.v2.MsgBatchTransfer`와 공통 `POST /v2/prover/audit-field` route를 사용한다. [legacy reference 경계](../../docs/clairveil-getting-started-kr.md#8-legacy-batchjoinsplit16x32-reference)를 참고한다.
 
 ## 권한과 소유 범위
 
@@ -117,9 +117,9 @@ Portable evidence는 다음과 같다.
 go test ./x/privacy/client/sdk/conformance/... -count=1
 go test ./x/privacy/client/sdk/... -count=1
 make privacy-batch-joinsplit-localnet
-RUN_LOCALNET=1 make privacy-batch-joinsplit-localnet
-make reference-payroll-live-localnet
 make privacy-bulk-readiness-check
 ```
 
-Staging에서는 environment, pinned commit/artifact identity, configuration, result를 기록한다. 완료에는 fixture-compatible one-proof construction/proving/submission/scanning, active-note 독점 reservation, stale-worker 보호, 긴 proof/broadcast를 견디는 lease, encrypted replay-safe artifact, unknown outcome의 tx-hash-first reconciliation, 일치하는 item evidence, 강제되는 approval/disclosure/retention/operator-review policy, 실제 deployment에 대한 capacity 입증이 모두 필요하다. Legacy localnet target은 legacy `transfer-batch` behavior만 입증한다.
+이 명령은 static/unit/synthetic legacy 검사일 뿐입니다. 0이 아닌 `RUN_LOCALNET`을 거절하며 live V2 증적을 제공하지 않으므로 해당 경계에는 별도로 문서화한 native V2 harness를 사용합니다.
+
+Staging에서는 environment, pinned commit/artifact identity, configuration, result를 기록한다. 완료에는 fixture-compatible one-proof construction/proving/submission/scanning, active-note 독점 reservation, stale-worker 보호, 긴 proof/broadcast를 견디는 lease, encrypted replay-safe artifact, unknown outcome의 tx-hash-first reconciliation, 일치하는 item evidence, 강제되는 approval/disclosure/retention/operator-review policy, 실제 deployment에 대한 capacity 입증이 모두 필요하다. Checked-in payroll target은 live V2 behavior를 입증하지 않는다.

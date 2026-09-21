@@ -19,6 +19,8 @@ proto/clairveil/privacy/v1/genesis.proto
 proto/clairveil/privacy/v1/query.proto
 proto/clairveil/privacy/v1/tx.proto
 proto/clairveil/privacy/v1/batch_feasibility.proto
+proto/clairveil/privacy/v2/query.proto
+proto/clairveil/privacy/v2/tx.proto
 docs/README.md
 docs/README-kr.md
 docs/clairveil-architecture.md

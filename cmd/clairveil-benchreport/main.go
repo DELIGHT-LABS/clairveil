@@ -1316,13 +1316,13 @@ func humanSummaryTargetForFamily(family string) string {
 	case "privacy-proverd-scale":
 		return "make privacy-proverd-scale-bench"
 	case "privacy-localnet":
-		return "make privacy-bench-localnet"
+		return "SUMMARY_REPORTS=<path> make privacy-benchmark-report"
 	case "privacy-transfer-batch-localnet":
-		return "make privacy-transfer-batch-localnet-bench"
+		return "SUMMARY_REPORTS=<path> make privacy-benchmark-report"
 	case "privacy-localnet-tps":
-		return "make privacy-localnet-tps-bench"
+		return "SUMMARY_REPORTS=<path> make privacy-benchmark-report"
 	case "privacy-user-latency":
-		return "make privacy-user-latency-bench"
+		return "SUMMARY_REPORTS=<path> make privacy-benchmark-report"
 	case "privacy-bulk-transfer":
 		return "make privacy-bulk-transfer-bench"
 	case "public-capacity":

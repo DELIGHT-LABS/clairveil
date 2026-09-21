@@ -2,7 +2,7 @@
 
 > English version: [clairveil-architecture.md](clairveil-architecture.md)
 
-이 문서는 현재 repository 경계와 data flow를 설명합니다. Normative wire field와 hash는 [문서 index](README-kr.md)가 연결하는 `proto/clairveil/privacy/v1`, circuit contract, schema, conformance fixture에 있습니다.
+이 문서는 현재 repository 경계와 data flow를 설명합니다. Current asset/audit-management message와 live audit configuration query는 `proto/clairveil/privacy/v2`에 있고 wallet scan/tree/reserve query는 `proto/clairveil/privacy/v1`에 남아 있습니다. Circuit contract, schema, conformance fixture는 [문서 index](README-kr.md)에서 연결합니다.
 
 ## 1. 시스템 경계
 
@@ -17,7 +17,7 @@ downstream Cosmos app 또는 clairveild ---- optional HTTP ----> clairveil-prove
      x/privacy -------------------------------------- ZK artifact set
         |
         +-- consensus verification과 atomic state transition
-        +-- Merkle/nullifier/reserve/asset/scan/audit state
+        +-- Merkle/nullifier/reserve/asset/scan state와 audit-key schedule
         +-- privacy module account의 bank keeper transfer
 ```
 
@@ -37,7 +37,8 @@ downstream Cosmos app 또는 clairveild ---- optional HTTP ----> clairveil-prove
 | `x/privacy/client/sdk` | Go wallet, prepared-payload, scanner, prover transport, conformance helper |
 | `cmd/clairveil-proverd` | Bounded reference HTTP prover service |
 | `cmd/clairveil-payroll*` | Reference payroll control plane과 daemon |
-| `proto/clairveil/privacy/v1` | Public Msg, Query, genesis wire API |
+| `proto/clairveil/privacy/v1` | Wallet scan/tree/reserve query API와 보존 legacy contract |
+| `proto/clairveil/privacy/v2` | Current asset/admin Msg API와 live audit configuration/key query API |
 | `scripts/` | Setup, localnet/e2e, evidence, benchmark, release automation |
 | `docs/`, `tmpdocs/` | 현재 공개 지식과 ignored plan/archive/draft |
 
@@ -59,7 +60,7 @@ Deposit/withdraw는 bank keeper를 통해 privacy module account와 transparent 
 
 ### Deposit
 
-Wallet이 shielded recipient를 파생하고 note commitment와 deposit proof를 만든 뒤 `MsgDeposit`을 broadcast합니다. Keeper는 proof/asset binding을 검증하고 transparent fund를 module account로 옮기며 commitment, reserve/scan state, encrypted note event를 기록합니다.
+Wallet이 shielded recipient를 파생하고 output effect와 deposit proof를 만든 뒤 mandatory audit authorization이 포함된 V2 `MsgDeposit`을 broadcast합니다. Keeper는 proof, asset, authorization binding을 검증하고 transparent fund를 module account로 옮기며 commitment와 reserve/typed scan state를 갱신합니다. Execution event에는 external auditor가 쓰는 최소 original-transaction 위치 metadata만 있으며 encrypted payload archive는 없습니다.
 
 ### JoinSplit2x2 transfer
 
@@ -89,7 +90,7 @@ Prepared prover request에는 private note witness가 들어 있습니다. Same-
 
 Wallet은 typed chain data를 scan하고 note decrypt를 시도해 ownership을 복구합니다. `view_tags`는 untrusted performance hint일 뿐입니다. Client는 cursor 저장, rescan, prepared payload/note cache 암호화가 필요하고 nullifier query를 privacy-sensitive하게 다뤄야 합니다.
 
-모든 transfer에는 mandatory audit disclosure가 있습니다. User-selected disclosure와 sender self-view disclosure는 서로 다른 envelope입니다. On-chain validation은 frozen digest/envelope contract를 검증하지만 audit private key custody와 authorization은 외부 운영 책임입니다.
+모든 V2 asset transaction에는 mandatory audit authorization이 있습니다. User-selected disclosure와 sender self-view disclosure는 서로 다른 envelope입니다. On-chain validation은 frozen digest/envelope contract를 검증하지만 audit epoch private key custody와 authorization은 외부 운영 책임입니다. Provenance는 external atomic cache의 original successful transaction과 execution event에서 파생하며 consensus state에는 transaction audit ledger나 replay archive가 없습니다.
 
 ## 7. 호환성과 authority
 

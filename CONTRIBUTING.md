@@ -12,11 +12,11 @@ Use the [getting started guide](docs/clairveil-getting-started.md) for toolchain
 | --- | --- |
 | Documentation only | `make docs-check` and `git diff --check` |
 | General code | `make ci` and `make vulncheck` |
-| Privacy flow or CLI workflow | Add `make privacy-e2e-smoke` |
+| Privacy flow or CLI workflow | Focused package/CLI tests plus a separately documented native V2 harness when live evidence is required |
 | Release candidate | `make release-check`, plus any live/capacity evidence claimed by the release |
 | Prover image | Add `make docker-proverd-build` |
 
-`make ci` includes documentation checks. `make release-check` starts local nodes but does not cover every live batch or capacity gate; use the [testing guide](docs/clairveil-testing-guide.md) to choose those explicitly.
+`make ci` includes documentation checks. `make release-check` runs CI, vulnerability, static legacy batch conformance, and static/unit/synthetic readiness gates; it starts no node or prover. Use the [testing guide](docs/clairveil-testing-guide.md) to record any separately maintained live or capacity evidence explicitly.
 
 ## Change Checklist
 
@@ -24,8 +24,8 @@ Keep commits small and reviewable. Update downstream-facing contracts, fixtures,
 
 | Surface | Files and required follow-through | Focused validation |
 | --- | --- | --- |
-| CLI | `x/privacy/client/cli`, `cmd/clairveild`: update CLI tests/reference, getting started commands and `scripts/privacy-e2e-smoke.sh`; check SDK/schema impact for JSON changes. | `go test ./x/privacy/client/cli` |
-| Proto | `proto/clairveil/privacy/v1`: regenerate `x/privacy/types/*.pb.go` with `make proto`; update keeper/client/schema/tests and affected integration/SDK guides; record migration impact. | `make proto`, `make ci` |
+| CLI | `x/privacy/client/cli`, `cmd/clairveild`: update CLI tests/reference and getting-started commands; check SDK/schema impact for JSON changes and document any live V2 harness used. | `go test ./x/privacy/client/cli` |
+| Proto | `proto/clairveil/privacy/v1`, `proto/clairveil/privacy/v2`: regenerate `x/privacy/types` with `make proto`; update keeper/client/schema/tests and affected integration/SDK guides; record migration impact. | `make proto`, `make ci` |
 | Circuit | `x/privacy/circuit`, proof builders/verifiers and artifact config: update circuit docs/tests, artifact filenames/checksums/env and wallet/prover contracts; record `ZK artifacts` impact. | `go test ./x/privacy/circuit ./x/privacy/zk` |
 | Fixture/schema | `x/privacy/client/sdk/conformance/testdata`, `docs/schemas`, `examples`: update generation/validation tests, JSON Schema, SDK guide and affected JS consumers. | `make examples`, `go test ./x/privacy/client/sdk/conformance` |
 | Payroll/control plane | Update the [payroll reference](examples/reference-payroll/README.md) and SDK guide for store, lease, CAS, retry, reconciliation or wallet changes; preserve one-proof versus legacy boundaries and update fixtures/tests. Gate changes must name static, live one-proof, legacy regression or capacity evidence in testing/operations docs. | `go test ./x/privacy/client/sdk/payroll ./x/privacy/client/sdk/reservation ./x/privacy/client/sdk/conformance` |

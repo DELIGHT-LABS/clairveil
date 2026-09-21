@@ -76,7 +76,7 @@ clairveild tx privacy show-disclosure-pubkey \
   --output json
 ```
 
-This is not the V4 genesis audit master key. Fresh V4 genesis derives its audit-field public key and proof of possession from an offline audit-secret through the reviewed runtime flow; use this command only for user/self-view disclosure.
+This is not a V4 audit epoch key. Fresh V4 initialization consumes the public initial audit key and proof of possession from `--audit-config`; it does not derive them from an offline secret. Use this command only for user/self-view disclosure. Audit private keys remain external to node initialization.
 
 ### Audit-field V2 runtime configuration
 
@@ -400,7 +400,7 @@ clairveild query privacy reserve uclair \
   --node tcp://localhost:26657
 ```
 
-Other queries are available through gRPC/HTTP gateway and generated clients.
+Other queries are available through gRPC/HTTP gateway and generated clients. V1 remains the wallet scan/tree/reserve/asset query surface; the live audit runtime configuration and epoch history are a separate V2 surface.
 
 | Query | Method | HTTP path |
 | --- | --- | --- |
@@ -411,7 +411,6 @@ Other queries are available through gRPC/HTTP gateway and generated clients.
 | events | GET | `/clairveil/privacy/v1/events` |
 | scan events | GET | `/clairveil/privacy/v1/scan_events` |
 | Merkle path | GET | `/clairveil/privacy/v1/merkle_path/{commitment_hex}` |
-| audit config | GET | `/clairveil/privacy/v1/audit_config` |
 | disclosure config | GET | `/clairveil/privacy/v1/disclosure_config` |
 | circuit config | GET | `/clairveil/privacy/v1/circuit_config` |
 | reserve | GET | `/clairveil/privacy/v1/reserve/{denom=**}` |
@@ -419,6 +418,12 @@ Other queries are available through gRPC/HTTP gateway and generated clients.
 | asset by ID | GET | `/clairveil/privacy/v1/assets/by_id/{asset_id_hex}` |
 | typed privacy scan | POST | `/clairveil/privacy/v1/privacy_scan` |
 | commitment paths at root | POST | `/clairveil/privacy/v1/commitment_paths_at_root` |
+
+| V2 audit query | Method | HTTP path |
+| --- | --- | --- |
+| audit configuration | GET | `/clairveil/privacy/v2/audit/configuration` |
+| audit key schedule | GET | `/clairveil/privacy/v2/audit/key_schedule` |
+| audit key history entry | GET | `/clairveil/privacy/v2/audit/keys/{epoch}` |
 
 ## 10. Companion Binaries
 
@@ -462,7 +467,6 @@ Runs the companion prover HTTP service.
 
 ```bash
 export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=artifacts/audit-field
-export CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE=strict
 export CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN="$(openssl rand -hex 32)"
 
 clairveil-proverd \
@@ -476,7 +480,7 @@ clairveil-proverd \
 
 Follow the remote production profile in [clairveil-operations-guide.md](clairveil-operations-guide.md#6-prover-operations).
 
-`clairveil-proverd` serves only audit-field V2 and requires its artifact directory. It compares local VK/public-input schema hashes to the runtime `CircuitSetIdentity`; checksum env values cannot override it. Validators need VK only, while `clairveil-proverd` lazily loads R1CS/PK for proof generation. The bundle remains development-grade, and prover endpoint failover is off by default and requires explicit privacy opt-in.
+`clairveil-proverd` serves only audit-field V2 and requires its artifact directory. It compares local VK/public-input schema hashes to the runtime `CircuitSetIdentity`; checksum env values cannot override it. Validators need VK only, while `clairveil-proverd` lazily loads R1CS/PK for proof generation. The bearer token check is enforced only when `CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN` is configured, as in this production-oriented example. The bundle remains development-grade, and prover endpoint failover is off by default and requires explicit privacy opt-in.
 
 ### clairveil-payroll
 
@@ -532,19 +536,15 @@ Run the complete demo with:
 make reference-payroll-demo
 ```
 
-Run the live localnet payroll tutorial with:
-
-```bash
-make reference-payroll-live-localnet
-```
-
 Run the large-scale payroll rehearsal simulation with:
 
 ```bash
 make reference-payroll-rehearsal
 ```
 
-The Make targets above are the maintained runnable interfaces for the localnet and rehearsal flows.
+The rehearsal is a legacy simulation and rejects nonzero `RUN_LOCALNET`. There is no checked-in live payroll target for the current V2 runtime.
+
+The Make targets above are the maintained runnable interfaces for the repository-local demo and legacy rehearsal simulation.
 
 ## 11. Batch Protocol Compatibility
 

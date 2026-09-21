@@ -12,11 +12,11 @@ Toolchain, 리소스, 로컬 실행 절차는 [시작 가이드](docs/clairveil-
 | --- | --- |
 | 문서만 변경 | `make docs-check`, `git diff --check` |
 | 일반 코드 | `make ci`, `make vulncheck` |
-| Privacy flow 또는 CLI workflow | `make privacy-e2e-smoke` 추가 |
+| Privacy flow 또는 CLI workflow | Focused package/CLI test와 live 증적이 필요할 때 별도로 문서화한 native V2 harness |
 | Release candidate | `make release-check`와 release가 주장하는 live/capacity 증거 |
 | Prover image | `make docker-proverd-build` 추가 |
 
-`make ci`는 문서 검사를 포함합니다. `make release-check`는 local node를 시작하지만 모든 live batch/capacity gate를 실행하지는 않습니다. 추가 검증은 [테스트 가이드](docs/clairveil-testing-guide-kr.md)에서 선택합니다.
+`make ci`는 문서 검사를 포함합니다. `make release-check`는 CI, vulnerability, static legacy batch conformance, static/unit/synthetic readiness gate를 실행하며 node/prover를 시작하지 않습니다. 별도 live/capacity 증적은 [테스트 가이드](docs/clairveil-testing-guide-kr.md)에 따라 명시적으로 기록합니다.
 
 ## 변경 체크리스트
 
@@ -24,8 +24,8 @@ Toolchain, 리소스, 로컬 실행 절차는 [시작 가이드](docs/clairveil-
 
 | 변경 영역 | 관련 파일과 후속 작업 | 집중 검증 |
 | --- | --- | --- |
-| CLI | `x/privacy/client/cli`, `cmd/clairveild`: CLI test/reference, 시작 가이드 명령, `scripts/privacy-e2e-smoke.sh`를 갱신하고 JSON 변경 시 SDK/schema 영향을 확인합니다. | `go test ./x/privacy/client/cli` |
-| Proto | `proto/clairveil/privacy/v1`: `make proto`로 `x/privacy/types/*.pb.go`를 재생성하고 keeper/client/schema/test 및 관련 integration/SDK guide를 갱신하며 migration 영향을 기록합니다. | `make proto`, `make ci` |
+| CLI | `x/privacy/client/cli`, `cmd/clairveild`: CLI test/reference와 시작 가이드 명령을 갱신하고 JSON 변경 시 SDK/schema 영향을 확인하며 사용한 live V2 harness를 문서화합니다. | `go test ./x/privacy/client/cli` |
+| Proto | `proto/clairveil/privacy/v1`, `proto/clairveil/privacy/v2`: `make proto`로 `x/privacy/types`를 재생성하고 keeper/client/schema/test 및 관련 integration/SDK guide를 갱신하며 migration 영향을 기록합니다. | `make proto`, `make ci` |
 | Circuit | `x/privacy/circuit`, proof builder/verifier, artifact config: circuit 문서/test, artifact filename/checksum/env, wallet/prover contract를 갱신하고 `ZK artifacts` 영향을 기록합니다. | `go test ./x/privacy/circuit ./x/privacy/zk` |
 | Fixture/schema | `x/privacy/client/sdk/conformance/testdata`, `docs/schemas`, `examples`: 생성/검증 test, JSON Schema, SDK guide, 관련 JS consumer를 갱신합니다. | `make examples`, `go test ./x/privacy/client/sdk/conformance` |
 | Payroll/control plane | Store, lease, CAS, retry, reconcile, wallet 변경 시 [payroll reference](examples/reference-payroll/README-kr.md)와 SDK guide, fixture/test를 갱신합니다. One-proof와 legacy 경계를 보존하고 gate 변경은 testing/operations 문서에 static, live one-proof, legacy regression, capacity evidence 중 무엇인지 명시합니다. | `go test ./x/privacy/client/sdk/payroll ./x/privacy/client/sdk/reservation ./x/privacy/client/sdk/conformance` |

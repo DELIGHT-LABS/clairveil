@@ -13,6 +13,18 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 ### Changed
 
 - 역할별 문서 진입점을 추가하고 JS SDK handoff에 retry/failover 및 payroll/wallet contract를 보강했으며, testing/operations/maintenance/release-pack metadata에서 static, live one-proof, legacy regression, actual-capacity gate를 명시적으로 구분했습니다.
+- Replay/archive 중심 audit runtime을 작은 public V4 genesis metadata, native Cosmos init/start/export/upgrade state, V2 asset/governance audit-management message, original successful transaction과 execution event에서 provenance를 파생하는 external auditor로 교체했습니다.
+- Live proving을 `POST /v2/prover/audit-field`로 통합하고 NoteV1, V1 prover contract, batch/payroll code, fixture를 live fallback route가 아닌 역사적 compatibility evidence로 명시했습니다.
+- `make release-check`를 CI, vulnerability, static legacy batch conformance, static/unit/synthetic readiness gate로 제한했습니다. Live V2와 capacity 증적은 별도로 문서화한 native harness에서 확보해야 합니다.
+
+### Removed
+
+- 깨진 localnet/E2E wrapper, 이에 의존하던 V1 localnet/latency benchmark entrypoint, legacy live payroll script를 제거했습니다. Static fixture, simulation, benchmark consumer, historical report family는 current V2 실행 경로로 광고하지 않은 채 보존합니다.
+
+### Fixed
+
+- Native bootstrap, audit configuration/artifact wiring, nonce/initial-height/key/circuit 자동 조회에 맞춰 user-facing documentation을 교정했습니다.
+- 구형 live smoke entrypoint를 제거하고 보존 static/simulation gate의 `RUN_LOCALNET`을 fail closed로 바꾸며 `release-check`와 live V2 증적을 분리했습니다. Static batch fixture gate는 계속 사용할 수 있습니다.
 
 ## v0.4.0 - 2026-08-02
 

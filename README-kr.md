@@ -27,16 +27,17 @@ English version: [README.md](README.md)
 | Transparent prefix     | `clair`                             |
 | Shielded prefix        | `clairs`                            |
 | Reference denom        | `uclair`                            |
-| Proto package          | `clairveil.privacy.v1`              |
-| Default local chain-id | `clairveil-local-1`                 |
+| Proto package          | current Msg/audit query `clairveil.privacy.v2`; scan/tree query `clairveil.privacy.v1` |
+| Local chain-id         | 필수 audit configuration에서 제공 |
 
 ## 현재 상태와 호환성
 
 | 항목 | 현재 기준 |
 | --- | --- |
 | 공개 상태 | `PUBLICATION_READY_EXPERIMENTAL`; source/reference 공개 가능 상태이며 production 배포 승인이 아님 |
-| Consensus circuit set | audited V2 runtime state의 `privacy-note-v1-audit-field-v1` |
-| Fixed client contract | `privacy-fixed-v1`; transfer payload `v5`, proof/prover contract `v2` |
+| Consensus circuit set | audit-field V2 runtime state의 `privacy-note-v1-audit-field-v1` |
+| Current client contract | V2 asset message, exact artifact binding과 final PI23을 포함한 audit-field request/response envelope `v1` |
+| Retained legacy fixture | `privacy-fixed-v1`; transfer payload `v5`, proof/prover contract `v2` |
 | Batch surface | `BatchJoinSplit16x32`, `MsgBatchTransfer`; batch integration용 Go SDK/prover/scanner/payroll/CLI reference 구현 |
 | Upgrade 경계 | 이전 artifact, proof job, note/scan cache, non-audited genesis와 호환되지 않음. fresh genesis/reset 및 rescan 필요 |
 | 남은 production gate | formal trusted setup, 외부 security/circuit audit, signed production artifact, downstream chain/product 검증 |

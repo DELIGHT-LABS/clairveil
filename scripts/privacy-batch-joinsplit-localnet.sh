@@ -6,6 +6,11 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture="$repo_root/x/privacy/client/sdk/conformance/testdata/privacy_batch_transfer_v1_contract.json"
 run_localnet="${RUN_LOCALNET:-0}"
 
+if [[ "$run_localnet" != "0" ]]; then
+	echo "RUN_LOCALNET is no longer supported by this static legacy conformance gate; use an explicitly documented native V2 harness for live evidence" >&2
+	exit 1
+fi
+
 # Keep the historical fixture as a static conformance gate. It does not start
 # a node and is not V2 runtime evidence.
 python3 - "$fixture" <<'PY'
@@ -39,9 +44,4 @@ print("Batch transfer contract fixture validation passed.")
 PY
 (cd "$repo_root" && go test ./x/privacy/client/sdk/conformance -run TestBatchTransferContract -count=1)
 
-if [[ "$run_localnet" == "0" ]]; then
-	echo "Static batch transfer validation passed. Set RUN_LOCALNET=1 for the reviewed V2 one-proof batch smoke."
-	exit 0
-fi
-[[ "$run_localnet" == "1" ]] || { echo "RUN_LOCALNET must be 0 or 1" >&2; exit 1; }
-exec "$repo_root/scripts/privacy-audit-v2-smoke.sh"
+echo "Static legacy batch transfer conformance validation passed; no node or prover was started."

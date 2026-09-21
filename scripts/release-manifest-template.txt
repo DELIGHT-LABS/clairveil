@@ -12,7 +12,7 @@ Contents:
 - privacy V1/V2 protobuf definitions; the active default
   runtime and transaction surface is privacy V2, while retained V1 contracts
   describe compatibility data rather than a selectable legacy bootstrap
-- getting-started, architecture, circuit, BatchJoinSplit16x32, CLI, testing, and localnet documents
+- getting-started, architecture, circuit, BatchJoinSplit16x32, CLI, and testing documents
 - downstream Cosmos integration, JS/web wallet, and reference payroll/control-plane implementation contracts
 - common/deposit prover HTTP contracts and the remote prover operations profile
 - operations, Merkle restore, threat model, and maintainer documents
@@ -24,11 +24,11 @@ Contents:
 
 Validation before handoff:
 - make docs-check
-- make release-check (the current Makefile runs ci, vulncheck, localnet smoke,
-  privacy e2e smoke, batch localnet, and the configured bulk-readiness gate)
-- Record each command's actual exit status and artifacts. Do not infer a live
-  one-proof, capacity, or prover-pool claim from a command that was skipped,
-  failed, or ran with different inputs.
+- make release-check (the current Makefile runs ci, vulncheck, the static legacy
+  batch conformance gate, and static/unit/synthetic bulk-readiness checks)
+- Record each command's actual exit status and artifacts. `make release-check`
+  starts no native V2 node/prover and supplies no live one-proof or capacity
+  claim; record those through a separate explicitly documented harness.
 - RUN_PROVER_SCALE=1 PROVERD_URLS=url1,url2 make privacy-bulk-readiness-check
   is additionally required before making a prover-pool scale claim.
 - make release-pack
