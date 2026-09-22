@@ -126,6 +126,13 @@ var reviewedNativeBoundaryCalls = map[nativeBackendCall]struct{}{
 	{file: "x/privacy/client/sdk/scan/scan.go", function: "ParseNoteBytes", callee: "UnmarshalNotePlaintextV1"}:                                      {},
 	{file: "x/privacy/client/sdk/scan/scan.go", function: "noteCommitmentMatches", callee: "ComputeCommitment"}:                                      {},
 	{file: "x/privacy/client/sdk/scan/scan.go", function: "buildFoundNote", callee: "ComputeNullifier"}:                                              {},
+	// V2 audit deposit witness construction intentionally reuses the
+	// canonical NoteV1 witness adapter after the audit public-input binding.
+	{file: "x/privacy/client/sdk/deposit/audit_v2.go", function: "BuildAuditV2Witness", callee: "ToProverWitnessV1"}: {},
+	// V2 scan disclosure validation intentionally decodes the versioned
+	// disclosure envelope and recomputes its legacy-compatible digest.
+	{file: "x/privacy/client/sdk/provider/typed_scan.go", function: "validateAuditUserDisclosure", callee: "UnmarshalDisclosurePlaintextV1"}:       {},
+	{file: "x/privacy/client/sdk/provider/typed_scan.go", function: "validateAuditUserDisclosure", callee: "ComputeTransferDisclosureDigestBytes"}: {},
 }
 
 var nativeBackendLegacyScanAdapterNames = map[string]bool{

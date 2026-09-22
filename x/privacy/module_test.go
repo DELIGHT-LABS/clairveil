@@ -9,8 +9,8 @@ import (
 )
 
 func TestAuditRuntimeBasicAcceptsOnlyFreshV4Genesis(t *testing.T) {
-	identity := &types.CircuitSetIdentity{SchemaVersion: types.CircuitSetIdentitySchemaVersion, CircuitSetId: types.ActiveCircuitSetID, Curve: types.CircuitCurveBN254}
-	for _, id := range types.RequiredCircuitIdentityOrder {
+	identity := &types.CircuitSetIdentity{SchemaVersion: types.CircuitSetIdentitySchemaVersion, CircuitSetId: types.AuditFieldCircuitSetID, Curve: types.CircuitCurveBN254}
+	for _, id := range types.RequiredAuditCircuitIdentityOrder {
 		identity.Circuits = append(identity.Circuits, &types.CircuitIdentity{CircuitId: id, VerifyingKeySha256: "0000000000000000000000000000000000000000000000000000000000000000", PublicInputSchemaSha256: "0000000000000000000000000000000000000000000000000000000000000000"})
 	}
 	v4, err := json.Marshal(types.GenesisStateV4{
