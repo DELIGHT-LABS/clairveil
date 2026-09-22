@@ -4,6 +4,17 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 [Release versioning rules](CONTRIBUTING-kr.md#release-versioning-rules)는 repository maintainer instructions에서 관리합니다. Release 내용과 검증 범위는 [selected-path manifest](scripts/release-pack-paths.txt)와 [required-file manifest](scripts/release-pack-required-files.txt)가 정의합니다.
 
+## v0.5.1 - 2026-09-22
+
+### Fixed
+
+- Go module archive가 Windows 호환 module path 검사를 통과하도록 audit-field 보조 source 파일명을 바꾸고 security workflow를 Go `1.25.13` release toolchain과 정렬했습니다.
+- Internal context marker는 private로 유지하면서 downstream V4 app 초기화에 사용할 public `privacy.RunAuditGenesis`와 `privacy.ComputeAuditGenesisAnchor` helper를 추가했습니다.
+
+### Handoff Notes
+
+- Downstream V4 app은 atomic `CacheContext` 안에서 public genesis helper를 사용하고 `github.com/DELIGHT-LABS/clairveil v0.5.1`을 고정해야 합니다. 회로, proof key, transaction wire migration은 필요하지 않습니다.
+
 ## v0.5.0 - 2026-09-22
 
 ### Added

@@ -17,7 +17,7 @@
 초기 개발 중에는 로컬 `replace`를 쓰면 빠릅니다.
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.5.0
+require github.com/DELIGHT-LABS/clairveil v0.5.1
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```
@@ -110,7 +110,7 @@ Legacy `MsgTransfer` fixture는 encrypted output note 2개와 2-byte `view_tags`
 
 ## 4. App wiring 체크리스트
 
-Current audit runtime은 `privacy.AppModuleBasic{AuditRuntime: true}`와 `ConfigureAuditRuntime`를 포함한 audited reference path로 wiring해야 합니다. Plain legacy `NewKeeper`/`AppModuleBasic{}` setup은 V2 service를 등록하지 않습니다. Executable integration 예시는 `app.NewAuditFieldApp`과 current reference app wiring을 따르세요. 아래 snippet은 공통 Cosmos module-account/store scaffolding만 보여줍니다.
+Current audit runtime은 `privacy.AppModuleBasic{AuditRuntime: true}`와 `ConfigureAuditRuntime`를 포함한 audited reference path로 wiring해야 합니다. Plain legacy `NewKeeper`/`AppModuleBasic{}` setup은 V2 service를 등록하지 않습니다. `app.NewAuditFieldApp`은 reference host 구현입니다. Downstream app은 자신의 `InitChainer`를 유지하고 V4 초기화에는 public `privacy.RunAuditGenesis`, `privacy.ComputeAuditGenesisAnchor` helper를 사용해야 합니다. 아래 snippet은 공통 Cosmos module-account/store scaffolding만 보여줍니다.
 
 아래 import를 downstream app에 추가합니다.
 
@@ -119,6 +119,7 @@ import (
 	"github.com/DELIGHT-LABS/clairveil/x/privacy"
 	privacykeeper "github.com/DELIGHT-LABS/clairveil/x/privacy/keeper"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 ```
 
@@ -189,6 +190,28 @@ app.BasicModuleManager.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRo
 if err := app.ModuleManager.RegisterServices(app.configurator); err != nil {
 	panic(err)
 }
+```
+
+### V4 genesis 초기화
+
+Audit runtime을 켠 경우 전체 privacy genesis sequence를 `CacheContext`와 `privacy.RunAuditGenesis` 안에서 실행합니다. V4 metadata를 초기화하거나 load하고 marked context로 `ModuleManager.InitGenesis`를 호출한 뒤 결과를 검증하며, 모든 단계가 성공한 뒤에만 cache를 publish합니다. `internal/auditinit`을 import하거나 context marker를 다시 만들면 안 됩니다.
+
+```go
+cache, publish := ctx.CacheContext()
+anchor, err := privacy.ComputeAuditGenesisAnchor(chainID, networkNonce, initialHeight)
+if err != nil {
+	return nil, err
+}
+if err := privacy.RunAuditGenesis(cache, func(init sdk.Context) error {
+		if err := app.PrivacyKeeper.InitializeFreshAudit(init, genesis, anchor); err != nil {
+			return err
+		}
+		_, err := app.ModuleManager.InitGenesis(init, appCodec, genesisState)
+		return err
+}); err != nil {
+	return nil, err
+}
+publish()
 ```
 
 ## 5. BankKeeper 요구사항

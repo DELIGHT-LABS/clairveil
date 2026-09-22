@@ -46,7 +46,7 @@ func (am AppModuleBasic) RegisterInterfaces(registry cdctypes.InterfaceRegistry)
 
 func (am AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
 	if am.AuditRuntime {
-		panic("audit V4 privacy genesis requires BuildFreshAuditGenesis with runtime, manifest, and audit-key inputs")
+		panic("audit V4 privacy genesis requires a downstream InitChainer using RunAuditGenesis and validated GenesisStateV4 inputs")
 	}
 	identity, err := zk.LoadLocalCircuitSetIdentity()
 	if err != nil {

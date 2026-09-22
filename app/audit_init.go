@@ -1,11 +1,8 @@
 package app
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 
-	"github.com/DELIGHT-LABS/clairveil/internal/auditinit"
 	"github.com/DELIGHT-LABS/clairveil/internal/strictjson"
 	privacymodule "github.com/DELIGHT-LABS/clairveil/x/privacy"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -47,7 +44,10 @@ func (app *ClairveilApp) initPrivacyChain(ctx sdk.Context, req *abci.RequestInit
 	}
 	// Key provenance is bound to the immutable first-chain height, not the
 	// later restart height carried by an ordinary exported genesis.
-	anchor := privacyGenesisAnchor(req.ChainId, privacy.NetworkNonce, privacy.InitialHeight)
+	anchor, err := privacymodule.ComputeAuditGenesisAnchor(req.ChainId, privacy.NetworkNonce, privacy.InitialHeight)
+	if err != nil {
+		return nil, err
+	}
 	cache, publish := ctx.CacheContext()
 	if err := app.genesisTxHandler.bind(cache.MultiStore()); err != nil {
 		return nil, err
@@ -58,7 +58,7 @@ func (app *ClairveilApp) initPrivacyChain(ctx sdk.Context, req *abci.RequestInit
 			app.genesisTxHandler.unbind()
 		}
 	}()
-	err = auditinit.Run(cache, func(init sdk.Context) error {
+	err = privacymodule.RunAuditGenesis(cache, func(init sdk.Context) error {
 		if privacy.State == nil {
 			if err := app.PrivacyKeeper.InitializeFreshAudit(init, privacy, anchor); err != nil {
 				return err
@@ -98,10 +98,4 @@ func (app *ClairveilApp) initPrivacyChain(ctx sdk.Context, req *abci.RequestInit
 	bound = false
 	publish()
 	return response, nil
-}
-
-func privacyGenesisAnchor(chainID string, nonce []byte, initialHeight uint64) [32]byte {
-	var height [8]byte
-	binary.BigEndian.PutUint64(height[:], initialHeight)
-	return sha256.Sum256(append(append(append([]byte("clairveil/privacy/genesis-anchor/v1"), []byte(chainID)...), nonce...), height[:]...))
 }

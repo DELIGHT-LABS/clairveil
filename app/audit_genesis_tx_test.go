@@ -9,6 +9,7 @@ import (
 	"cosmossdk.io/log/v2"
 	"cosmossdk.io/math"
 	"github.com/DELIGHT-LABS/clairveil/types"
+	privacymodule "github.com/DELIGHT-LABS/clairveil/x/privacy"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	dbm "github.com/cosmos/cosmos-db"
@@ -125,12 +126,16 @@ func TestScopedGenesisTxHandlerSharesAuthGenesisCacheWithBaseApp(t *testing.T) {
 func TestExportedPrivacyGenesisAnchorUsesOriginalInitialHeight(t *testing.T) {
 	nonce := make([]byte, 32)
 	nonce[0] = 7
-	original := privacyGenesisAnchor("clairveil-export-1", nonce, 1)
-	restarted := privacyGenesisAnchor("clairveil-export-1", nonce, 42)
+	original, err := privacymodule.ComputeAuditGenesisAnchor("clairveil-export-1", nonce, 1)
+	require.NoError(t, err)
+	restarted, err := privacymodule.ComputeAuditGenesisAnchor("clairveil-export-1", nonce, 42)
+	require.NoError(t, err)
 	require.NotEqual(t, original, restarted)
 
 	// An exported V4 genesis retains the first height for key provenance while
 	// the CometBFT request uses its separate restart height.
 	privacyGenesis := privacytypes.GenesisStateV4{InitialHeight: 1, RestartHeight: 42, NetworkNonce: nonce}
-	require.Equal(t, original, privacyGenesisAnchor("clairveil-export-1", privacyGenesis.NetworkNonce, privacyGenesis.InitialHeight))
+	computed, err := privacymodule.ComputeAuditGenesisAnchor("clairveil-export-1", privacyGenesis.NetworkNonce, privacyGenesis.InitialHeight)
+	require.NoError(t, err)
+	require.Equal(t, original, computed)
 }

@@ -4,6 +4,17 @@ All notable changes to Clairveil are documented in this file.
 
 [Release versioning rules](CONTRIBUTING.md#release-versioning-rules) are maintained with the repository instructions. Release contents and verification are defined by [the selected-path manifest](scripts/release-pack-paths.txt) and [the required-file manifest](scripts/release-pack-required-files.txt).
 
+## v0.5.1 - 2026-09-22
+
+### Fixed
+
+- Renamed the audit-field auxiliary source file so the Go module archive is accepted by Windows-compatible module path validation, and aligned the security workflow with the Go `1.25.13` release toolchain.
+- Added public `privacy.RunAuditGenesis` and `privacy.ComputeAuditGenesisAnchor` helpers for downstream V4 application initialization while keeping the internal context marker private.
+
+### Handoff Notes
+
+- Downstream V4 applications should use the public genesis helpers from an atomic `CacheContext` and pin `github.com/DELIGHT-LABS/clairveil v0.5.1`; no circuit, proof-key, or transaction wire migration is required.
+
 ## v0.5.0 - 2026-09-22
 
 ### Added

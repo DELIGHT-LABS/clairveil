@@ -19,7 +19,7 @@ The recommended model separates responsibilities as follows.
 During early development, a local `replace` is fastest.
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.5.0
+require github.com/DELIGHT-LABS/clairveil v0.5.1
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```
@@ -112,7 +112,7 @@ The retained V1 `MsgBatchTransfer` fixture contains one proof, one historical ro
 
 ## 4. App Wiring Checklist
 
-The current audit runtime must be wired through the audited reference path, including `privacy.AppModuleBasic{AuditRuntime: true}` and `ConfigureAuditRuntime`; a plain legacy `NewKeeper`/`AppModuleBasic{}` setup does not register the V2 services. Use `app.NewAuditFieldApp` and the current reference app wiring as the executable integration example. The snippets below show only the common Cosmos module-account/store scaffolding.
+The current audit runtime must be wired through the audited reference path, including `privacy.AppModuleBasic{AuditRuntime: true}` and `ConfigureAuditRuntime`; a plain legacy `NewKeeper`/`AppModuleBasic{}` setup does not register the V2 services. `app.NewAuditFieldApp` is the reference host implementation. A downstream app should keep its own `InitChainer` and use the public `privacy.RunAuditGenesis` and `privacy.ComputeAuditGenesisAnchor` helpers for V4 initialization. The snippets below show only the common Cosmos module-account/store scaffolding.
 
 Add these imports to the downstream app.
 
@@ -121,6 +121,7 @@ import (
 	"github.com/DELIGHT-LABS/clairveil/x/privacy"
 	privacykeeper "github.com/DELIGHT-LABS/clairveil/x/privacy/keeper"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 ```
 
@@ -191,6 +192,28 @@ Service registration should happen through the module manager.
 if err := app.ModuleManager.RegisterServices(app.configurator); err != nil {
 	panic(err)
 }
+```
+
+### V4 genesis initialization
+
+When audit runtime is enabled, wrap the complete privacy genesis sequence in a `CacheContext` and `privacy.RunAuditGenesis`. Initialize or load the V4 metadata, call `ModuleManager.InitGenesis` with the marked context, validate the result, and publish the cache only after every step succeeds. Do not import `internal/auditinit` or recreate its context marker.
+
+```go
+cache, publish := ctx.CacheContext()
+anchor, err := privacy.ComputeAuditGenesisAnchor(chainID, networkNonce, initialHeight)
+if err != nil {
+	return nil, err
+}
+if err := privacy.RunAuditGenesis(cache, func(init sdk.Context) error {
+		if err := app.PrivacyKeeper.InitializeFreshAudit(init, genesis, anchor); err != nil {
+			return err
+		}
+		_, err := app.ModuleManager.InitGenesis(init, appCodec, genesisState)
+		return err
+}); err != nil {
+	return nil, err
+}
+publish()
 ```
 
 ## 5. BankKeeper Requirements
