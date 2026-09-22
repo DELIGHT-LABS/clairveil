@@ -119,6 +119,7 @@ import (
 	"github.com/DELIGHT-LABS/clairveil/x/privacy"
 	privacykeeper "github.com/DELIGHT-LABS/clairveil/x/privacy/keeper"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	abci "github.com/cometbft/cometbft/abci/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 ```
@@ -196,22 +197,42 @@ if err := app.ModuleManager.RegisterServices(app.configurator); err != nil {
 
 Audit runtime을 켠 경우 전체 privacy genesis sequence를 `CacheContext`와 `privacy.RunAuditGenesis` 안에서 실행합니다. V4 metadata를 초기화하거나 load하고 marked context로 `ModuleManager.InitGenesis`를 호출한 뒤 결과를 검증하며, 모든 단계가 성공한 뒤에만 cache를 publish합니다. `internal/auditinit`을 import하거나 context marker를 다시 만들면 안 됩니다.
 
+아래 예제는 privacy 초기화·검증 분기를 보여줍니다. `genesis`는 `privacytypes.ParseFreshGenesisV4`로 파싱한 V4 상태이고, `genesisState`는 전체 module genesis map입니다. Host `InitChainer`는 `app/audit_init.go`처럼 chain·최초/재시작 높이 검사, module version 초기화, 같은 cache에서의 genesis transaction 실행과 publish 전 bank 검증도 유지해야 합니다. Export 복원 시 anchor에는 원래의 `genesis.InitialHeight`를 사용합니다.
+
 ```go
 cache, publish := ctx.CacheContext()
-anchor, err := privacy.ComputeAuditGenesisAnchor(chainID, networkNonce, initialHeight)
+anchor, err := privacy.ComputeAuditGenesisAnchor(chainID, genesis.NetworkNonce, genesis.InitialHeight)
 if err != nil {
 	return nil, err
 }
+var response *abci.ResponseInitChain
 if err := privacy.RunAuditGenesis(cache, func(init sdk.Context) error {
+	if genesis.State == nil {
 		if err := app.PrivacyKeeper.InitializeFreshAudit(init, genesis, anchor); err != nil {
 			return err
 		}
-		_, err := app.ModuleManager.InitGenesis(init, appCodec, genesisState)
+	} else {
+		if err := app.PrivacyKeeper.SetCircuitSetIdentity(init, genesis.CircuitSetIdentity); err != nil {
+			return err
+		}
+		if err := app.PrivacyKeeper.InitializeAuditMetadata(init, genesis, anchor); err != nil {
+			return err
+		}
+		privacy.InitGenesis(init, app.PrivacyKeeper, *genesis.State)
+	}
+	response, err = app.ModuleManager.InitGenesis(init, appCodec, genesisState)
+	if err != nil {
 		return err
+	}
+	if genesis.State == nil {
+		return app.PrivacyKeeper.ValidateFreshAudit(init, genesis, anchor)
+	}
+	return app.PrivacyKeeper.ValidateLoadedAuditIdentity(init)
 }); err != nil {
 	return nil, err
 }
 publish()
+return response, nil
 ```
 
 ## 5. BankKeeper 요구사항

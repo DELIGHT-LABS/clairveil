@@ -121,6 +121,7 @@ import (
 	"github.com/DELIGHT-LABS/clairveil/x/privacy"
 	privacykeeper "github.com/DELIGHT-LABS/clairveil/x/privacy/keeper"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
+	abci "github.com/cometbft/cometbft/abci/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 ```
@@ -198,22 +199,42 @@ if err := app.ModuleManager.RegisterServices(app.configurator); err != nil {
 
 When audit runtime is enabled, wrap the complete privacy genesis sequence in a `CacheContext` and `privacy.RunAuditGenesis`. Initialize or load the V4 metadata, call `ModuleManager.InitGenesis` with the marked context, validate the result, and publish the cache only after every step succeeds. Do not import `internal/auditinit` or recreate its context marker.
 
+This excerpt shows the privacy initialization and validation branches. `genesis` is the V4 state parsed by `privacytypes.ParseFreshGenesisV4`; `genesisState` is the complete module genesis map. The host `InitChainer` must also retain the chain/initial/restart-height checks, module-version initialization, shared-cache genesis transaction execution, and bank validation before publishing, as in `app/audit_init.go`. Use the original `genesis.InitialHeight` for the anchor when restoring an export.
+
 ```go
 cache, publish := ctx.CacheContext()
-anchor, err := privacy.ComputeAuditGenesisAnchor(chainID, networkNonce, initialHeight)
+anchor, err := privacy.ComputeAuditGenesisAnchor(chainID, genesis.NetworkNonce, genesis.InitialHeight)
 if err != nil {
 	return nil, err
 }
+var response *abci.ResponseInitChain
 if err := privacy.RunAuditGenesis(cache, func(init sdk.Context) error {
+	if genesis.State == nil {
 		if err := app.PrivacyKeeper.InitializeFreshAudit(init, genesis, anchor); err != nil {
 			return err
 		}
-		_, err := app.ModuleManager.InitGenesis(init, appCodec, genesisState)
+	} else {
+		if err := app.PrivacyKeeper.SetCircuitSetIdentity(init, genesis.CircuitSetIdentity); err != nil {
+			return err
+		}
+		if err := app.PrivacyKeeper.InitializeAuditMetadata(init, genesis, anchor); err != nil {
+			return err
+		}
+		privacy.InitGenesis(init, app.PrivacyKeeper, *genesis.State)
+	}
+	response, err = app.ModuleManager.InitGenesis(init, appCodec, genesisState)
+	if err != nil {
 		return err
+	}
+	if genesis.State == nil {
+		return app.PrivacyKeeper.ValidateFreshAudit(init, genesis, anchor)
+	}
+	return app.PrivacyKeeper.ValidateLoadedAuditIdentity(init)
 }); err != nil {
 	return nil, err
 }
 publish()
+return response, nil
 ```
 
 ## 5. BankKeeper Requirements
