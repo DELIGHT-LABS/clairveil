@@ -4,7 +4,7 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 [Release versioning rules](CONTRIBUTING-kr.md#release-versioning-rules)는 repository maintainer instructions에서 관리합니다. Release 내용과 검증 범위는 [selected-path manifest](scripts/release-pack-paths.txt)와 [required-file manifest](scripts/release-pack-required-files.txt)가 정의합니다.
 
-## Unreleased
+## v0.5.0 - 2026-09-22
 
 ### Added
 
@@ -25,6 +25,22 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 - Native bootstrap, audit configuration/artifact wiring, nonce/initial-height/key/circuit 자동 조회에 맞춰 user-facing documentation을 교정했습니다.
 - 구형 live smoke entrypoint를 제거하고 보존 static/simulation gate의 `RUN_LOCALNET`을 fail closed로 바꾸며 `release-check`와 live V2 증적을 분리했습니다. Static batch fixture gate는 계속 사용할 수 있습니다.
+
+### Security
+
+- `deposit`, `transfer`, `batch transfer`, `withdraw`에 proof-bound audit-field 검증과 원자적 적용을 추가했습니다. 거버넌스는 privacy 자산 거래를 실행할 수 없고 audit key 및 비상 관리 명령은 계속 실행할 수 있습니다.
+- 신뢰된 `Keeper.DepositWithFunderV2` surface를 추가했습니다. `MsgDeposit.Creator`는 proof-bound provenance principal로 유지하고 검증된 downstream funder만 차감하며 delegated audit 수집에 필요한 bounded canonical message를 event에 남깁니다.
+
+### Known Risk
+
+- Clairveil은 계속 `PUBLICATION_READY_EXPERIMENTAL`이며 `PRODUCTION_RELEASE_READY`가 아닙니다. Formal trusted setup, 외부 ZK/security audit, signed production artifact distribution, chain-specific migration, production wallet storage, audit-key custody, downstream product validation은 이번 release 범위 밖입니다.
+- 현재 audit-field artifact bundle은 development-grade입니다. EVM downstream은 wrapper decoding, receipt-success verification, caller/value/escrow binding, outer rollback boundary를 제공해야 하며 기본 `clairveil-auditor`에는 이 EVM 연결이 없습니다.
+
+### Handoff Notes
+
+- 이번 release는 V4 audit configuration과 현재 audit-field circuit identity를 사용합니다. 호환되지 않는 이전 genesis에서 업그레이드하는 downstream chain은 fresh genesis/reset을 사용하고 old note, scan, prepared-proof, artifact cache를 폐기한 뒤 rescan해야 합니다. Legacy in-place migration은 제공하지 않습니다.
+- Delegated deposit을 사용하는 downstream은 신뢰된 adapter에서만 `DepositWithFunderV2`를 호출하고 `github.com/DELIGHT-LABS/clairveil v0.5.0`을 고정해야 합니다. Native `MsgDeposit` protobuf, CLI, 일반 `MsgServer.Deposit` 경로는 계속 사용할 수 있습니다.
+- `make release-check`는 static, unit, synthetic, legacy conformance 증적을 제공합니다. Live V2와 capacity 증적은 별도로 문서화한 주장으로 유지됩니다.
 
 ## v0.4.0 - 2026-08-02
 

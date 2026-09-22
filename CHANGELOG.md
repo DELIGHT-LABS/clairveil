@@ -4,7 +4,7 @@ All notable changes to Clairveil are documented in this file.
 
 [Release versioning rules](CONTRIBUTING.md#release-versioning-rules) are maintained with the repository instructions. Release contents and verification are defined by [the selected-path manifest](scripts/release-pack-paths.txt) and [the required-file manifest](scripts/release-pack-required-files.txt).
 
-## Unreleased
+## v0.5.0 - 2026-09-22
 
 ### Added
 
@@ -25,6 +25,22 @@ All notable changes to Clairveil are documented in this file.
 
 - Corrected native bootstrap, audit configuration/artifact wiring, and user-facing documentation for automatic nonce/initial-height/key/circuit discovery.
 - Removed the obsolete live smoke entrypoints, made `RUN_LOCALNET` fail closed on the retained static/simulation gates, and separated `release-check` from live V2 evidence; the static batch fixture gate remains available.
+
+### Security
+
+- Added proof-bound audit-field verification and atomic application for deposit, transfer, batch transfer, and withdraw, while governance cannot execute privacy asset transactions and may still execute audit-key and emergency-management operations.
+- Added the trusted `Keeper.DepositWithFunderV2` surface. It keeps `MsgDeposit.Creator` as the proof-bound provenance principal while debiting a validated downstream funder and emitting the bounded canonical message needed for delegated audit collection.
+
+### Known Risk
+
+- Clairveil remains `PUBLICATION_READY_EXPERIMENTAL`, not `PRODUCTION_RELEASE_READY`. Formal trusted setup, external ZK/security audit, signed production artifact distribution, chain-specific migration, production wallet storage, audit-key custody, and downstream product validation remain outside this release.
+- The current audit-field artifact bundle is development-grade. EVM downstreams must provide wrapper decoding, receipt-success verification, caller/value/escrow binding, and an outer rollback boundary; the stock `clairveil-auditor` does not provide those EVM connections.
+
+### Handoff Notes
+
+- This release uses the V4 audit configuration and current audit-field circuit identity. Downstream chains upgrading from an older incompatible genesis must use a fresh genesis/reset, discard old note, scan, prepared-proof, and artifact caches, and rescan; no in-place legacy migration is provided.
+- Downstreams using delegated deposits should call `DepositWithFunderV2` only from a trusted adapter and pin `github.com/DELIGHT-LABS/clairveil v0.5.0`. The native `MsgDeposit` protobuf, CLI, and normal `MsgServer.Deposit` path remain available.
+- `make release-check` provides static, unit, synthetic, and legacy conformance evidence; live V2 and capacity evidence remain separately documented claims.
 
 ## v0.4.0 - 2026-08-02
 
