@@ -14,7 +14,7 @@ import (
 // This is a regression guard, not a full constant-time or information-flow
 // proof. Public gnark conversion is confined to the documented point facade.
 func TestT19SecretBackendDependencies(t *testing.T) {
-	roots := []string{"internal/ctbn254/frct", "internal/ctbn254/scalarct", "internal/ctbn254/edwardsct", "auditfield"}
+	roots := []string{"../amount", "internal/ctbn254/frct", "internal/ctbn254/scalarct", "internal/ctbn254/edwardsct", "auditfield"}
 	for _, root := range roots {
 		entries, err := os.ReadDir(root)
 		if err != nil {
