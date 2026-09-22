@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/stretchr/testify/require"
 
@@ -59,7 +60,7 @@ func TestAuditFieldDepositSDKToProverdRoundTripWithP3Artifacts(t *testing.T) {
 	prepared, err := privacydeposit.PrepareAuditV2FromNormalNote(
 		snapshot,
 		sdk.AccAddress(bytes.Repeat([]byte{0x31}, 20)).String(),
-		"7uclair",
+		note.Amount.String()+"uclair",
 		note,
 		&privacyv2.OutputEffect{Commitment: commitmentRaw[:], Ciphertext: ciphertext},
 		time.Now().Add(time.Hour).Unix(),
@@ -111,8 +112,10 @@ func auditV2IntegrationDepositNote(t *testing.T) privacytypes.SecretNoteV1 {
 	require.NoError(t, err)
 	viewX, viewY, err := privacycrypto.PublicPointFieldValues(view)
 	require.NoError(t, err)
+	value, err := privacyamount.Parse("100000000000000000000")
+	require.NoError(t, err)
 	note, err := privacytypes.NewSecretNoteV1(
-		spendX, spendY, viewX, viewY, 7,
+		spendX, spendY, viewX, viewY, value,
 		privacytypes.ComputeSecretAssetIDV1("uclair"), privacycrypto.FieldValueFromUint64(17), "",
 	)
 	require.NoError(t, err)

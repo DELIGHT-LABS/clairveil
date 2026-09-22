@@ -178,7 +178,7 @@ func (k Keeper) buildAuditPublic(ctx sdk.Context, m types.ValidatedAuditMessage)
 		if err != nil {
 			return nil, err
 		}
-		pi[15] = auditfield.Field32FromUint64(coin.Amount.Uint64())
+		coin.Amount.BigInt().FillBytes(pi[15][:])
 		pi[16], err = auditfield.ParseField32(asset)
 		if err != nil {
 			return nil, err

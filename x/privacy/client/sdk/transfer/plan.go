@@ -134,6 +134,10 @@ func buildInsufficientFundsError(foundNotes []privacyscan.SecretFoundNote, targe
 		)
 	}
 
+	if sameDenomTotal.Cmp(normalizedAmount(targetAmount)) >= 0 {
+		return fmt.Errorf("note preparation required for %s: no input combination fits the 128-bit operation limit", target)
+	}
+
 	return fmt.Errorf(
 		"insufficient shielded funds for %s; spendable %s total is only %s across %d notes. Run list-notes to inspect wallet state, then deposit more shielded funds",
 		target,

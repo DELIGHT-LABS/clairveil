@@ -54,10 +54,11 @@ type listNotesJSONOutput struct {
 }
 
 type listNotesJSONSummary struct {
-	TotalSpendable string `json:"total_spendable"`
-	SpendableCount int    `json:"spendable_count"`
-	SpentCount     int    `json:"spent_count"`
-	TotalCount     int    `json:"total_count"`
+	TotalSpendable   string            `json:"total_spendable,omitempty"`
+	SpendableByAsset map[string]string `json:"spendable_by_asset"`
+	SpendableCount   int               `json:"spendable_count"`
+	SpentCount       int               `json:"spent_count"`
+	TotalCount       int               `json:"total_count"`
 }
 
 type listNotesJSONNote struct {
@@ -392,21 +393,24 @@ func scanNotesWithOptions(clientCtx client.Context, seed []byte, opts scanNotesO
 }
 
 func noteAmountString(note types.SecretNoteV1) string {
-	return fmt.Sprintf("%d", note.Amount)
+	return note.Amount.String()
 }
 
 func buildListNotesJSONOutput(foundNotes []FoundNote, diagnostics *scanNotesDiagnostics) listNotesJSONOutput {
-	// This total is deliberately disclosed in the user-requested wallet display.
-	totalSpendable := new(big.Int)
-	for _, note := range foundNotes {
-		if !note.IsSpent {
-			totalSpendable.Add(totalSpendable, new(big.Int).SetUint64(note.Note.Amount))
-		}
+	totals := buildSpendableAssetTotals(foundNotes)
+	byAsset := make(map[string]string, len(totals))
+	totalSpendable := ""
+	for _, total := range totals {
+		byAsset[total.AssetIDHex] = total.Total.String()
+	}
+	if len(totals) == 1 {
+		totalSpendable = totals[0].Total.String()
 	}
 	output := listNotesJSONOutput{
 		Summary: listNotesJSONSummary{
-			TotalSpendable: totalSpendable.String(),
-			TotalCount:     len(foundNotes),
+			TotalSpendable:   totalSpendable,
+			SpendableByAsset: byAsset,
+			TotalCount:       len(foundNotes),
 		},
 		Diagnostics: diagnostics,
 		Notes:       make([]listNotesJSONNote, 0, len(foundNotes)),
@@ -455,7 +459,7 @@ func autoPrepareDummyNote(cmd *cobra.Command, clientCtx client.Context, denom st
 	}
 	var input *FoundNote
 	for i := range notes {
-		if notes[i].IsSpent || notes[i].Note.Amount == 0 || notes[i].Note.AssetID.Bytes() != asset.Bytes() || (notes[i].AssetDenom != "" && notes[i].AssetDenom != denom) {
+		if notes[i].IsSpent || notes[i].Note.Amount.IsZero() || notes[i].Note.AssetID.Bytes() != asset.Bytes() || (notes[i].AssetDenom != "" && notes[i].AssetDenom != denom) {
 			continue
 		}
 		input = &notes[i]
@@ -507,7 +511,7 @@ func autoPrepareDummyNote(cmd *cobra.Command, clientCtx client.Context, denom st
 	if !ok {
 		return fmt.Errorf("audit prover returned %T, expected v2 dummy batch transfer", msg)
 	}
-	printAutoDummyPreparationSummary(cmd, denom, fmt.Sprintf("self %d%s + one active zero padding output", input.Note.Amount, denom))
+	printAutoDummyPreparationSummary(cmd, denom, fmt.Sprintf("self %s%s + one active zero padding output", input.Note.Amount.String(), denom))
 	response, err := (privacyprovider.CosmosTxBroadcaster{ClientContext: clientCtx, Flags: cmd.Flags(), FromName: clientCtx.GetFromName()}).BroadcastSDKMessage(cmd.Context(), batch)
 	if err != nil {
 		return err
@@ -527,12 +531,12 @@ func autoPrepareDummyNote(cmd *cobra.Command, clientCtx client.Context, denom st
 }
 
 func planAutoDummySelfBatch(identity *transferExecutionIdentity, note types.SecretNoteV1) (*privacybatchtransfer.BatchTransferPlan, error) {
-	if identity == nil || note.Amount == 0 {
+	if identity == nil || note.Amount.IsZero() {
 		return nil, fmt.Errorf("positive owner note and identity are required")
 	}
 	plan, err := privacybatchtransfer.PlanBatchTransfer(privacybatchtransfer.PlanBatchTransferInput{
 		Inputs:           []privacybatchtransfer.InputNote{{Note: note}},
-		Payments:         []privacybatchtransfer.Payment{{SpendPubKey: identity.spendPubKey, ViewPubKey: identity.viewPubKey, Amount: new(big.Int).SetUint64(note.Amount), PrivacyPolicy: types.TransferPrivacyPolicyAllPrivate, DisclosureMode: types.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE}},
+		Payments:         []privacybatchtransfer.Payment{{SpendPubKey: identity.spendPubKey, ViewPubKey: identity.viewPubKey, Amount: types.Amount128BigInt(note.Amount), PrivacyPolicy: types.TransferPrivacyPolicyAllPrivate, DisclosureMode: types.UserDisclosureMode_USER_DISCLOSURE_MODE_NONE}},
 		OwnerSpendPubKey: identity.spendPubKey, OwnerViewPubKey: identity.viewPubKey, Mode: privacybatchtransfer.OutputModeCompact,
 	})
 	if err != nil {

@@ -81,11 +81,23 @@ func TestDepositCircuitBindsAssetID(t *testing.T) {
 }
 
 func TestDepositCircuitRejectsAmountOutsideRange(t *testing.T) {
-	tooLarge := new(big.Int).Add(privacytypes.MaxShieldedAmount(), big.NewInt(1))
-	assignment := buildValidDepositAssignment(t, tooLarge, big.NewInt(11))
-
-	assert := test.NewAssert(t)
-	assert.ProverFailed(&DepositCircuit{}, assignment, test.WithCurves(ecc.BN254))
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &DepositCircuit{})
+	require.NoError(t, err)
+	for _, overflow := range []bool{false, true} {
+		amount := privacytypes.MaxShieldedAmount()
+		if overflow {
+			amount.Add(amount, big.NewInt(1))
+		}
+		assignment := buildValidDepositAssignment(t, amount, big.NewInt(11))
+		witness, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
+		require.NoError(t, err)
+		err = ccs.IsSolved(witness)
+		if overflow {
+			require.Error(t, err)
+		} else {
+			require.NoError(t, err)
+		}
+	}
 }
 
 func TestDepositCircuitRejectsMalformedSpendPubKey(t *testing.T) {

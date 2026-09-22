@@ -26,7 +26,7 @@ func TestResolveExactMatchSpendableNoteReturnsExistingNote(t *testing.T) {
 	selected, err := ResolveExactMatchSpendableNote(context.Background(), source, planner, sdk.NewInt64Coin("uclair", 10), false)
 	require.NoError(t, err)
 	require.NotNil(t, selected)
-	require.Equal(t, int64(10), int64(selected.Note.Amount))
+	require.Equal(t, int64(10), privacytypes.Amount128BigInt(selected.Note.Amount).Int64())
 	require.Len(t, source.calls, 1)
 	require.Len(t, planner.calls, 0)
 }
@@ -47,7 +47,7 @@ func TestResolveExactMatchSpendableNoteAutoPlansAndRescans(t *testing.T) {
 	selected, err := ResolveExactMatchSpendableNote(context.Background(), source, planner, sdk.NewInt64Coin("uclair", 10), true)
 	require.NoError(t, err)
 	require.NotNil(t, selected)
-	require.Equal(t, int64(10), int64(selected.Note.Amount))
+	require.Equal(t, int64(10), privacytypes.Amount128BigInt(selected.Note.Amount).Int64())
 	require.Len(t, source.calls, 2)
 	require.Len(t, planner.calls, 1)
 	require.Equal(t, "10uclair", planner.calls[0].String())

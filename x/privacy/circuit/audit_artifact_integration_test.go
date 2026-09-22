@@ -39,7 +39,32 @@ func TestAuditArtifactProductIntegration(t *testing.T) {
 			pk, err := r.ProvingKey(id)
 			require.NoError(t, err)
 			load := time.Since(start)
-			f := newAuditFixture(t, auditfield.Kind(i+1), 16, 32)
+			kind := auditfield.Kind(i + 1)
+			// 100 * 10^18 exceeds uint64 and exercises every product artifact.
+			large, ok := new(big.Int).SetString("100000000000000000000", 10)
+			require.True(t, ok)
+			var noteRelation frontend.Circuit
+			switch kind {
+			case auditfield.KindDeposit:
+				noteRelation = buildValidDepositAssignment(t, large, big.NewInt(11))
+			case auditfield.KindWithdraw:
+				noteRelation = buildValidSpendAssignmentWithAmount(t, big.NewInt(107), large)
+			case auditfield.KindTransfer2x2:
+				noteRelation = buildJoinSplitAssignmentWithAmounts(t,
+					[NumInputs]*big.Int{new(big.Int).Sub(large, big.NewInt(1)), big.NewInt(1)},
+					[NumOutputs]*big.Int{large, big.NewInt(0)})
+			case auditfield.KindBatch16x32:
+				batch := buildBatchFeasibilityAssignment(t, 16, 32)
+				for j := range batch.InputAmounts {
+					batch.InputAmounts[j] = new(big.Int).Set(large)
+				}
+				for j := range batch.OutputAmounts {
+					batch.OutputAmounts[j] = new(big.Int).Quo(large, big.NewInt(2))
+				}
+				refreshBatchFeasibilityPublicState(t, batch, 16, 32)
+				noteRelation = batch
+			}
+			f := newAuditFixture(t, kind, 16, 32, noteRelation)
 			full, err := frontend.NewWitness(f.assignment, ecc.BN254.ScalarField())
 			require.NoError(t, err)
 			public, err := full.Public()

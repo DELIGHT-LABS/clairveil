@@ -13,10 +13,10 @@ import (
 // or enable proof verification. Activation requires the P2-P8 release work.
 const (
 	AuditFieldCircuitSetID                    = auditfield.CircuitSetID
-	CircuitDepositAuditField        CircuitID = "deposit-audit-field-v1"
-	CircuitSpendAuditField          CircuitID = "spend-audit-field-v1"
-	CircuitJoinSplitAuditField      CircuitID = "joinsplit-2x2-audit-field-v1"
-	CircuitBatchJoinSplitAuditField CircuitID = "batch-joinsplit-16x32-audit-field-v1"
+	CircuitDepositAuditField        CircuitID = "deposit-audit-field-u128-v1"
+	CircuitSpendAuditField          CircuitID = "spend-audit-field-u128-v1"
+	CircuitJoinSplitAuditField      CircuitID = "joinsplit-2x2-audit-field-u128-v1"
+	CircuitBatchJoinSplitAuditField CircuitID = "batch-joinsplit-16x32-audit-field-u128-v1"
 )
 
 func AuditFieldCircuitIDs() []CircuitID {

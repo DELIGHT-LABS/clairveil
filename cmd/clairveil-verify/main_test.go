@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"github.com/stretchr/testify/require"
@@ -18,7 +19,7 @@ func TestVerifiedNoteDisplayUsesFixedRecoveryWire(t *testing.T) {
 	require.NoError(t, err)
 	x, y, err := privacycrypto.PublicPointFieldValues(*point)
 	require.NoError(t, err)
-	note, err := privacytypes.NewSecretNoteV1(x, y, x, y, 23, privacycrypto.FieldValueFromUint64(5), privacycrypto.FieldValueFromUint64(87654321), "memo")
+	note, err := privacytypes.NewSecretNoteV1(x, y, x, y, privacyamount.FromUint64(23), privacycrypto.FieldValueFromUint64(5), privacycrypto.FieldValueFromUint64(87654321), "memo")
 	require.NoError(t, err)
 	plaintext, err := privacytypes.MarshalSecretNotePlaintextV1(note)
 	require.NoError(t, err)

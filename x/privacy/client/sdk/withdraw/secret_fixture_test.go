@@ -1,6 +1,7 @@
 package withdraw
 
 import (
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"math/big"
@@ -21,11 +22,11 @@ func testSecretNoteFixture(n privacytypes.Note) privacytypes.SecretNoteV1 {
 		}
 		return f
 	}
-	var amount uint64
+	var nativeAmount privacyamount.Amount128
 	if n.Amount != nil {
-		amount = n.Amount.Uint64()
+		nativeAmount, _ = privacytypes.Amount128FromBigInt(n.Amount)
 	}
-	return privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: field(n.ReceiverSpendPubKeyX), ReceiverSpendPubKeyY: field(n.ReceiverSpendPubKeyY), ReceiverViewPubKeyX: field(n.ReceiverViewPubKeyX), ReceiverViewPubKeyY: field(n.ReceiverViewPubKeyY), Amount: amount, AssetID: field(n.AssetID), Randomness: field(n.Randomness), Memo: n.Memo}
+	return privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: field(n.ReceiverSpendPubKeyX), ReceiverSpendPubKeyY: field(n.ReceiverSpendPubKeyY), ReceiverViewPubKeyX: field(n.ReceiverViewPubKeyX), ReceiverViewPubKeyY: field(n.ReceiverViewPubKeyY), Amount: nativeAmount, AssetID: field(n.AssetID), Randomness: field(n.Randomness), Memo: n.Memo}
 }
 func testSecretFieldBig(v privacycrypto.FieldValue) *big.Int {
 	b := v.Bytes()

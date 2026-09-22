@@ -1,6 +1,7 @@
 package cli
 
 import (
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"math/big"
@@ -21,11 +22,11 @@ func testSecretNoteFixture(n privacytypes.Note) privacytypes.SecretNoteV1 {
 		}
 		return f
 	}
-	var amount uint64
+	var nativeAmount privacyamount.Amount128
 	if n.Amount != nil {
-		amount = n.Amount.Uint64()
+		nativeAmount, _ = privacytypes.Amount128FromBigInt(n.Amount)
 	}
-	return privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: field(n.ReceiverSpendPubKeyX), ReceiverSpendPubKeyY: field(n.ReceiverSpendPubKeyY), ReceiverViewPubKeyX: field(n.ReceiverViewPubKeyX), ReceiverViewPubKeyY: field(n.ReceiverViewPubKeyY), Amount: amount, AssetID: field(n.AssetID), Randomness: field(n.Randomness), Memo: n.Memo}
+	return privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: field(n.ReceiverSpendPubKeyX), ReceiverSpendPubKeyY: field(n.ReceiverSpendPubKeyY), ReceiverViewPubKeyX: field(n.ReceiverViewPubKeyX), ReceiverViewPubKeyY: field(n.ReceiverViewPubKeyY), Amount: nativeAmount, AssetID: field(n.AssetID), Randomness: field(n.Randomness), Memo: n.Memo}
 }
 func testSecretFieldBig(v privacycrypto.FieldValue) *big.Int {
 	b := v.Bytes()
@@ -54,5 +55,5 @@ func testLegacyDisclosureFixture(p *privacytypes.SecretDisclosurePlaintextV1) *p
 	if p == nil {
 		return nil
 	}
-	return &privacytypes.DisclosurePlaintextV1{Plane: p.Plane, OutputIndex: p.OutputIndex, Policy: p.Policy, DisclosedFieldBitmap: p.DisclosedFieldBitmap, Commitment: testSecretFieldBig(p.Commitment), Amount: new(big.Int).SetUint64(p.Amount), AssetID: testSecretFieldBig(p.AssetID), SenderSpendKeyX: testSecretFieldBig(p.SenderSpendKeyX), SenderSpendKeyY: testSecretFieldBig(p.SenderSpendKeyY), SenderViewKeyX: testSecretFieldBig(p.SenderViewKeyX), SenderViewKeyY: testSecretFieldBig(p.SenderViewKeyY), RecipientSpendKeyX: testSecretFieldBig(p.RecipientSpendKeyX), RecipientSpendKeyY: testSecretFieldBig(p.RecipientSpendKeyY), RecipientViewKeyX: testSecretFieldBig(p.RecipientViewKeyX), RecipientViewKeyY: testSecretFieldBig(p.RecipientViewKeyY), DisclosureBlinding: testSecretFieldBig(p.DisclosureBlinding)}
+	return &privacytypes.DisclosurePlaintextV1{Plane: p.Plane, OutputIndex: p.OutputIndex, Policy: p.Policy, DisclosedFieldBitmap: p.DisclosedFieldBitmap, Commitment: testSecretFieldBig(p.Commitment), Amount: privacytypes.Amount128BigInt(p.Amount), AssetID: testSecretFieldBig(p.AssetID), SenderSpendKeyX: testSecretFieldBig(p.SenderSpendKeyX), SenderSpendKeyY: testSecretFieldBig(p.SenderSpendKeyY), SenderViewKeyX: testSecretFieldBig(p.SenderViewKeyX), SenderViewKeyY: testSecretFieldBig(p.SenderViewKeyY), RecipientSpendKeyX: testSecretFieldBig(p.RecipientSpendKeyX), RecipientSpendKeyY: testSecretFieldBig(p.RecipientSpendKeyY), RecipientViewKeyX: testSecretFieldBig(p.RecipientViewKeyX), RecipientViewKeyY: testSecretFieldBig(p.RecipientViewKeyY), DisclosureBlinding: testSecretFieldBig(p.DisclosureBlinding)}
 }

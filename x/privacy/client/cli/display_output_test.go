@@ -64,7 +64,7 @@ func TestRenderListNotesText(t *testing.T) {
 	require.Contains(t, rendered, "\nSpendable note payloads (JSON):\n")
 	require.Contains(t, rendered, "[Note #01 - amount=7 asset_id="+uclairAssetIDHex+"]\n")
 	require.Contains(t, rendered, "[Note #02 - amount=2 asset_id="+uatomAssetIDHex+"]\n")
-	require.Contains(t, rendered, "\"am\":7")
+	require.Contains(t, rendered, `"am":"7"`)
 	require.NotContains(t, rendered, " uclair")
 }
 

@@ -141,3 +141,17 @@ func batchPlannerInput(paymentCount int, paymentAmount int64) PayrollInput {
 	}
 	return input
 }
+
+func TestBatchPayrollPlannerSplitsPaymentsAtUint128OperationLimit(t *testing.T) {
+	input := batchPlannerInput(2, 1)
+	input.Items[0].Amount = privacytypes.MaxShieldedAmount()
+	maximum := testTreasuryNote("maximum", input.Denom, 1, false, "")
+	maximum.Amount = privacytypes.MaxShieldedAmount()
+	one := testTreasuryNote("one", input.Denom, 1, false, "")
+	plan, err := (BatchPayrollPlanner{}).Plan(input, []TreasuryNote{maximum, one})
+	require.NoError(t, err)
+	require.Len(t, plan.Operations, 2)
+	require.Zero(t, plan.Operations[0].InputTotal.Cmp(privacytypes.MaxShieldedAmount()))
+	require.Equal(t, "1", plan.Operations[1].InputTotal.String())
+	require.Equal(t, "340282366920938463463374607431768211456", new(big.Int).Add(plan.Operations[0].PaymentTotal, plan.Operations[1].PaymentTotal).String())
+}

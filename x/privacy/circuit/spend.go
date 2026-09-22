@@ -6,6 +6,7 @@ import (
 	"github.com/consensys/gnark/std/hash/mimc"
 	"github.com/consensys/gnark/std/signature/eddsa"
 
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	ecc_twistededwards "github.com/consensys/gnark-crypto/ecc/twistededwards"
@@ -123,6 +124,6 @@ func (c *SpendCircuit) defineRelation(api frontend.API, finish func(frontend.Var
 	return nil
 }
 
-func assertAmountRange(api frontend.API, amount frontend.Variable) {
-	api.ToBinary(amount, privacytypes.ShieldedAmountBitLength)
+func assertAmountRange(api frontend.API, value frontend.Variable) {
+	api.ToBinary(value, amount.BitLength)
 }

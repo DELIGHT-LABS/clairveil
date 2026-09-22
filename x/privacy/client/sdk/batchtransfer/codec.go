@@ -5,18 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 // preparedNoteWire is the explicit private prover transport boundary. It keeps
-// the existing numeric Note JSON without constructing variable-width secrets.
+// the explicit Note JSON without constructing variable-width secrets.
 type preparedNoteWire struct {
 	SpendX     json.Number `json:"rsx"`
 	SpendY     json.Number `json:"rsy"`
 	ViewX      json.Number `json:"rvx"`
 	ViewY      json.Number `json:"rvy"`
-	Amount     uint64      `json:"am"`
+	Amount     string      `json:"am"`
 	Asset      json.Number `json:"as"`
 	Randomness json.Number `json:"rn"`
 	Memo       string      `json:"mm"`
@@ -62,7 +63,7 @@ func parseDecimalField(text json.Number) (privacycrypto.FieldValue, error) {
 	return privacycrypto.ParseFieldValueBE32(raw[:])
 }
 func noteWire(n privacytypes.SecretNoteV1) preparedNoteWire {
-	return preparedNoteWire{decimalField(n.ReceiverSpendPubKeyX), decimalField(n.ReceiverSpendPubKeyY), decimalField(n.ReceiverViewPubKeyX), decimalField(n.ReceiverViewPubKeyY), n.Amount, decimalField(n.AssetID), decimalField(n.Randomness), n.Memo}
+	return preparedNoteWire{decimalField(n.ReceiverSpendPubKeyX), decimalField(n.ReceiverSpendPubKeyY), decimalField(n.ReceiverViewPubKeyX), decimalField(n.ReceiverViewPubKeyY), n.Amount.String(), decimalField(n.AssetID), decimalField(n.Randomness), n.Memo}
 }
 func (w preparedNoteWire) note() (privacytypes.SecretNoteV1, error) {
 	var fields [6]privacycrypto.FieldValue
@@ -73,7 +74,11 @@ func (w preparedNoteWire) note() (privacytypes.SecretNoteV1, error) {
 		}
 		fields[i] = f
 	}
-	n, e := privacytypes.NewSecretNoteV1(fields[0], fields[1], fields[2], fields[3], w.Amount, fields[4], fields[5], w.Memo)
+	value, e := privacyamount.Parse(w.Amount)
+	if e != nil {
+		return privacytypes.SecretNoteV1{}, e
+	}
+	n, e := privacytypes.NewSecretNoteV1(fields[0], fields[1], fields[2], fields[3], value, fields[4], fields[5], w.Memo)
 	if e != nil {
 		return privacytypes.SecretNoteV1{}, e
 	}

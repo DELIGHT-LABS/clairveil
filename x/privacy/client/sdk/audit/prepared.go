@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"time"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -203,7 +204,7 @@ func buildPublicInputs(input PrepareInput, inputs, outputs []auditfield.Field32,
 		if err != nil {
 			return pi, err
 		}
-		pi[15], pi[16] = auditfield.Field32FromUint64(coin), asset
+		pi[15], pi[16] = auditfield.Field32(coin.Bytes32()), asset
 		pi[17], pi[18] = auditfield.DigestFields(digest)
 	}
 	h := sha256.Sum256(append([]byte(auditfield.AuditAuxDomain), auxBytes...))
@@ -211,15 +212,15 @@ func buildPublicInputs(input PrepareInput, inputs, outputs []auditfield.Field32,
 	return pi, nil
 }
 
-func parsePositiveCoin(value string) (uint64, error) {
+func parsePositiveCoin(value string) (privacyamount.Amount128, error) {
 	coin, err := sdk.ParseCoinNormalized(value)
 	if err != nil {
-		return 0, err
+		return privacyamount.Amount128{}, err
 	}
-	if !coin.IsPositive() || coin.String() != value || coin.Amount.BigInt().BitLen() > 64 {
-		return 0, fmt.Errorf("audit amount must be canonical positive uint64 coin")
+	if !coin.IsPositive() || coin.String() != value || coin.Amount.BigInt().BitLen() > privacyamount.BitLength {
+		return privacyamount.Amount128{}, fmt.Errorf("audit amount must be canonical positive uint128 coin")
 	}
-	return coin.Amount.Uint64(), nil
+	return privacyamount.Parse(coin.Amount.String())
 }
 
 func parseUniqueFields(raw [][]byte, name string) ([]auditfield.Field32, error) {

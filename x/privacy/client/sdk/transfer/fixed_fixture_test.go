@@ -1,6 +1,7 @@
 package transfer
 
 import (
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"math/big"
@@ -21,9 +22,9 @@ func testFixedNote(n privacytypes.Note) privacytypes.SecretNoteV1 {
 		}
 		return f
 	}
-	var amount uint64
+	var amount privacyamount.Amount128
 	if n.Amount != nil {
-		amount = n.Amount.Uint64()
+		amount, _ = privacytypes.Amount128FromBigInt(n.Amount)
 	}
 	return privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: field(n.ReceiverSpendPubKeyX), ReceiverSpendPubKeyY: field(n.ReceiverSpendPubKeyY), ReceiverViewPubKeyX: field(n.ReceiverViewPubKeyX), ReceiverViewPubKeyY: field(n.ReceiverViewPubKeyY), Amount: amount, AssetID: field(n.AssetID), Randomness: field(n.Randomness), Memo: n.Memo}
 }

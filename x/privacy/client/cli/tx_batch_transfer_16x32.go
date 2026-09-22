@@ -597,6 +597,9 @@ func selectBatchTransferInputs(found []FoundNote, denom string, target *big.Int,
 			}
 			inputs = append(inputs, privacybatchtransfer.InputNote{Note: selected.Note})
 		}
+		if sumBatchTransferInputs(inputs).Cmp(privacytypes.MaxShieldedAmount()) > 0 {
+			return nil, privacybatchtransfer.ErrPreparationRequired
+		}
 		if sumBatchTransferInputs(inputs).Cmp(target) < 0 {
 			return nil, fmt.Errorf("selected inputs do not fund batch payment total %s%s", target, denom)
 		}
@@ -621,7 +624,7 @@ func selectBatchTransferInputs(found []FoundNote, denom string, target *big.Int,
 	sort.SliceStable(candidates, func(i, j int) bool {
 		left, right := candidates[i].found.Note.Amount, candidates[j].found.Note.Amount
 		if left != right {
-			return left > right
+			return left.Cmp(right) > 0
 		}
 		return candidates[i].key < candidates[j].key
 	})
@@ -631,8 +634,12 @@ func selectBatchTransferInputs(found []FoundNote, denom string, target *big.Int,
 		if len(inputs) == int(privacytypes.BatchJoinSplitV1MaxInputs) {
 			break
 		}
+		nextTotal := new(big.Int).Add(total, privacytypes.Amount128BigInt(candidate.found.Note.Amount))
+		if nextTotal.Cmp(privacytypes.MaxShieldedAmount()) > 0 {
+			continue
+		}
 		inputs = append(inputs, privacybatchtransfer.InputNote{Note: candidate.found.Note})
-		total.Add(total, new(big.Int).SetUint64(candidate.found.Note.Amount))
+		total = nextTotal
 		if total.Cmp(target) >= 0 {
 			return inputs, nil
 		}
@@ -643,7 +650,7 @@ func selectBatchTransferInputs(found []FoundNote, denom string, target *big.Int,
 func sumBatchTransferInputs(inputs []privacybatchtransfer.InputNote) *big.Int {
 	total := new(big.Int)
 	for i := range inputs {
-		total.Add(total, new(big.Int).SetUint64(inputs[i].Note.Amount))
+		total.Add(total, privacytypes.Amount128BigInt(inputs[i].Note.Amount))
 	}
 	return total
 }

@@ -13,13 +13,13 @@ import (
 )
 
 const (
-	FixedPayloadVersionV1 = "privacy-fixed-v1"
+	FixedPayloadVersionV1 = "privacy-fixed-v2"
 
-	fixedBinaryVersionV1 uint16 = 1
+	fixedBinaryVersionV1 uint16 = 2
 	NoteMemoCapacityV1          = 128
 
-	NotePlaintextV1Size           = 350
-	DisclosurePlaintextV1Size     = 392
+	NotePlaintextV1Size           = 358
+	DisclosurePlaintextV1Size     = 400
 	EncryptedEnvelopeV1HeaderSize = 20
 
 	symmetricEnvelopeOverheadV1 = 12 + 16
@@ -27,9 +27,9 @@ const (
 )
 
 var (
-	notePlaintextV1DomainTag       = fixedDomainTagV1("clairveil.note-plaintext.v1")
-	disclosurePlaintextV1DomainTag = fixedDomainTagV1("clairveil.disclosure-plaintext.v1")
-	encryptedEnvelopeV1DomainTag   = fixedDomainTagV1("clairveil.encrypted-envelope.v1")
+	notePlaintextV1DomainTag       = fixedDomainTagV1("clairveil.note-plaintext.v2")
+	disclosurePlaintextV1DomainTag = fixedDomainTagV1("clairveil.disclosure-plaintext.v2")
+	encryptedEnvelopeV1DomainTag   = fixedDomainTagV1("clairveil.encrypted-envelope.v2")
 )
 
 type DisclosurePlaneV1 uint8
@@ -93,8 +93,8 @@ func MarshalNotePlaintextV1(note *Note) ([]byte, error) {
 	} {
 		offset = putFixedField(result, offset, field)
 	}
-	binary.BigEndian.PutUint64(result[offset:offset+8], note.Amount.Uint64())
-	offset += 8
+	note.Amount.FillBytes(result[offset : offset+16])
+	offset += 16
 	offset = putFixedField(result, offset, note.AssetID)
 	offset = putFixedField(result, offset, note.Randomness)
 	binary.BigEndian.PutUint16(result[offset:offset+2], uint16(len(memo)))
@@ -133,8 +133,8 @@ func UnmarshalNotePlaintextV1(encoded []byte) (*Note, error) {
 		fields = append(fields, value)
 		offset = next
 	}
-	amount := new(big.Int).SetUint64(binary.BigEndian.Uint64(encoded[offset : offset+8]))
-	offset += 8
+	amount := new(big.Int).SetBytes(encoded[offset : offset+16])
+	offset += 16
 	assetID, next, err := readFixedField(encoded, offset, "note asset id")
 	if err != nil {
 		return nil, err
@@ -193,8 +193,8 @@ func MarshalDisclosurePlaintextV1(payload *DisclosurePlaintextV1) ([]byte, error
 	binary.BigEndian.PutUint32(result[offset:offset+4], payload.DisclosedFieldBitmap)
 	offset += 4
 	offset = putFixedField(result, offset, payload.Commitment)
-	binary.BigEndian.PutUint64(result[offset:offset+8], payload.Amount.Uint64())
-	offset += 8
+	payload.Amount.FillBytes(result[offset : offset+16])
+	offset += 16
 	for _, field := range []*big.Int{
 		payload.AssetID,
 		payload.SenderSpendKeyX, payload.SenderSpendKeyY,
@@ -242,8 +242,8 @@ func UnmarshalDisclosurePlaintextV1(encoded []byte) (*DisclosurePlaintextV1, err
 	if err != nil {
 		return nil, err
 	}
-	payload.Amount = new(big.Int).SetUint64(binary.BigEndian.Uint64(encoded[offset : offset+8]))
-	offset += 8
+	payload.Amount = new(big.Int).SetBytes(encoded[offset : offset+16])
+	offset += 16
 	fields := []*(*big.Int){
 		&payload.AssetID,
 		&payload.SenderSpendKeyX, &payload.SenderSpendKeyY,

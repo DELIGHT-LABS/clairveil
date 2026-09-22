@@ -80,12 +80,12 @@ func (c AuditContext) validate() error {
 			return fmt.Errorf("audit context PI[%d]: %w", index, err)
 		}
 	}
-	for _, index := range [...]int{0, 1, 2, 3, 17, 18, 19, 20} {
+	for _, index := range [...]int{0, 1, 2, 3, 15, 17, 18, 19, 20} {
 		if err := validateUnsignedField(c.pi[index], 128); err != nil {
 			return fmt.Errorf("audit context PI[%d] must be uint128: %w", index, err)
 		}
 	}
-	for _, index := range [...]int{4, 7, 15} {
+	for _, index := range [...]int{4, 7} {
 		if err := validateUnsignedField(c.pi[index], 64); err != nil {
 			return fmt.Errorf("audit context PI[%d] must be uint64: %w", index, err)
 		}

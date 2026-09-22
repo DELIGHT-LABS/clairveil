@@ -64,7 +64,7 @@ func BuildUserDisclosureData(
 	}
 
 	if userPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
-		payload.Amount = fmt.Sprintf("%d", input.RecipientNote.Amount)
+		payload.Amount = input.RecipientNote.Amount.String()
 	}
 	if userPrivacyPolicy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0 {
 		payload.FromShieldedAddress = fromAddress
@@ -136,7 +136,7 @@ func BuildAuditDisclosureData(
 		CommitmentHex:       commitmentHex,
 		DisclosureDigestHex: digestHex,
 		BlindingHex:         blindingHex,
-		Amount:              fmt.Sprintf("%d", input.RecipientNote.Amount),
+		Amount:              input.RecipientNote.Amount.String(),
 		AssetIDHex:          assetIDHex,
 		FromShieldedAddress: fromAddress,
 		ToShieldedAddress:   toAddress,
@@ -195,7 +195,7 @@ func BuildSelfViewDisclosureData(
 		CommitmentHex:       commitmentHex,
 		DisclosureDigestHex: digestHex,
 		BlindingHex:         blindingHex,
-		Amount:              fmt.Sprintf("%d", input.RecipientNote.Amount),
+		Amount:              input.RecipientNote.Amount.String(),
 		AssetIDHex:          assetIDHex,
 		FromShieldedAddress: fromAddress,
 		ToShieldedAddress:   toAddress,
@@ -238,7 +238,6 @@ func marshalTransferDisclosurePlaintextV1(
 		Policy:               policy,
 		DisclosedFieldBitmap: policy,
 		Commitment:           commitment,
-		Amount:               0,
 		AssetID:              input.RecipientNote.AssetID,
 		SenderSpendKeyX:      privacycrypto.FieldValue{},
 		SenderSpendKeyY:      privacycrypto.FieldValue{},

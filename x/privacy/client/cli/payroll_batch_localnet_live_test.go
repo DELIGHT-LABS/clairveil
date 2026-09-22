@@ -214,8 +214,8 @@ func runBatchLocalnetGraphStage(t *testing.T, cfg batchLocalnetConfig) {
 	payload := readBatchLocalnetPayload(t, cfg.PreparedPath)
 	require.Len(t, payload.Inputs, 3)
 	require.Len(t, payload.Outputs, 4)
-	require.Equal(t, []uint64{5, 7, 9}, batchLocalnetInputAmounts(payload))
-	require.Equal(t, []uint64{4, 5, 9, 3}, batchLocalnetOutputAmounts(payload))
+	require.Equal(t, []string{"5", "7", "9"}, batchLocalnetInputAmounts(payload))
+	require.Equal(t, []string{"4", "5", "9", "3"}, batchLocalnetOutputAmounts(payload))
 
 	protector := newBatchLocalnetProtector(t, cfg.ArtifactKeyPath, true)
 	operation, notes := batchLocalnetPayrollOperation(t, cfg, payload, protector, "")
@@ -361,14 +361,14 @@ func runBatchLocalnetReconcileStage(t *testing.T, cfg batchLocalnetConfig) {
 	owner := payload.Inputs[0].Note
 	ownerAddress, err := batchLocalnetSecretNoteAddress(owner)
 	require.NoError(t, err)
-	expectedAmounts := []uint64{4, 5, 9, 3}
+	expectedAmounts := []string{"4", "5", "9", "3"}
 	observed := make([]privacyreservation.ObservedOutputEvidence, len(outputs))
 	userDisclosuresVerified := 0
 	for i, output := range outputs {
 		require.Equal(t, uint32(i), output.OutputIndex)
 		require.Equal(t, payload.MessageOutputs[i].Commitment, output.Commitment)
 		require.Equal(t, privacytypes.EventTypeBatchTransferV1, output.EventType)
-		require.Equal(t, expectedAmounts[i], payload.Outputs[i].Note.Amount)
+		require.Equal(t, expectedAmounts[i], payload.Outputs[i].Note.Amount.String())
 
 		recipientKeys := bobKeys
 		expectedRecipient := cfg.BobAddress
@@ -388,7 +388,7 @@ func runBatchLocalnetReconcileStage(t *testing.T, cfg batchLocalnetConfig) {
 		require.NoError(t, err)
 		require.True(t, commitment.Equal(expectedCommitment))
 		require.True(t, found.Note.AssetID.Equal(batchLocalnetPayloadAssetID(t, payload)))
-		require.Equal(t, expectedAmounts[i], found.Note.Amount)
+		require.Equal(t, expectedAmounts[i], found.Note.Amount.String())
 		recipientAddress, err := batchLocalnetSecretNoteAddress(found.Note)
 		require.NoError(t, err)
 		require.Equal(t, expectedRecipient, recipientAddress)
@@ -558,7 +558,7 @@ func batchLocalnetPayrollOperation(t *testing.T, cfg batchLocalnetConfig, payloa
 		require.NoError(t, err)
 		notes[i] = privacypayroll.TreasuryNote{
 			NoteID: fmt.Sprintf("%02d:%s", i, commitment), OwnerKeyID: "alice", NullifierLookupKey: lookup,
-			NullifierLookupKeyID: batchLocalnetLookupKeyID, Denom: "uclair", Amount: new(big.Int).SetUint64(input.Note.Amount),
+			NullifierLookupKeyID: batchLocalnetLookupKeyID, Denom: "uclair", Amount: privacytypes.Amount128BigInt(input.Note.Amount),
 		}
 	}
 	items := []privacypayroll.PayrollItemInput{
@@ -1021,18 +1021,18 @@ func readBatchLocalnetJSON(t *testing.T, path string, value any) {
 	require.NoError(t, decoder.Decode(value))
 }
 
-func batchLocalnetInputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []uint64 {
-	values := make([]uint64, len(payload.Inputs))
+func batchLocalnetInputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []string {
+	values := make([]string, len(payload.Inputs))
 	for i := range payload.Inputs {
-		values[i] = payload.Inputs[i].Note.Amount
+		values[i] = payload.Inputs[i].Note.Amount.String()
 	}
 	return values
 }
 
-func batchLocalnetOutputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []uint64 {
-	values := make([]uint64, len(payload.Outputs))
+func batchLocalnetOutputAmounts(payload *privacybatchtransfer.PreparedBatchTransferPayload) []string {
+	values := make([]string, len(payload.Outputs))
 	for i := range payload.Outputs {
-		values[i] = payload.Outputs[i].Note.Amount
+		values[i] = payload.Outputs[i].Note.Amount.String()
 	}
 	return values
 }

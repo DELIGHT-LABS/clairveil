@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
@@ -26,7 +27,7 @@ func TestP2PublicAndAuthorityBoundaries(t *testing.T) {
 				"negative_amount_alias": func(f *auditFixture) {
 					f.public.PublicAmount = new(big.Int).Sub(ecc.BN254.ScalarField(), big.NewInt(1))
 				},
-				"amount_overflow":   func(f *auditFixture) { f.public.PublicAmount = new(big.Int).Lsh(big.NewInt(1), 64) },
+				"amount_overflow":   func(f *auditFixture) { f.public.PublicAmount = new(big.Int).Lsh(big.NewInt(1), 128) },
 				"output_count_zero": func(f *auditFixture) { f.public.OutputCount = 63 },
 				"key_identity":      func(f *auditFixture) { f.public.PKx = 0; f.public.PKy = 1 },
 				"key_off_curve":     func(f *auditFixture) { f.public.PKx = 1; f.public.PKy = 1 },
@@ -159,5 +160,50 @@ func TestP2ExactDuplicateInputInflation(t *testing.T) {
 		w, err := frontend.NewWitness(f.assignment, ecc.BN254.ScalarField())
 		require.NoError(t, err)
 		require.Error(t, ccs.IsSolved(w))
+	}
+}
+
+// Each note is in range and all commitments, paths, disclosures and signatures
+// are rebuilt. Only the operation total distinguishes the two witnesses.
+func TestP2OperationAmountUint128Boundaries(t *testing.T) {
+	max := privacytypes.MaxShieldedAmount()
+	for _, kind := range []auditfield.Kind{auditfield.KindTransfer2x2, auditfield.KindBatch16x32} {
+		t.Run(kindName(kind), func(t *testing.T) {
+			var model frontend.Circuit = &JoinSplitAuditFieldV1{}
+			if kind == auditfield.KindBatch16x32 {
+				model = &BatchJoinSplitAuditFieldV1{}
+			}
+			ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, model)
+			require.NoError(t, err)
+			for _, overflow := range []bool{false, true} {
+				t.Run(fmt.Sprintf("overflow_%t", overflow), func(t *testing.T) {
+					input0 := new(big.Int).Sub(max, big.NewInt(1))
+					output1 := big.NewInt(0)
+					if overflow {
+						input0 = new(big.Int).Set(max)
+						output1 = big.NewInt(1)
+					}
+					var old frontend.Circuit
+					if kind == auditfield.KindTransfer2x2 {
+						old = buildJoinSplitAssignmentWithAmounts(t, [NumInputs]*big.Int{input0, big.NewInt(1)}, [NumOutputs]*big.Int{new(big.Int).Set(max), output1})
+					} else {
+						batch := buildBatchFeasibilityAssignment(t, 2, 2)
+						batch.InputAmounts[0], batch.InputAmounts[1] = input0, big.NewInt(1)
+						batch.OutputAmounts[0], batch.OutputAmounts[1] = new(big.Int).Set(max), output1
+						refreshBatchFeasibilityPublicState(t, batch, 2, 2)
+						old = batch
+					}
+					f := newAuditFixture(t, kind, 2, 2, old)
+					w, err := frontend.NewWitness(f.assignment, ecc.BN254.ScalarField())
+					require.NoError(t, err)
+					err = ccs.IsSolved(w)
+					if overflow {
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		})
 	}
 }

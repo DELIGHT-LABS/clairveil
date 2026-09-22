@@ -9,6 +9,8 @@ import (
 	"io"
 	"unicode/utf8"
 
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
+
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 )
 
@@ -20,7 +22,7 @@ type SecretNoteV1 struct {
 	ReceiverSpendPubKeyY privacycrypto.FieldValue
 	ReceiverViewPubKeyX  privacycrypto.FieldValue
 	ReceiverViewPubKeyY  privacycrypto.FieldValue
-	Amount               uint64
+	Amount               amount.Amount128
 	AssetID              privacycrypto.FieldValue
 	Randomness           privacycrypto.FieldValue
 	Memo                 string
@@ -83,7 +85,7 @@ func ComputeSecretAssetIDV1(canonicalDenom string) privacycrypto.FieldValue {
 // constructor intentionally does not accept legacy-integer compatibility values.
 func NewSecretNoteV1(
 	spendX, spendY, viewX, viewY privacycrypto.FieldValue,
-	amount uint64,
+	amount amount.Amount128,
 	assetID, randomness privacycrypto.FieldValue,
 	memo string,
 ) (*SecretNoteV1, error) {
@@ -140,7 +142,7 @@ func (note SecretNoteV1) ValidateV1() error {
 func NewRandomSecretNoteV1(
 	reader io.Reader,
 	spendX, spendY, viewX, viewY privacycrypto.FieldValue,
-	amount uint64,
+	amount amount.Amount128,
 	assetID privacycrypto.FieldValue,
 	memo string,
 ) (*SecretNoteV1, error) {
@@ -186,7 +188,7 @@ func SecretNoteCommitmentV1(note SecretNoteV1) (privacycrypto.FieldValue, error)
 		note.ReceiverSpendPubKeyY,
 		note.ReceiverViewPubKeyX,
 		note.ReceiverViewPubKeyY,
-		privacycrypto.FieldValueFromUint64(note.Amount),
+		Amount128FieldValue(note.Amount),
 		note.AssetID,
 		note.Randomness,
 	)
@@ -212,7 +214,7 @@ type SecretTransferDisclosureV1Input struct {
 	Policy      uint32
 	OutputIndex uint32
 	Commitment  privacycrypto.FieldValue
-	Amount      uint64
+	Amount      amount.Amount128
 	AssetID     privacycrypto.FieldValue
 
 	FromSpendPubKeyX privacycrypto.FieldValue
@@ -243,7 +245,7 @@ func SecretTransferDisclosureDigestV1(input SecretTransferDisclosureV1Input) (pr
 
 	amount := zero
 	if input.Policy&TransferPrivacyPolicyDiscloseAmount != 0 {
-		amount = privacycrypto.FieldValueFromUint64(input.Amount)
+		amount = Amount128FieldValue(input.Amount)
 	}
 	fromSpendX, fromSpendY, fromViewX, fromViewY := zero, zero, zero, zero
 	if input.Policy&TransferPrivacyPolicyDiscloseFrom != 0 {
@@ -271,7 +273,7 @@ func SecretTransferDisclosureDigestV1(input SecretTransferDisclosureV1Input) (pr
 type SecretFullTransferDisclosureV1Input struct {
 	OutputIndex uint32
 	Commitment  privacycrypto.FieldValue
-	Amount      uint64
+	Amount      amount.Amount128
 	AssetID     privacycrypto.FieldValue
 
 	FromSpendPubKeyX privacycrypto.FieldValue
@@ -294,7 +296,7 @@ func SecretFullTransferDisclosureDigestV1(input SecretFullTransferDisclosureV1In
 		privacycrypto.FieldValueFromUint64(uint64(TransferAuditDisclosureDomain)),
 		privacycrypto.FieldValueFromUint64(uint64(input.OutputIndex)),
 		input.Commitment,
-		privacycrypto.FieldValueFromUint64(input.Amount), input.AssetID,
+		Amount128FieldValue(input.Amount), input.AssetID,
 		input.FromSpendPubKeyX, input.FromSpendPubKeyY, input.FromViewPubKeyX, input.FromViewPubKeyY,
 		input.ToSpendPubKeyX, input.ToSpendPubKeyY, input.ToViewPubKeyX, input.ToViewPubKeyY,
 		input.Blinding,
@@ -306,7 +308,7 @@ type SecretBatchUserDisclosureV1Input struct {
 	Commitment           privacycrypto.FieldValue
 	Policy               uint32
 	DisclosedFieldBitmap uint32
-	SelectedAmount       uint64
+	SelectedAmount       amount.Amount128
 	SelectedFromSpendX   privacycrypto.FieldValue
 	SelectedFromSpendY   privacycrypto.FieldValue
 	SelectedFromViewX    privacycrypto.FieldValue
@@ -341,7 +343,7 @@ func SecretBatchUserDisclosureDigestV1(input SecretBatchUserDisclosureV1Input) (
 	if input.AssetID.IsZero() {
 		return privacycrypto.FieldValue{}, fmt.Errorf("user disclosure asset ID must be non-zero")
 	}
-	if input.Policy&TransferPrivacyPolicyDiscloseAmount == 0 && input.SelectedAmount != 0 {
+	if input.Policy&TransferPrivacyPolicyDiscloseAmount == 0 && !input.SelectedAmount.IsZero() {
 		return privacycrypto.FieldValue{}, fmt.Errorf("undisclosed amount must use zero sentinel")
 	}
 	if err := validateSecretBatchDisclosureBundle(
@@ -363,7 +365,7 @@ func SecretBatchUserDisclosureDigestV1(input SecretBatchUserDisclosureV1Input) (
 		DomainFieldValueV1(BatchUserDisclosureV2DomainLabel),
 		privacycrypto.FieldValueFromUint64(uint64(input.OutputIndex)), input.Commitment,
 		privacycrypto.FieldValueFromUint64(uint64(input.Policy)), privacycrypto.FieldValueFromUint64(uint64(input.DisclosedFieldBitmap)),
-		privacycrypto.FieldValueFromUint64(input.SelectedAmount),
+		Amount128FieldValue(input.SelectedAmount),
 		input.SelectedFromSpendX, input.SelectedFromSpendY, input.SelectedFromViewX, input.SelectedFromViewY,
 		input.SelectedToSpendX, input.SelectedToSpendY, input.SelectedToViewX, input.SelectedToViewY,
 		input.AssetID, input.Blinding,
@@ -373,7 +375,7 @@ func SecretBatchUserDisclosureDigestV1(input SecretBatchUserDisclosureV1Input) (
 type SecretBatchFullDisclosureV1Input struct {
 	OutputIndex     uint32
 	Commitment      privacycrypto.FieldValue
-	Amount          uint64
+	Amount          amount.Amount128
 	AssetID         privacycrypto.FieldValue
 	SenderSpendX    privacycrypto.FieldValue
 	SenderSpendY    privacycrypto.FieldValue
@@ -395,7 +397,7 @@ type SecretDisclosurePlaintextV1 struct {
 	Policy               uint32
 	DisclosedFieldBitmap uint32
 	Commitment           privacycrypto.FieldValue
-	Amount               uint64
+	Amount               amount.Amount128
 	AssetID              privacycrypto.FieldValue
 	SenderSpendKeyX      privacycrypto.FieldValue
 	SenderSpendKeyY      privacycrypto.FieldValue
@@ -430,8 +432,8 @@ func MarshalSecretDisclosurePlaintextV1(payload *SecretDisclosurePlaintextV1) ([
 	offset += 4
 	commitment := payload.Commitment.Bytes()
 	offset = putFixedBytes(result, offset, commitment[:])
-	binary.BigEndian.PutUint64(result[offset:offset+8], payload.Amount)
-	offset += 8
+	amountBytes := payload.Amount.Bytes16()
+	offset = putFixedBytes(result, offset, amountBytes[:])
 	for _, field := range []privacycrypto.FieldValue{
 		payload.AssetID,
 		payload.SenderSpendKeyX, payload.SenderSpendKeyY,
@@ -479,8 +481,10 @@ func UnmarshalSecretDisclosurePlaintextV1(encoded []byte) (*SecretDisclosurePlai
 		return nil, fmt.Errorf("disclosure commitment: %w", err)
 	}
 	offset += 32
-	amount := binary.BigEndian.Uint64(encoded[offset : offset+8])
-	offset += 8
+	var amountBytes [16]byte
+	copy(amountBytes[:], encoded[offset:offset+16])
+	value := amount.FromBytes16(amountBytes)
+	offset += 16
 	fields := make([]privacycrypto.FieldValue, 0, 10)
 	for i := 0; i < 10; i++ {
 		field, err := privacycrypto.ParseFieldValueBE32(encoded[offset : offset+32])
@@ -494,7 +498,7 @@ func UnmarshalSecretDisclosurePlaintextV1(encoded []byte) (*SecretDisclosurePlai
 		return nil, fmt.Errorf("DisclosurePlaintextV1 trailing bytes are not allowed")
 	}
 	payload := &SecretDisclosurePlaintextV1{
-		Plane: plane, OutputIndex: outputIndex, Policy: policy, DisclosedFieldBitmap: bitmap, Commitment: commitment, Amount: amount,
+		Plane: plane, OutputIndex: outputIndex, Policy: policy, DisclosedFieldBitmap: bitmap, Commitment: commitment, Amount: value,
 		AssetID: fields[0], SenderSpendKeyX: fields[1], SenderSpendKeyY: fields[2], SenderViewKeyX: fields[3], SenderViewKeyY: fields[4],
 		RecipientSpendKeyX: fields[5], RecipientSpendKeyY: fields[6], RecipientViewKeyX: fields[7], RecipientViewKeyY: fields[8], DisclosureBlinding: fields[9],
 	}
@@ -549,7 +553,7 @@ func SecretBatchFullDisclosureDigestV1(input SecretBatchFullDisclosureV1Input) (
 	return privacycrypto.LegacyMiMCHash(
 		DomainFieldValueV1(BatchFullDisclosureV2DomainLabel),
 		privacycrypto.FieldValueFromUint64(uint64(input.OutputIndex)), input.Commitment,
-		privacycrypto.FieldValueFromUint64(input.Amount), input.AssetID,
+		Amount128FieldValue(input.Amount), input.AssetID,
 		input.SenderSpendX, input.SenderSpendY, input.SenderViewX, input.SenderViewY,
 		input.RecipientSpendX, input.RecipientSpendY, input.RecipientViewX, input.RecipientViewY,
 		input.Blinding,
@@ -557,7 +561,7 @@ func SecretBatchFullDisclosureDigestV1(input SecretBatchFullDisclosureV1Input) (
 }
 
 func allZeroSecretBatchUserSelectedFields(input SecretBatchUserDisclosureV1Input) bool {
-	if input.SelectedAmount != 0 {
+	if !input.SelectedAmount.IsZero() {
 		return false
 	}
 	return allZeroSecretFields(
@@ -634,8 +638,8 @@ func MarshalSecretNotePlaintextV1(note *SecretNoteV1) ([]byte, error) {
 		encoded := field.Bytes()
 		offset = putFixedBytes(result, offset, encoded[:])
 	}
-	binary.BigEndian.PutUint64(result[offset:offset+8], note.Amount)
-	offset += 8
+	amountBytes := note.Amount.Bytes16()
+	offset = putFixedBytes(result, offset, amountBytes[:])
 	for _, field := range []privacycrypto.FieldValue{note.AssetID, note.Randomness} {
 		encoded := field.Bytes()
 		offset = putFixedBytes(result, offset, encoded[:])
@@ -679,8 +683,10 @@ func UnmarshalSecretNotePlaintextV1(encoded []byte) (*SecretNoteV1, error) {
 		fields = append(fields, field)
 		offset += 32
 	}
-	amount := binary.BigEndian.Uint64(encoded[offset : offset+8])
-	offset += 8
+	var amountBytes [16]byte
+	copy(amountBytes[:], encoded[offset:offset+16])
+	value := amount.FromBytes16(amountBytes)
+	offset += 16
 	assetID, err := privacycrypto.ParseFieldValueBE32(encoded[offset : offset+32])
 	if err != nil {
 		return nil, fmt.Errorf("note asset id: %w", err)
@@ -710,7 +716,7 @@ func UnmarshalSecretNotePlaintextV1(encoded []byte) (*SecretNoteV1, error) {
 	note := &SecretNoteV1{
 		ReceiverSpendPubKeyX: fields[0], ReceiverSpendPubKeyY: fields[1],
 		ReceiverViewPubKeyX: fields[2], ReceiverViewPubKeyY: fields[3],
-		Amount: amount, AssetID: assetID, Randomness: randomness,
+		Amount: value, AssetID: assetID, Randomness: randomness,
 		Memo: string(memoRegion[:memoLength]),
 	}
 	if err := note.ValidateV1(); err != nil {
@@ -743,7 +749,7 @@ func validateSecretDisclosurePlaintextV1(p *SecretDisclosurePlaintextV1) error {
 		if p.DisclosedFieldBitmap != policy {
 			return fmt.Errorf("user disclosure bitmap must equal policy in v1")
 		}
-		if policy&TransferPrivacyPolicyDiscloseAmount == 0 && p.Amount != 0 {
+		if policy&TransferPrivacyPolicyDiscloseAmount == 0 && !p.Amount.IsZero() {
 			return fmt.Errorf("undisclosed amount must use zero sentinel")
 		}
 	case DisclosurePlaneFullV1:
@@ -783,4 +789,14 @@ func validateSecretDisclosurePlaintextV1(p *SecretDisclosurePlaintextV1) error {
 		}
 	}
 	return nil
+}
+
+// Amount128FieldValue embeds the full amount without reduction or truncation.
+func Amount128FieldValue(value amount.Amount128) privacycrypto.FieldValue {
+	raw := value.Bytes32()
+	field, err := privacycrypto.ParseFieldValueBE32(raw[:])
+	if err != nil {
+		panic("uint128 amount is outside the field")
+	}
+	return field
 }

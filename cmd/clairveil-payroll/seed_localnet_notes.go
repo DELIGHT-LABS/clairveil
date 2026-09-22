@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"math/big"
 	"os"
@@ -144,8 +146,12 @@ func buildSeededPayrollNotes(shieldedAddress string, count int, amount *big.Int,
 	}
 	notes := make([]privacyscan.SecretFoundNote, 0, count*2)
 	commitments := make([][]byte, 0, count*2)
+	nativeAmount, err := privacytypes.Amount128FromBigInt(amount)
+	if err != nil {
+		return nil, nil, err
+	}
 	for i := 0; i < count; i++ {
-		for _, value := range []uint64{amount.Uint64(), 0} {
+		for _, value := range []privacyamount.Amount128{nativeAmount, {}} {
 			note, err := privacytypes.NewRandomSecretNoteV1(rand.Reader, spendX, spendY, viewX, viewY, value, asset, fmt.Sprintf("localnet payroll seed %d", len(notes)+1))
 			if err != nil {
 				return nil, nil, err
@@ -224,7 +230,7 @@ func writeSeededListNotes(path string, notes []privacyscan.SecretFoundNote) erro
 		payload.Notes = append(payload.Notes, listNotesFileNote{
 			Index:     i + 1,
 			Status:    "spendable",
-			Amount:    fmt.Sprintf("%d", note.Note.Amount),
+			Amount:    note.Note.Amount.String(),
 			Nullifier: note.Nullifier,
 			TxHash:    note.TxHash,
 			Height:    note.Height,

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
@@ -730,7 +731,7 @@ func testWithdrawFoundNote(amount int64, denom string, randomness int64) privacy
 	if err != nil {
 		panic(err)
 	}
-	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, uint64(amount), privacytypes.ComputeSecretAssetIDV1(denom), privacycrypto.FieldValueFromUint64(uint64(randomness)), "")
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, privacyamount.FromUint64(uint64(amount)), privacytypes.ComputeSecretAssetIDV1(denom), privacycrypto.FieldValueFromUint64(uint64(randomness)), "")
 	if err != nil {
 		panic(err)
 	}

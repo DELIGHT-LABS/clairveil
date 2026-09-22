@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"testing"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmttypes "github.com/cometbft/cometbft/rpc/core/types"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
@@ -308,7 +309,7 @@ func goldenSecretNote(t *testing.T, spend, view *crypto_tedwards.PointAffine, am
 	require.NoError(t, err)
 	viewX, viewY, err := privacycrypto.PublicPointFieldValues(*view)
 	require.NoError(t, err)
-	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, amount, privacytypes.ComputeSecretAssetIDV1("uclair"), privacycrypto.FieldValueFromUint64(randomness), memo)
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, privacyamount.FromUint64(amount), privacytypes.ComputeSecretAssetIDV1("uclair"), privacycrypto.FieldValueFromUint64(randomness), memo)
 	require.NoError(t, err)
 	return *note
 }

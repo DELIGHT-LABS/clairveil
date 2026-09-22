@@ -67,8 +67,8 @@ func TestBatchJoinSplit16x32MaxWireStateFeasibilityGate(t *testing.T) {
 		result.QueryResponseBytes,
 	)
 
-	const goldenTxBytes = 65294
-	const goldenTypedScanKVBytes = 75105
+	const goldenTxBytes = 66318
+	const goldenTypedScanKVBytes = 76129
 	require.Equal(t, goldenTxBytes, result.TxBytes)
 	require.Equal(t, goldenTypedScanKVBytes, result.TypedScanKVBytes)
 }

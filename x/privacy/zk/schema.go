@@ -20,7 +20,7 @@ type PublicInputField struct {
 var publicInputSchemas = map[string][]PublicInputField{
 	"deposit": {
 		{Name: "Commitment", Encoding: "bn254-fr"},
-		{Name: "Amount", Encoding: "uint64"},
+		{Name: "Amount", Encoding: "uint128"},
 		{Name: "AssetID", Encoding: "bn254-fr"},
 	},
 	"spend": {
@@ -29,7 +29,7 @@ var publicInputSchemas = map[string][]PublicInputField{
 		{Name: "ChainDomainLo", Encoding: "uint128"},
 		{Name: "ExpiresAtUnix", Encoding: "uint64"},
 		{Name: "Nullifier", Encoding: "bn254-fr"},
-		{Name: "Amount", Encoding: "uint64"},
+		{Name: "Amount", Encoding: "uint128"},
 		{Name: "RecipientDigestHi", Encoding: "uint128"},
 		{Name: "RecipientDigestLo", Encoding: "uint128"},
 		{Name: "AssetID", Encoding: "bn254-fr"},

@@ -33,8 +33,8 @@ func TestSummarizeSpendableNotesByDenom(t *testing.T) {
 	spendable, total := summarizeSpendableNotesByDenom(notes, "uclair")
 
 	require.Len(t, spendable, 2)
-	require.Equal(t, int64(5), int64(spendable[0].Note.Amount))
-	require.Equal(t, int64(13), int64(spendable[1].Note.Amount))
+	require.Equal(t, int64(5), types.Amount128BigInt(spendable[0].Note.Amount).Int64())
+	require.Equal(t, int64(13), types.Amount128BigInt(spendable[1].Note.Amount).Int64())
 	require.Equal(t, int64(18), total.Int64())
 }
 
@@ -93,7 +93,7 @@ func TestBuildListNotesJSONOutput(t *testing.T) {
 	require.Equal(t, "aa", output.Notes[0].Nullifier)
 	require.Equal(t, "A1", output.Notes[0].TxHash)
 	require.Equal(t, int64(3), output.Notes[0].Height)
-	require.Equal(t, int64(5), int64(output.Notes[0].Note.Amount))
+	require.Equal(t, int64(5), types.Amount128BigInt(output.Notes[0].Note.Amount).Int64())
 	require.Equal(t, "spent", output.Notes[1].Status)
 	require.Equal(t, "7", output.Notes[1].Amount)
 }
@@ -119,4 +119,16 @@ func TestPlannerStateFingerprintUsesSortedSameDenomSpendableNotes(t *testing.T) 
 	}
 
 	require.Equal(t, plannerStateFingerprint(left, "uclair", big.NewInt(7)), plannerStateFingerprint(right, "uclair", big.NewInt(7)))
+}
+
+func TestListNotesJSONKeepsDifferentAssetsSeparate(t *testing.T) {
+	notes := []FoundNote{
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(5), AssetID: types.ComputeAssetIDV1("uclair")})},
+		{Note: testSecretNoteFixture(types.Note{Amount: big.NewInt(7), AssetID: types.ComputeAssetIDV1("uatom")})},
+	}
+	output := buildListNotesJSONOutput(notes, nil)
+	require.Empty(t, output.Summary.TotalSpendable)
+	require.Len(t, output.Summary.SpendableByAsset, 2)
+	require.Equal(t, "5", output.Summary.SpendableByAsset[noteAssetIDHex(notes[0].Note)])
+	require.Equal(t, "7", output.Summary.SpendableByAsset[noteAssetIDHex(notes[1].Note)])
 }

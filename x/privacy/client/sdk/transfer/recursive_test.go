@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"testing"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/stretchr/testify/require"
 
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
@@ -266,7 +267,7 @@ func (s *stubRecursiveTransferObserver) OnWaitForBlock(_ int, _ string, _ int64)
 
 func recursiveTransferFoundNote(amount int64, denom string, nullifier string, height int64) privacyscan.SecretFoundNote {
 	return privacyscan.SecretFoundNote{
-		Note:      privacytypes.SecretNoteV1{Amount: uint64(amount), AssetID: privacytypes.ComputeSecretAssetIDV1(denom), Randomness: privacycrypto.FieldValueFromUint64(uint64(amount) + 500)},
+		Note:      privacytypes.SecretNoteV1{Amount: privacyamount.FromUint64(uint64(amount)), AssetID: privacytypes.ComputeSecretAssetIDV1(denom), Randomness: privacycrypto.FieldValueFromUint64(uint64(amount) + 500)},
 		Nullifier: nullifier,
 		Height:    height,
 		IsSpent:   false,

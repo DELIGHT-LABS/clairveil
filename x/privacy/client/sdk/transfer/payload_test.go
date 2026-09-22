@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -110,21 +111,21 @@ func TestJoinSplitStructuredSigningBoundaryRejectsSecretProjectionMutationBefore
 			name: "recipient_commitment",
 			want: "recipient output SecretNoteV1 does not match",
 			mutate: func(request *JoinSplitOwnerIntentSigningRequestV1) {
-				request.RecipientOutputNote.Amount++
+				request.RecipientOutputNote.Amount, _ = request.RecipientOutputNote.Amount.Add(privacyamount.FromUint64(1))
 			},
 		},
 		{
 			name: "change_commitment",
 			want: "change output SecretNoteV1 does not match",
 			mutate: func(request *JoinSplitOwnerIntentSigningRequestV1) {
-				request.ChangeOutputNote.Amount++
+				request.ChangeOutputNote.Amount, _ = request.ChangeOutputNote.Amount.Add(privacyamount.FromUint64(1))
 			},
 		},
 		{
 			name: "amount_conservation",
 			want: "amounts are not conserved",
 			mutate: func(request *JoinSplitOwnerIntentSigningRequestV1) {
-				request.RecipientOutputNote.Amount++
+				request.RecipientOutputNote.Amount, _ = request.RecipientOutputNote.Amount.Add(privacyamount.FromUint64(1))
 				commitment, err := request.RecipientOutputNote.CommitmentV1()
 				require.NoError(t, err)
 				request.Effect.NewCommitments[privacytypes.TransferDisclosureRecipientOutputIndex] = fieldValueBytes(commitment)

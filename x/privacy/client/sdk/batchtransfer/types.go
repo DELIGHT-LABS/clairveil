@@ -3,6 +3,8 @@ package batchtransfer
 import (
 	"context"
 	"errors"
+
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"math/big"
 	"time"
@@ -132,7 +134,7 @@ type BatchTransferSigningOutput struct {
 	Commitment             []byte
 	RecipientSpendPubKey   []byte
 	RecipientViewPubKey    []byte
-	Amount                 uint64
+	Amount                 privacyamount.Amount128
 	AssetID                privacycrypto.FieldValue
 	Randomness             privacycrypto.FieldValue
 	PrivacyPolicy          uint32
@@ -147,7 +149,7 @@ type BatchTransferSigningInput struct {
 	Nullifier   []byte
 	SpendPubKey []byte
 	ViewPubKey  []byte
-	Amount      uint64
+	Amount      privacyamount.Amount128
 	AssetID     privacycrypto.FieldValue
 	Randomness  privacycrypto.FieldValue
 }

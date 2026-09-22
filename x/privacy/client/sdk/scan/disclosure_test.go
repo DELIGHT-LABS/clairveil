@@ -45,7 +45,7 @@ func TestVerifyPrivacyScanDisclosuresSeparatesDigestMismatch(t *testing.T) {
 }
 
 func TestVerifyPrivacyScanDisclosuresMarksAuditDeliveryFailure(t *testing.T) {
-	raw := make([]byte, 452) // DisclosurePlaintextV1 plus ECIES overhead.
+	raw := make([]byte, 460) // DisclosurePlaintextV1 plus ECIES overhead.
 	envelope, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeAuditDisclosureV1, raw)
 	require.NoError(t, err)
 	output := &privacytypes.PrivacyScanOutputV2{AuditDisclosurePayload: envelope}

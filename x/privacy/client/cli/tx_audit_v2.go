@@ -213,7 +213,11 @@ func buildAuditV2DepositOutput(spend *crypto_tedwards.PointAffine, seed []byte, 
 	if err != nil {
 		return nil, privacytypes.SecretNoteV1{}, nil, err
 	}
-	note, err := privacytypes.NewRandomSecretNoteV1(rand.Reader, spendX, spendY, viewX, viewY, coin.Amount.Uint64(), asset, "")
+	nativeAmount, err := privacytypes.Amount128FromBigInt(coin.Amount.BigInt())
+	if err != nil {
+		return nil, privacytypes.SecretNoteV1{}, nil, err
+	}
+	note, err := privacytypes.NewRandomSecretNoteV1(rand.Reader, spendX, spendY, viewX, viewY, nativeAmount, asset, "")
 	if err != nil {
 		return nil, privacytypes.SecretNoteV1{}, nil, err
 	}
@@ -250,7 +254,7 @@ func buildAuditV2DepositOutput(spend *crypto_tedwards.PointAffine, seed []byte, 
 			fields[i+1] = field
 		}
 	}
-	fields[1] = auditfield.Field32FromUint64(coin.Amount.Uint64())
+	fields[1] = auditfield.Field32(note.Amount.Bytes32())
 	commitmentRaw := commitment.Bytes()
 	return &privacyv2.OutputEffect{Commitment: commitmentRaw[:], Ciphertext: cipher}, *note, fields, nil
 }

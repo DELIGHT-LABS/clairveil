@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"testing"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -239,7 +238,7 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 					TxHash:                  depositFound[0].TxHash,
 					Height:                  depositFound[0].Height,
 					Nullifier:               depositFound[0].Nullifier,
-					Amount:                  strconv.FormatUint(depositFound[0].Note.Amount, 10),
+					Amount:                  depositFound[0].Note.Amount.String(),
 					AssetDenom:              assetDenom,
 					ReceiverShieldedAddress: receiverAddress,
 				},
@@ -249,7 +248,7 @@ func buildReadonlyReferenceBundle(t *testing.T) readonlyReferenceBundle {
 					TxHash:                  transferFound[0].TxHash,
 					Height:                  transferFound[0].Height,
 					Nullifier:               transferFound[0].Nullifier,
-					Amount:                  strconv.FormatUint(transferFound[0].Note.Amount, 10),
+					Amount:                  transferFound[0].Note.Amount.String(),
 					AssetDenom:              assetDenom,
 					ReceiverShieldedAddress: receiverAddress,
 				},

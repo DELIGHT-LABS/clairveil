@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
-	"math/bits"
 
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark/std/signature/eddsa"
@@ -91,13 +90,17 @@ func PrepareJoinSplitTransfer(
 	if err := privacytypes.ValidateDistinctCanonicalFieldElements("input nullifier", inputNullifierCandidates); err != nil {
 		return nil, fmt.Errorf("joinsplit inputs must be distinct: %w", err)
 	}
-	total, carry := bits.Add64(input.Inputs[0].Note.Amount, input.Inputs[1].Note.Amount, 0)
-	changeAmount, borrow := bits.Sub64(total, input.TransferAmount.Uint64(), 0)
-	if carry < borrow {
-		return nil, fmt.Errorf("transfer amount exceeds selected input total")
+	total, err := input.Inputs[0].Note.Amount.Add(input.Inputs[1].Note.Amount)
+	if err != nil {
+		return nil, fmt.Errorf("input amount exceeds 128-bit shielded amount limit: %w", err)
 	}
-	if carry > borrow {
-		return nil, fmt.Errorf("change amount exceeds 64-bit shielded amount limit")
+	transferAmount, err := privacytypes.Amount128FromBigInt(input.TransferAmount)
+	if err != nil {
+		return nil, err
+	}
+	changeAmount, err := total.Sub(transferAmount)
+	if err != nil {
+		return nil, fmt.Errorf("transfer amount exceeds selected input total")
 	}
 
 	recipientSpendX, recipientSpendY, err := privacycrypto.PublicPointFieldValues(*input.RecipientSpendPubKey)
@@ -117,7 +120,7 @@ func PrepareJoinSplitTransfer(
 		return nil, fmt.Errorf("sender view key: %w", err)
 	}
 	asset := input.Inputs[0].Note.AssetID
-	secretOutputs, err := PrepareSecretJoinSplitOutputsForAsset(rand.Reader, asset, input.TransferAmount.Uint64(), changeAmount, recipientSpendX, recipientSpendY, recipientViewX, recipientViewY, senderSpendX, senderSpendY, senderViewX, senderViewY)
+	secretOutputs, err := PrepareSecretJoinSplitOutputsForAsset(rand.Reader, asset, transferAmount, changeAmount, recipientSpendX, recipientSpendY, recipientViewX, recipientViewY, senderSpendX, senderSpendY, senderViewX, senderViewY)
 	if err != nil {
 		return nil, err
 	}

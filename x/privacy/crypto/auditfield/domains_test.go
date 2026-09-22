@@ -12,7 +12,7 @@ func TestT03DomainEncodingGolden(t *testing.T) {
 		nonce[i] = byte(i)
 	}
 	network, err := NetworkDigest("clairveil-test-1", nonce)
-	if err != nil || hex.EncodeToString(network[:]) != "9b0a38d675a601eef36d47307aa2fb9d682a66575e314670d0b81c88ea0d344b" {
+	if err != nil || hex.EncodeToString(network[:]) != "f716881994be624ec522af811e8ff2da16fa90e4aa0207a247cd9842d033217a" {
 		t.Fatalf("network golden mismatch: %x %v", network, err)
 	}
 	changed, _ := NetworkDigest("clairveil-test-2", nonce)

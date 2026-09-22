@@ -179,10 +179,10 @@ func TestPrivacyBatchJoinSplitV1ContractIndependentGolden(t *testing.T) {
 	require.Equal(t, "[a-z0-9][a-z0-9._-]*", fixture.AuditKeyID.Charset)
 	require.Equal(t, privacytypes.CanonicalBatchTransferPayloadFormatVersionV1, fixture.CanonicalPayload.FormatVersion)
 	require.Equal(t, privacytypes.BatchTransferPayloadV1ByteDomain, fixture.CanonicalPayload.SHA256Domain)
-	require.Equal(t, 3702, fixture.CanonicalPayload.GoldenPayloadBytes)
-	require.Equal(t, "f2588c7543fb83a7822aa0043e4747af0ac4c9dc14a038c230850f1cab5e24b0", fixture.CanonicalPayload.DigestHex)
-	require.Equal(t, "322132945931579789235567236199104333743", fixture.CanonicalPayload.DigestHi)
-	require.Equal(t, "14314064343031468430392382204273370288", fixture.CanonicalPayload.DigestLo)
+	require.Equal(t, 3758, fixture.CanonicalPayload.GoldenPayloadBytes)
+	require.Equal(t, "5f6c662da6d43aba68b9129a0da45724abe7d28a305f51e51f5884c5049611d7", fixture.CanonicalPayload.DigestHex)
+	require.Equal(t, "126839500082966736162019468705546917668", fixture.CanonicalPayload.DigestHi)
+	require.Equal(t, "14314064343031468430392382204273375888", fixture.CanonicalPayload.DigestLo)
 	require.Equal(t, []string{"creator", "proof"}, fixture.CanonicalPayload.ExcludedFields)
 	schemaDigest, err := privacyzk.PublicInputSchemaSHA256(fixture.CircuitID)
 	require.NoError(t, err)
@@ -249,12 +249,12 @@ func TestPrivacyBatchJoinSplitV1ContractIndependentGolden(t *testing.T) {
 
 	effectBytes := referenceBatchEffectContract(fixture)
 	require.Equal(t, fixture.Effect.IDHex, hex.EncodeToString(effectBytes[:]))
-	require.Equal(t, 65384, fixture.WireState.CanonicalPayloadBytes)
-	require.Equal(t, 65294, fixture.WireState.TxBytes)
-	require.Equal(t, 75105, fixture.WireState.TypedScanKVBytes)
-	require.Equal(t, 173409, fixture.WireState.TotalKVWriteBytes)
+	require.Equal(t, 66408, fixture.WireState.CanonicalPayloadBytes)
+	require.Equal(t, 66318, fixture.WireState.TxBytes)
+	require.Equal(t, 76129, fixture.WireState.TypedScanKVBytes)
+	require.Equal(t, 174433, fixture.WireState.TotalKVWriteBytes)
 	require.Equal(t, 584, fixture.WireState.ABCIEventBytes)
-	require.Equal(t, 74551, fixture.WireState.QueryResponseBytes)
+	require.Equal(t, 75575, fixture.WireState.QueryResponseBytes)
 }
 
 func loadProtocolContractFixture(t *testing.T, name string, target any) {

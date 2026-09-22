@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
 	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
@@ -209,7 +210,7 @@ func BuildPreparedTransferPayload(
 		}
 
 		payload.Inputs = append(payload.Inputs, PreparedTransferInput{
-			Amount:           strconv.FormatUint(foundNote.Note.Amount, 10),
+			Amount:           foundNote.Note.Amount.String(),
 			RandomnessHex:    randomnessHex,
 			SpendPubKeyHex:   spendPubKeyHex,
 			ViewPubKeyHex:    viewPubKeyHex,
@@ -231,7 +232,7 @@ func BuildPreparedTransferPayload(
 		}
 
 		payload.Outputs = append(payload.Outputs, PreparedTransferOutput{
-			Amount:         strconv.FormatUint(outputNote.Amount, 10),
+			Amount:         outputNote.Amount.String(),
 			RandomnessHex:  randomnessHex,
 			SpendPubKeyHex: spendPubKeyHex,
 			ViewPubKeyHex:  viewPubKeyHex,
@@ -975,13 +976,19 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		return nil, fmt.Errorf("invalid owner intent signature: %w", err)
 	}
 
+	var inputTotal, outputTotal privacyamount.Amount128
 	for i, input := range payload.Inputs {
 		amount, err := parseDecimalField(input.Amount, "input amount")
 		if err != nil {
 			return nil, err
 		}
-		if !amount.IsUint64() {
-			return nil, fmt.Errorf("input amount exceeds uint64")
+		nativeAmount, err := privacytypes.Amount128FromBigInt(amount)
+		if err != nil {
+			return nil, err
+		}
+		inputTotal, err = inputTotal.Add(nativeAmount)
+		if err != nil {
+			return nil, fmt.Errorf("input operation total exceeds uint128: %w", err)
 		}
 		randomness, err := decodeSecretPayloadField(input.RandomnessHex, "input randomness")
 		if err != nil {
@@ -1007,7 +1014,7 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		if err != nil {
 			return nil, fmt.Errorf("input view pubkey %d: %w", i, err)
 		}
-		note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, amount.Uint64(), assetID, randomness, "")
+		note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, nativeAmount, assetID, randomness, "")
 		if err != nil {
 			return nil, fmt.Errorf("invalid input note %d: %w", i, err)
 		}
@@ -1039,8 +1046,13 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		if err != nil {
 			return nil, err
 		}
-		if !amount.IsUint64() {
-			return nil, fmt.Errorf("output amount exceeds uint64")
+		nativeAmount, err := privacytypes.Amount128FromBigInt(amount)
+		if err != nil {
+			return nil, err
+		}
+		outputTotal, err = outputTotal.Add(nativeAmount)
+		if err != nil {
+			return nil, fmt.Errorf("output operation total exceeds uint128: %w", err)
 		}
 		randomness, err := decodeSecretPayloadField(output.RandomnessHex, "output randomness")
 		if err != nil {
@@ -1066,7 +1078,7 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 		if err != nil {
 			return nil, fmt.Errorf("output view pubkey %d: %w", i, err)
 		}
-		note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, amount.Uint64(), assetID, randomness, "")
+		note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, nativeAmount, assetID, randomness, "")
 		if err != nil {
 			return nil, fmt.Errorf("invalid output note %d: %w", i, err)
 		}
@@ -1087,6 +1099,9 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 
 	}
 
+	if inputTotal != outputTotal {
+		return nil, fmt.Errorf("operation amounts do not conserve")
+	}
 	return assignment, nil
 }
 

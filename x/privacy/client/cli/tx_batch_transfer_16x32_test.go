@@ -92,14 +92,14 @@ func TestSelectBatchTransferInputsAutomaticAndExplicit(t *testing.T) {
 	automatic, err := selectBatchTransferInputs(found, "uclair", big.NewInt(12), nil)
 	require.NoError(t, err)
 	require.Len(t, automatic, 2)
-	require.Equal(t, int64(9), int64(automatic[0].Note.Amount))
-	require.Equal(t, int64(5), int64(automatic[1].Note.Amount))
+	require.Equal(t, int64(9), privacytypes.Amount128BigInt(automatic[0].Note.Amount).Int64())
+	require.Equal(t, int64(5), privacytypes.Amount128BigInt(automatic[1].Note.Amount).Int64())
 
 	explicit, err := selectBatchTransferInputs(found, "uclair", big.NewInt(7), []int{1, 5})
 	require.NoError(t, err)
 	require.Len(t, explicit, 2)
-	require.Equal(t, int64(2), int64(explicit[0].Note.Amount))
-	require.Equal(t, int64(5), int64(explicit[1].Note.Amount))
+	require.Equal(t, int64(2), privacytypes.Amount128BigInt(explicit[0].Note.Amount).Int64())
+	require.Equal(t, int64(5), privacytypes.Amount128BigInt(explicit[1].Note.Amount).Int64())
 
 	_, err = selectBatchTransferInputs(found, "uclair", big.NewInt(1), []int{2})
 	require.ErrorContains(t, err, "spent or does not use denom")

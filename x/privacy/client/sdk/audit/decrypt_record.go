@@ -3,6 +3,7 @@ package audit
 import (
 	"fmt"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
 )
@@ -14,7 +15,7 @@ import (
 type AuditNote struct {
 	Commitment auditfield.Field32
 	Asset      auditfield.Field32
-	Amount     uint64
+	Amount     privacyamount.Amount128
 	SpendX     auditfield.Field32
 	SpendY     auditfield.Field32
 	ViewX      auditfield.Field32
@@ -104,7 +105,7 @@ func decodeAuditPlain(record VerifiedAuditRecord, fields []auditfield.Field32) (
 		if index+5 > len(fields) {
 			return AuditNote{}, fmt.Errorf("truncated decrypted audit output")
 		}
-		amount, err := fieldUint64(fields[index])
+		amount, err := fieldAmount128(fields[index])
 		if err != nil {
 			return AuditNote{}, err
 		}
@@ -116,8 +117,8 @@ func decodeAuditPlain(record VerifiedAuditRecord, fields []auditfield.Field32) (
 		if len(fields) != 6 || len(record.record.outputs) != 1 || public[16] != asset {
 			return auditfield.Field32{}, nil, nil, fmt.Errorf("invalid decrypted deposit plaintext")
 		}
-		amount, err := fieldUint64(fields[1])
-		if err != nil || amount == 0 || public[15] != auditfield.Field32FromUint64(amount) {
+		amount, err := fieldAmount128(fields[1])
+		if err != nil || amount.IsZero() || public[15] != auditfield.Field32(amount.Bytes32()) {
 			return auditfield.Field32{}, nil, nil, fmt.Errorf("deposit plaintext amount does not match PI")
 		}
 		note, err := newOutput(1, record.record.outputs[0].Commitment)
@@ -129,7 +130,7 @@ func decodeAuditPlain(record VerifiedAuditRecord, fields []auditfield.Field32) (
 		if len(fields) != 2 || len(record.record.inputs) != 1 || public[16] != asset || fields[1].IsZero() {
 			return auditfield.Field32{}, nil, nil, fmt.Errorf("invalid decrypted withdraw plaintext")
 		}
-		if _, err := fieldUint64(public[15]); err != nil || public[15].IsZero() {
+		if _, err := fieldAmount128(public[15]); err != nil || public[15].IsZero() {
 			return auditfield.Field32{}, nil, nil, fmt.Errorf("invalid withdraw public amount")
 		}
 		return asset, []auditfield.Field32{fields[1]}, nil, nil

@@ -116,7 +116,7 @@ func TestRemoveTransferBatchInputsFallsBackToCommitmentKey(t *testing.T) {
 	remaining := removeTransferBatchInputs([]FoundNote{selected, other}, [2]FoundNote{selected, selected})
 
 	require.Len(t, remaining, 1)
-	require.Equal(t, int64(7), int64(remaining[0].Note.Amount))
+	require.Equal(t, int64(7), privacytypes.Amount128BigInt(remaining[0].Note.Amount).Int64())
 }
 
 func TestTransferBatchOutputItemsIncludeMessageEvidence(t *testing.T) {

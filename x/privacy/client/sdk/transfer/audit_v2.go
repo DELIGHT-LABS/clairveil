@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycircuit "github.com/DELIGHT-LABS/clairveil/x/privacy/circuit"
 	privacyaudit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/audit"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
@@ -135,7 +136,7 @@ func auditPlainFromPreparedNormal(normal *PreparedJoinSplitTransfer) ([]auditfie
 		plain = append(plain, field)
 	}
 	for _, note := range []privacytypes.SecretNoteV1{normal.RecipientNote, normal.ChangeNote} {
-		for _, value := range []privacycrypto.FieldValue{privacycrypto.FieldValueFromUint64(note.Amount), note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY, note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY} {
+		for _, value := range []privacycrypto.FieldValue{privacytypes.Amount128FieldValue(note.Amount), note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY, note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY} {
 			field, err := auditFieldFromValue(value)
 			if err != nil {
 				return nil, err
@@ -299,8 +300,8 @@ func auditPlainFromPreparedPayload(payload PreparedTransferPayload) ([]auditfiel
 }
 
 func auditNoteFromPayload(amountText, randomnessHex, spendPubKeyHex, viewPubKeyHex string, asset privacycrypto.FieldValue) (privacytypes.SecretNoteV1, error) {
-	amount, err := parseDecimalField(amountText, "note amount")
-	if err != nil || !amount.IsUint64() {
+	value, err := privacyamount.Parse(amountText)
+	if err != nil {
 		return privacytypes.SecretNoteV1{}, fmt.Errorf("invalid note amount")
 	}
 	randomness, err := decodeSecretPayloadField(randomnessHex, "note randomness")
@@ -323,7 +324,7 @@ func auditNoteFromPayload(amountText, randomnessHex, spendPubKeyHex, viewPubKeyH
 	if err != nil {
 		return privacytypes.SecretNoteV1{}, err
 	}
-	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, amount.Uint64(), asset, randomness, "")
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, value, asset, randomness, "")
 	if err != nil {
 		return privacytypes.SecretNoteV1{}, err
 	}
@@ -331,7 +332,7 @@ func auditNoteFromPayload(amountText, randomnessHex, spendPubKeyHex, viewPubKeyH
 }
 
 func appendAuditNoteRecipientFields(plain []auditfield.Field32, note privacytypes.SecretNoteV1) ([]auditfield.Field32, error) {
-	for _, value := range []privacycrypto.FieldValue{privacycrypto.FieldValueFromUint64(note.Amount), note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY, note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY} {
+	for _, value := range []privacycrypto.FieldValue{privacytypes.Amount128FieldValue(note.Amount), note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY, note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY} {
 		field, err := auditFieldFromValue(value)
 		if err != nil {
 			return nil, err

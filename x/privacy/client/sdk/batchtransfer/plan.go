@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
@@ -36,6 +37,7 @@ func PlanBatchTransfer(input PlanBatchTransferInput) (*BatchTransferPlan, error)
 	}
 
 	inputTotal, paymentTotal := new(big.Int), new(big.Int)
+	var inputTotalNative privacyamount.Amount128
 	seen := make(map[string]struct{}, len(input.Inputs))
 	var asset privacycrypto.FieldValue
 	assetSet := false
@@ -67,7 +69,12 @@ func PlanBatchTransfer(input PlanBatchTransferInput) (*BatchTransferPlan, error)
 			return nil, fmt.Errorf("duplicate input nullifier at index %d", i)
 		}
 		seen[nullifier] = struct{}{}
-		inputTotal.Add(inputTotal, new(big.Int).SetUint64(note.Amount))
+		nextTotal, err := inputTotalNative.Add(note.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("operation total exceeds uint128: %w", err)
+		}
+		inputTotalNative = nextTotal
+		inputTotal = privacytypes.Amount128BigInt(nextTotal)
 	}
 
 	outputs := make([]PlannedOutput, 0, 32)

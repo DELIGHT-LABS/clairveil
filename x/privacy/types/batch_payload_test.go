@@ -25,9 +25,9 @@ func TestCanonicalBatchTransferPayloadV1IndependentGolden(t *testing.T) {
 	require.Equal(t, new(big.Int).SetBytes(referenceHash[16:]), digest.Lo)
 
 	t.Logf("payload_bytes=%d digest=%s hi=%s lo=%s", len(encoded), hex.EncodeToString(referenceHash[:]), digest.Hi, digest.Lo)
-	const goldenDigestHex = "f2588c7543fb83a7822aa0043e4747af0ac4c9dc14a038c230850f1cab5e24b0"
-	const goldenHi = "322132945931579789235567236199104333743"
-	const goldenLo = "14314064343031468430392382204273370288"
+	const goldenDigestHex = "5f6c662da6d43aba68b9129a0da45724abe7d28a305f51e51f5884c5049611d7"
+	const goldenHi = "126839500082966736162019468705546917668"
+	const goldenLo = "228501678108015868430545328377806852567"
 	require.Equal(t, goldenDigestHex, hex.EncodeToString(referenceHash[:]))
 	require.Equal(t, goldenHi, digest.Hi.String())
 	require.Equal(t, goldenLo, digest.Lo.String())
@@ -71,8 +71,8 @@ func TestCanonicalMsgBatchTransferPayloadV1MatchesFrozenPrototypeExactly(t *test
 	productionDigest, err := ComputeMsgBatchTransferPayloadDigestV1(production)
 	require.NoError(t, err)
 	require.Equal(t, prototypeDigest, productionDigest)
-	require.Equal(t, "322132945931579789235567236199104333743", productionDigest.Hi.String())
-	require.Equal(t, "14314064343031468430392382204273370288", productionDigest.Lo.String())
+	require.Equal(t, "126839500082966736162019468705546917668", productionDigest.Hi.String())
+	require.Equal(t, "228501678108015868430545328377806852567", productionDigest.Lo.String())
 
 	// creator and proof are outer transaction framing, not owner-effect fields.
 	// Canonical bytes/digest/size must therefore be available before proving and
@@ -118,11 +118,11 @@ func TestCanonicalMsgBatchTransferPayloadSizeV1MaxShapeGolden(t *testing.T) {
 	msg := maxProductionBatchPayloadTestMessage(t)
 	payload, err := CanonicalMsgBatchTransferPayloadBytesV1(msg)
 	require.NoError(t, err)
-	require.Len(t, payload, 65_384)
+	require.Len(t, payload, 66_408)
 
 	size, err := CanonicalMsgBatchTransferPayloadSizeV1(msg)
 	require.NoError(t, err)
-	require.Equal(t, uint64(65_384), size)
+	require.Equal(t, uint64(66_408), size)
 	require.Less(t, msg.Size(), MaxBatchTransferMessageBytesV1)
 	require.NoError(t, ValidateMsgBatchTransferFramingV1(msg))
 }
@@ -145,12 +145,12 @@ func TestValidateMsgBatchTransferFramingV1Bounds(t *testing.T) {
 		{"no outputs", func(msg *MsgBatchTransfer) { msg.Outputs = nil }, "output count must be in 1..32"},
 		{"root length", func(msg *MsgBatchTransfer) { msg.Root = msg.Root[:31] }, "merkle root must be exactly 32 bytes"},
 		{"nullifier length", func(msg *MsgBatchTransfer) { msg.Nullifiers[0] = msg.Nullifiers[0][:31] }, "nullifier 0 must be exactly 32 bytes"},
-		{"ciphertext length", func(msg *MsgBatchTransfer) { msg.Outputs[0].Ciphertext = msg.Outputs[0].Ciphertext[:429] }, "ciphertext must be exactly 430 bytes"},
+		{"ciphertext length", func(msg *MsgBatchTransfer) { msg.Outputs[0].Ciphertext = msg.Outputs[0].Ciphertext[:429] }, "ciphertext must be exactly 438 bytes"},
 		{"view tag length", func(msg *MsgBatchTransfer) { msg.Outputs[0].ViewTag = msg.Outputs[0].ViewTag[:1] }, "view tag must be exactly 2 bytes"},
 		{"user payload length", func(msg *MsgBatchTransfer) { msg.Outputs[1].UserDisclosurePayload = []byte{1} }, "user disclosure payload has invalid fixed length"},
 		{"full digest length", func(msg *MsgBatchTransfer) { msg.Outputs[0].FullDisclosureDigest = nil }, "full disclosure digest must be exactly 32 bytes"},
-		{"audit payload length", func(msg *MsgBatchTransfer) { msg.Outputs[0].AuditDisclosurePayload = nil }, "audit disclosure payload must be exactly 472 bytes"},
-		{"self view length", func(msg *MsgBatchTransfer) { msg.Outputs[0].SelfViewDisclosurePayload = []byte{1} }, "self-view disclosure payload must be empty or exactly 472 bytes"},
+		{"audit payload length", func(msg *MsgBatchTransfer) { msg.Outputs[0].AuditDisclosurePayload = nil }, "audit disclosure payload must be exactly 480 bytes"},
+		{"self view length", func(msg *MsgBatchTransfer) { msg.Outputs[0].SelfViewDisclosurePayload = []byte{1} }, "self-view disclosure payload must be empty or exactly 480 bytes"},
 		{"audit target length", func(msg *MsgBatchTransfer) { msg.AuditDisclosureTargetPubkey = nil }, "audit disclosure target pubkey must be exactly 32 bytes"},
 		{"hard cap", func(msg *MsgBatchTransfer) {
 			msg.Creator = string(bytes.Repeat([]byte{'a'}, MaxBatchTransferMessageBytesV1))

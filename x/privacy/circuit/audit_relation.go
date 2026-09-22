@@ -42,9 +42,10 @@ func (p *AuditPublic) constrain(api frontend.API, kind auditfield.Kind) {
 	for _, v := range []frontend.Variable{p.NetworkHi, p.NetworkLo, p.KeyIDHi, p.KeyIDLo, p.PublicTargetHi, p.PublicTargetLo, p.AuxHi, p.AuxLo} {
 		api.ToBinary(v, 128)
 	}
-	for _, v := range []frontend.Variable{p.KeyEpoch, p.ExpiresAtUnix, p.PublicAmount} {
+	for _, v := range []frontend.Variable{p.KeyEpoch, p.ExpiresAtUnix} {
 		api.ToBinary(v, 64)
 	}
+	assertAmountRange(api, p.PublicAmount)
 	api.AssertIsDifferent(p.KeyEpoch, 0)
 	api.AssertIsDifferent(p.ExpiresAtUnix, 0)
 	api.ToBinary(p.InputCount, 5)

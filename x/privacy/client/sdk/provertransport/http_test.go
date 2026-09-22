@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/stretchr/testify/require"
 
 	privacydeposit "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/deposit"
@@ -39,7 +40,7 @@ func testDepositProofRequest(t testing.TB) (*DepositProofRequest, []byte) {
 	require.NoError(t, err)
 	viewX, viewY, err := privacycrypto.PublicPointFieldValues(*viewKey)
 	require.NoError(t, err)
-	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, 7, privacycrypto.FieldValueFromUint64(11), privacycrypto.FieldValueFromUint64(13), "")
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, privacyamount.FromUint64(7), privacycrypto.FieldValueFromUint64(11), privacycrypto.FieldValueFromUint64(13), "")
 	require.NoError(t, err)
 	payload, err := privacydeposit.BuildPreparedDepositProverPayload(*note)
 	require.NoError(t, err)

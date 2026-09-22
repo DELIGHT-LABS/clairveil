@@ -32,7 +32,7 @@ type AuditConfigV1 struct {
 }
 
 var RequiredCircuitIdentityOrder = []string{"deposit", "spend", "joinsplit", "batch-joinsplit-16x32-v1"}
-var RequiredAuditCircuitIdentityOrder = []string{"deposit-audit-field-v1", "spend-audit-field-v1", "joinsplit-2x2-audit-field-v1", "batch-joinsplit-16x32-audit-field-v1"}
+var RequiredAuditCircuitIdentityOrder = []string{"deposit-audit-field-u128-v1", "spend-audit-field-u128-v1", "joinsplit-2x2-audit-field-u128-v1", "batch-joinsplit-16x32-audit-field-u128-v1"}
 
 // DefaultGenesis returns the default genesis state for a specific circuit set.
 func DefaultGenesis(identity *CircuitSetIdentity) *GenesisState {

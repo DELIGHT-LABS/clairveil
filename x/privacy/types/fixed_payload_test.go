@@ -22,7 +22,7 @@ func TestNotePlaintextV1FixedRoundTripAndGolden(t *testing.T) {
 	require.Equal(t, note.Memo, decoded.Memo)
 
 	digest := sha256.Sum256(encoded)
-	const goldenSHA256 = "370bba3105acbcc05c14d158cdaffdaa2526fd13dfe1026e9e396e369527b626"
+	const goldenSHA256 = "11a47d03cb2ab0cc28ca7017dc06122fc73cefc6d0d157051f2c37fb622a17e3"
 	require.Equal(t, goldenSHA256, hex.EncodeToString(digest[:]))
 }
 
@@ -71,7 +71,7 @@ func TestDisclosurePlaintextV1FixedRoundTripAndGolden(t *testing.T) {
 	require.Equal(t, payload.DisclosureBlinding.String(), decoded.DisclosureBlinding.String())
 
 	digest := sha256.Sum256(encoded)
-	const goldenSHA256 = "ed8eed29ced0945a5aa9fc1c4d9d499ca7b01a4fffbc0ff449f71fc7c799df38"
+	const goldenSHA256 = "5e621200eacff0343f0e2bd81feb1f913d16600821a7a9806fb7890c7513548d"
 	require.Equal(t, goldenSHA256, hex.EncodeToString(digest[:]))
 }
 

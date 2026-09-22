@@ -4,9 +4,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
-	"strconv"
 	"strings"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
@@ -151,10 +151,10 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 	if err != nil {
 		return "", nil, err
 	}
-	var amount uint64
+	var value privacyamount.Amount128
 	if payload.Amount != "" {
-		amount, err = strconv.ParseUint(payload.Amount, 10, 64)
-		if err != nil || strconv.FormatUint(amount, 10) != payload.Amount {
+		value, err = privacyamount.Parse(payload.Amount)
+		if err != nil {
 			return "", nil, fmt.Errorf("disclosure amount must be a canonical non-negative decimal string")
 		}
 	}
@@ -197,13 +197,13 @@ func ComputeExpectedDisclosureDigest(payload *Payload) (string, *VerificationRep
 	switch payload.Plane {
 	case PlaneUser:
 		digest, err = privacytypes.SecretTransferDisclosureDigestV1(privacytypes.SecretTransferDisclosureV1Input{
-			Policy: payload.Policy, OutputIndex: payload.OutputIndex, Commitment: commitment, Amount: amount, AssetID: asset,
+			Policy: payload.Policy, OutputIndex: payload.OutputIndex, Commitment: commitment, Amount: value, AssetID: asset,
 			FromSpendPubKeyX: f[0], FromSpendPubKeyY: f[1], FromViewPubKeyX: f[2], FromViewPubKeyY: f[3],
 			ToSpendPubKeyX: t[0], ToSpendPubKeyY: t[1], ToViewPubKeyX: t[2], ToViewPubKeyY: t[3], Blinding: blinding,
 		})
 	case PlaneAudit, PlaneSelfView:
 		digest, err = privacytypes.SecretFullTransferDisclosureDigestV1(privacytypes.SecretFullTransferDisclosureV1Input{
-			OutputIndex: payload.OutputIndex, Commitment: commitment, Amount: amount, AssetID: asset,
+			OutputIndex: payload.OutputIndex, Commitment: commitment, Amount: value, AssetID: asset,
 			FromSpendPubKeyX: f[0], FromSpendPubKeyY: f[1], FromViewPubKeyX: f[2], FromViewPubKeyY: f[3],
 			ToSpendPubKeyX: t[0], ToSpendPubKeyY: t[1], ToViewPubKeyX: t[2], ToViewPubKeyY: t[3], Blinding: blinding,
 		})
@@ -320,7 +320,7 @@ func payloadFromFixedV1(fixed *privacytypes.SecretDisclosurePlaintextV1, envelop
 
 	payload.AssetIDHex = fixedFieldHex(fixed.AssetID)
 	if fixed.Plane == privacytypes.DisclosurePlaneFullV1 || fixed.Policy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
-		payload.Amount = strconv.FormatUint(fixed.Amount, 10)
+		payload.Amount = fixed.Amount.String()
 	}
 	var err error
 	if fixed.Plane == privacytypes.DisclosurePlaneFullV1 || fixed.Policy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0 {

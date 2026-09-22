@@ -70,8 +70,8 @@ func TestSelectInputsFallsBackToPositivePairWhenSingleNoteNeedsZero(t *testing.T
 	require.False(t, needZero)
 	require.True(t, isFinal)
 	require.Equal(t, int64(21), total.Int64())
-	require.Equal(t, int64(10), int64(inputs[0].Note.Amount))
-	require.Equal(t, int64(11), int64(inputs[1].Note.Amount))
+	require.Equal(t, int64(10), privacytypes.Amount128BigInt(inputs[0].Note.Amount).Int64())
+	require.Equal(t, int64(11), privacytypes.Amount128BigInt(inputs[1].Note.Amount).Int64())
 }
 
 func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T) {
@@ -85,8 +85,8 @@ func TestSelectInputsChoosesSmallestSufficientPairDeterministically(t *testing.T
 	require.False(t, needZero)
 	require.True(t, isFinal)
 	require.Equal(t, int64(12), total.Int64())
-	require.Equal(t, int64(5), int64(inputs[0].Note.Amount))
-	require.Equal(t, int64(7), int64(inputs[1].Note.Amount))
+	require.Equal(t, int64(5), privacytypes.Amount128BigInt(inputs[0].Note.Amount).Int64())
+	require.Equal(t, int64(7), privacytypes.Amount128BigInt(inputs[1].Note.Amount).Int64())
 }
 
 func TestSelectInputsChoosesLargestMergePairWhenNoFinalPairExists(t *testing.T) {
@@ -100,6 +100,6 @@ func TestSelectInputsChoosesLargestMergePairWhenNoFinalPairExists(t *testing.T) 
 	require.False(t, needZero)
 	require.False(t, isFinal)
 	require.Equal(t, int64(12), total.Int64())
-	require.Equal(t, int64(3), int64(inputs[0].Note.Amount))
-	require.Equal(t, int64(9), int64(inputs[1].Note.Amount))
+	require.Equal(t, int64(3), privacytypes.Amount128BigInt(inputs[0].Note.Amount).Int64())
+	require.Equal(t, int64(9), privacytypes.Amount128BigInt(inputs[1].Note.Amount).Int64())
 }

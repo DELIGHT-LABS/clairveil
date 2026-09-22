@@ -21,7 +21,7 @@ func TestFindExactMatchSpendableNoteByDenomIgnoresDifferentDenom(t *testing.T) {
 	selected := FindExactMatchSpendableNoteByDenom(notes, "uclair", big.NewInt(10))
 	require.NotNil(t, selected)
 	require.Equal(t, 0, testSecretFieldBig(selected.Note.AssetID).Cmp(privacytypes.ComputeAssetIDV1("uclair")))
-	require.Equal(t, int64(10), int64(selected.Note.Amount))
+	require.Equal(t, int64(10), privacytypes.Amount128BigInt(selected.Note.Amount).Int64())
 	require.False(t, selected.IsSpent)
 }
 

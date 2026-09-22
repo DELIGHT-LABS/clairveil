@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"testing"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	cmttypes "github.com/cometbft/cometbft/rpc/core/types"
 	"github.com/stretchr/testify/require"
 
@@ -215,7 +216,7 @@ func TestTypedScannerSkipsForeignDepositAndRecoversOwnedDeposit(t *testing.T) {
 	result, err := SyncNotes(context.Background(), source, &stubBatchNullifierUsageChecker{batchUsed: used}, nil, SyncInput{UserAddress: "clair1typed", RootSeed: rootSeed, Wallet: &LocalWalletData{}})
 	require.NoError(t, err)
 	require.Len(t, result.Notes, 1)
-	require.Equal(t, uint64(2), result.Notes[0].Note.Amount)
+	require.Equal(t, privacyamount.FromUint64(2), result.Notes[0].Note.Amount)
 	require.Equal(t, uint64(8), result.Wallet.LastSequence)
 }
 

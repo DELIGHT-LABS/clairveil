@@ -81,7 +81,7 @@ func PrepareAuditV2FromNormalNote(snapshot privacyaudit.Snapshot, creator, amoun
 	return PrepareAuditV2(privacyaudit.PrepareInput{
 		Snapshot: snapshot, Kind: auditfield.KindDeposit, Creator: creator, Amount: amount, ExpiresAtUnix: expiresAtUnix,
 		Outputs: []*privacyv2.OutputEffect{output}, PublicAsset: assetRaw[:], Principal: bytes.Clone(creatorAddress),
-		Plaintext: []auditfield.Field32{asset, auditfield.Field32FromUint64(note.Amount), spendX, spendY, viewX, viewY},
+		Plaintext: []auditfield.Field32{asset, auditfield.Field32(note.Amount.Bytes32()), spendX, spendY, viewX, viewY},
 	})
 }
 

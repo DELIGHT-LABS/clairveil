@@ -145,8 +145,8 @@ func ValidateAuditMessage(raw sdk.Msg) (ValidatedAuditMessage, error) {
 		if err != nil {
 			return fail(err)
 		}
-		if !coin.IsPositive() || coin.String() != amount || coin.Amount.BigInt().BitLen() > 64 {
-			return fail(fmt.Errorf("audit amount must be canonical positive uint64 coin"))
+		if !coin.IsPositive() || coin.String() != amount || coin.Amount.BigInt().BitLen() > ShieldedAmountBitLength {
+			return fail(fmt.Errorf("audit amount must be canonical positive uint128 coin"))
 		}
 		m.coin = coin
 	}

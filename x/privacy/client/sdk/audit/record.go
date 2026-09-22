@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/big"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	privacyzk "github.com/DELIGHT-LABS/clairveil/x/privacy/zk"
@@ -46,7 +47,7 @@ type TransparentAuditEffect struct {
 	From   []byte
 	To     []byte
 	Denom  string
-	Amount uint64
+	Amount privacyamount.Amount128
 }
 
 // VerifiedAuditRecord has no public constructor. Its zero value is invalid,
@@ -284,7 +285,7 @@ func parseAuditRecord(raw []byte) (*auditRecord, error) {
 		kind := auditfield.Kind(d.u8())
 		from, to, denom := d.lp(255), d.lp(255), string(d.lp(128))
 		amount := d.field()
-		value, err := fieldUint64(amount)
+		value, err := fieldAmount128(amount)
 		if err != nil {
 			return nil, err
 		}
@@ -403,7 +404,7 @@ func (r *auditRecord) validateTransparentEffect() error {
 		return nil
 	}
 	effect := r.transparent
-	if effect.Kind != r.kind || len(effect.From) == 0 || len(effect.From) > 255 || len(effect.To) == 0 || len(effect.To) > 255 || sdk.ValidateDenom(effect.Denom) != nil || sdk.VerifyAddressFormat(effect.From) != nil || sdk.VerifyAddressFormat(effect.To) != nil || effect.Amount == 0 || r.publicInputs[15] != auditfield.Field32FromUint64(effect.Amount) || r.publicInputs[16].IsZero() {
+	if effect.Kind != r.kind || len(effect.From) == 0 || len(effect.From) > 255 || len(effect.To) == 0 || len(effect.To) > 255 || sdk.ValidateDenom(effect.Denom) != nil || sdk.VerifyAddressFormat(effect.From) != nil || sdk.VerifyAddressFormat(effect.To) != nil || effect.Amount.IsZero() || r.publicInputs[15] != auditfield.Field32(effect.Amount.Bytes32()) || r.publicInputs[16].IsZero() {
 		return fmt.Errorf("invalid audit transition transparent effect")
 	}
 	module := authtypes.NewModuleAddress(privacytypes.ModuleName)
@@ -474,13 +475,8 @@ func auditVectorRoot(kind auditfield.Kind, label privacytypes.BatchVectorKindV1,
 	return auditfield.ParseField32(root.FillBytes(make([]byte, 32)))
 }
 
-func fieldUint64(field auditfield.Field32) (uint64, error) {
-	for _, value := range field[:24] {
-		if value != 0 {
-			return 0, fmt.Errorf("audit field exceeds uint64")
-		}
-	}
-	return binary.BigEndian.Uint64(field[24:]), nil
+func fieldAmount128(field auditfield.Field32) (privacyamount.Amount128, error) {
+	return privacyamount.FromBytes32([32]byte(field))
 }
 
 func storeSequenceKey(prefix byte, sequence uint64) []byte {

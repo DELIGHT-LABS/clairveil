@@ -21,7 +21,7 @@ const (
 	BatchPerTreeNodeWriteGasV1        uint64 = 5_000
 	BatchPerGlobalLookupGasV1         uint64 = 10_000
 
-	BatchMaxCanonicalPayloadBytesV1 uint64 = 65_384
+	BatchMaxCanonicalPayloadBytesV1 uint64 = 66_408
 	BatchMaxTypedStateBytesV1       uint64 = 256 << 10
 	BatchMaxTreeNodeWritesV1        uint64 = uint64(types.BatchJoinSplitV1MaxOutputs) * (MerkleDepth + 1)
 	BatchMaxGlobalLookupsV1         uint64 = uint64(types.BatchJoinSplitV1MaxInputs + types.BatchJoinSplitV1MaxOutputs)

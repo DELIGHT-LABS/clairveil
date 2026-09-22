@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"math/big"
 	"testing"
 
@@ -31,7 +32,7 @@ func TestSecretNoteV1LegacyMiMCDifferential(t *testing.T) {
 	note := SecretNoteV1{
 		ReceiverSpendPubKeyX: secretField(t, spendX), ReceiverSpendPubKeyY: secretField(t, spendY),
 		ReceiverViewPubKeyX: secretField(t, viewX), ReceiverViewPubKeyY: secretField(t, viewY),
-		Amount: 7, AssetID: secretField(t, assetID), Randomness: privacycrypto.FieldValueFromUint64(13),
+		Amount: amount.FromUint64(7), AssetID: secretField(t, assetID), Randomness: privacycrypto.FieldValueFromUint64(13),
 	}
 	commitment, err := SecretNoteCommitmentV1(note)
 	require.NoError(t, err)
@@ -48,7 +49,7 @@ func TestSecretDisclosureLegacyMiMCDifferential(t *testing.T) {
 	commitment := secretField(t, big.NewInt(101))
 	input := SecretTransferDisclosureV1Input{
 		Policy: TransferPrivacyPolicyDiscloseAmountToFrom, OutputIndex: TransferDisclosureRecipientOutputIndex,
-		Commitment: commitment, Amount: 10, AssetID: privacycrypto.FieldValueFromUint64(7),
+		Commitment: commitment, Amount: amount.FromUint64(10), AssetID: privacycrypto.FieldValueFromUint64(7),
 		FromSpendPubKeyX: privacycrypto.FieldValueFromUint64(17), FromSpendPubKeyY: privacycrypto.FieldValueFromUint64(19),
 		FromViewPubKeyX: privacycrypto.FieldValueFromUint64(23), FromViewPubKeyY: privacycrypto.FieldValueFromUint64(29),
 		ToSpendPubKeyX: privacycrypto.FieldValueFromUint64(11), ToSpendPubKeyY: privacycrypto.FieldValueFromUint64(13),
@@ -58,7 +59,7 @@ func TestSecretDisclosureLegacyMiMCDifferential(t *testing.T) {
 	secretDigest, err := SecretTransferDisclosureDigestV1(input)
 	require.NoError(t, err)
 	publicDigest, err := ComputeTransferDisclosureDigestBytes(
-		input.Policy, input.OutputIndex, secretFieldBytes(input.Commitment), big.NewInt(int64(input.Amount)), big.NewInt(7),
+		input.Policy, input.OutputIndex, secretFieldBytes(input.Commitment), Amount128BigInt(input.Amount), big.NewInt(7),
 		big.NewInt(17), big.NewInt(19), big.NewInt(23), big.NewInt(29),
 		big.NewInt(11), big.NewInt(13), big.NewInt(31), big.NewInt(37), big.NewInt(41),
 	)
@@ -72,7 +73,7 @@ func TestSecretDisclosureLegacyMiMCDifferential(t *testing.T) {
 	})
 	require.NoError(t, err)
 	publicFull, err := ComputeFullTransferDisclosureDigestBytes(
-		input.OutputIndex, secretFieldBytes(input.Commitment), big.NewInt(int64(input.Amount)), big.NewInt(7),
+		input.OutputIndex, secretFieldBytes(input.Commitment), Amount128BigInt(input.Amount), big.NewInt(7),
 		big.NewInt(17), big.NewInt(19), big.NewInt(23), big.NewInt(29), big.NewInt(11), big.NewInt(13), big.NewInt(31), big.NewInt(37), big.NewInt(41),
 	)
 	require.NoError(t, err)
@@ -101,7 +102,7 @@ func TestSecretBatchDisclosureAllPoliciesDifferential(t *testing.T) {
 			}
 			secretInput := SecretBatchUserDisclosureV1Input{
 				OutputIndex: 3, Commitment: privacycrypto.FieldValueFromUint64(101), Policy: policy, DisclosedFieldBitmap: policy,
-				SelectedAmount: selectedAmount, SelectedFromSpendX: fromX, SelectedFromSpendY: fromY, SelectedFromViewX: fromVX, SelectedFromViewY: fromVY,
+				SelectedAmount: amount.FromUint64(selectedAmount), SelectedFromSpendX: fromX, SelectedFromSpendY: fromY, SelectedFromViewX: fromVX, SelectedFromViewY: fromVY,
 				SelectedToSpendX: toX, SelectedToSpendY: toY, SelectedToViewX: toVX, SelectedToViewY: toVY,
 				AssetID: func() privacycrypto.FieldValue {
 					if policy == 0 {
@@ -138,14 +139,14 @@ func TestSecretBatchFullDisclosureDifferential(t *testing.T) {
 	recipientSpendX, recipientSpendY := secretPoint(t, 23)
 	recipientViewX, recipientViewY := secretPoint(t, 29)
 	input := SecretBatchFullDisclosureV1Input{
-		OutputIndex: 3, Commitment: privacycrypto.FieldValueFromUint64(101), Amount: 7, AssetID: privacycrypto.FieldValueFromUint64(7),
+		OutputIndex: 3, Commitment: privacycrypto.FieldValueFromUint64(101), Amount: amount.FromUint64(7), AssetID: privacycrypto.FieldValueFromUint64(7),
 		SenderSpendX: senderSpendX, SenderSpendY: senderSpendY, SenderViewX: senderViewX, SenderViewY: senderViewY,
 		RecipientSpendX: recipientSpendX, RecipientSpendY: recipientSpendY, RecipientViewX: recipientViewX, RecipientViewY: recipientViewY, Blinding: privacycrypto.FieldValueFromUint64(43),
 	}
 	got, err := SecretBatchFullDisclosureDigestV1(input)
 	require.NoError(t, err)
 	want, err := ComputeBatchFullDisclosureDigestV1(BatchFullDisclosureV1Input{
-		OutputIndex: input.OutputIndex, Commitment: fieldBig(input.Commitment), Amount: new(big.Int).SetUint64(input.Amount), AssetID: fieldBig(input.AssetID),
+		OutputIndex: input.OutputIndex, Commitment: fieldBig(input.Commitment), Amount: Amount128BigInt(input.Amount), AssetID: fieldBig(input.AssetID),
 		SenderSpendKeyX: fieldBig(input.SenderSpendX), SenderSpendKeyY: fieldBig(input.SenderSpendY), SenderViewKeyX: fieldBig(input.SenderViewX), SenderViewKeyY: fieldBig(input.SenderViewY),
 		RecipientSpendKeyX: fieldBig(input.RecipientSpendX), RecipientSpendKeyY: fieldBig(input.RecipientSpendY), RecipientViewKeyX: fieldBig(input.RecipientViewX), RecipientViewKeyY: fieldBig(input.RecipientViewY), FullDisclosureBlinding: fieldBig(input.Blinding),
 	})
@@ -156,7 +157,7 @@ func TestSecretBatchFullDisclosureDifferential(t *testing.T) {
 func TestSecretTransferDisclosureValidationParity(t *testing.T) {
 	base := SecretTransferDisclosureV1Input{
 		Policy: TransferPrivacyPolicyDiscloseAmountToFrom, OutputIndex: TransferDisclosureRecipientOutputIndex,
-		Commitment: privacycrypto.FieldValueFromUint64(101), Amount: 10, AssetID: privacycrypto.FieldValueFromUint64(7),
+		Commitment: privacycrypto.FieldValueFromUint64(101), Amount: amount.FromUint64(10), AssetID: privacycrypto.FieldValueFromUint64(7),
 		FromSpendPubKeyX: privacycrypto.FieldValueFromUint64(17), FromSpendPubKeyY: privacycrypto.FieldValueFromUint64(19),
 		FromViewPubKeyX: privacycrypto.FieldValueFromUint64(23), FromViewPubKeyY: privacycrypto.FieldValueFromUint64(29),
 		ToSpendPubKeyX: privacycrypto.FieldValueFromUint64(11), ToSpendPubKeyY: privacycrypto.FieldValueFromUint64(13),
@@ -189,7 +190,7 @@ func TestSecretTransferDisclosureValidationParity(t *testing.T) {
 
 func TestSecretFullTransferDisclosureValidationParity(t *testing.T) {
 	base := SecretFullTransferDisclosureV1Input{
-		OutputIndex: TransferDisclosureRecipientOutputIndex, Commitment: privacycrypto.FieldValueFromUint64(101), Amount: 10, AssetID: privacycrypto.FieldValueFromUint64(7),
+		OutputIndex: TransferDisclosureRecipientOutputIndex, Commitment: privacycrypto.FieldValueFromUint64(101), Amount: amount.FromUint64(10), AssetID: privacycrypto.FieldValueFromUint64(7),
 		FromSpendPubKeyX: privacycrypto.FieldValueFromUint64(17), FromSpendPubKeyY: privacycrypto.FieldValueFromUint64(19),
 		FromViewPubKeyX: privacycrypto.FieldValueFromUint64(23), FromViewPubKeyY: privacycrypto.FieldValueFromUint64(29),
 		ToSpendPubKeyX: privacycrypto.FieldValueFromUint64(11), ToSpendPubKeyY: privacycrypto.FieldValueFromUint64(13),
@@ -228,7 +229,7 @@ func TestSecretBatchUserDisclosureValidationParity(t *testing.T) {
 	toViewX, toViewY := secretPoint(t, 29)
 	base := SecretBatchUserDisclosureV1Input{
 		OutputIndex: 3, Commitment: privacycrypto.FieldValueFromUint64(101), Policy: TransferPrivacyPolicyDiscloseAmountToFrom,
-		DisclosedFieldBitmap: TransferPrivacyPolicyDiscloseAmountToFrom, SelectedAmount: 7,
+		DisclosedFieldBitmap: TransferPrivacyPolicyDiscloseAmountToFrom, SelectedAmount: amount.FromUint64(7),
 		SelectedFromSpendX: fromSpendX, SelectedFromSpendY: fromSpendY, SelectedFromViewX: fromViewX, SelectedFromViewY: fromViewY,
 		SelectedToSpendX: toSpendX, SelectedToSpendY: toSpendY, SelectedToViewX: toViewX, SelectedToViewY: toViewY,
 		AssetID: privacycrypto.FieldValueFromUint64(7), Blinding: privacycrypto.FieldValueFromUint64(43),
@@ -251,15 +252,15 @@ func TestSecretBatchUserDisclosureValidationParity(t *testing.T) {
 		{"requires active asset", func(input *SecretBatchUserDisclosureV1Input) { input.AssetID = zero }},
 		{"requires active blinding", func(input *SecretBatchUserDisclosureV1Input) { input.Blinding = zero }},
 		{"hidden amount must be zero", func(input *SecretBatchUserDisclosureV1Input) {
-			input.Policy, input.DisclosedFieldBitmap, input.SelectedAmount = TransferPrivacyPolicyDiscloseFrom, TransferPrivacyPolicyDiscloseFrom, 7
+			input.Policy, input.DisclosedFieldBitmap, input.SelectedAmount = TransferPrivacyPolicyDiscloseFrom, TransferPrivacyPolicyDiscloseFrom, amount.FromUint64(7)
 			input.SelectedToSpendX, input.SelectedToSpendY, input.SelectedToViewX, input.SelectedToViewY = zero, zero, zero, zero
 		}},
 		{"hidden sender keys must be zero", func(input *SecretBatchUserDisclosureV1Input) {
-			input.Policy, input.DisclosedFieldBitmap, input.SelectedAmount = TransferPrivacyPolicyDiscloseAmount, TransferPrivacyPolicyDiscloseAmount, 7
+			input.Policy, input.DisclosedFieldBitmap, input.SelectedAmount = TransferPrivacyPolicyDiscloseAmount, TransferPrivacyPolicyDiscloseAmount, amount.FromUint64(7)
 			input.SelectedToSpendX, input.SelectedToSpendY, input.SelectedToViewX, input.SelectedToViewY = zero, zero, zero, zero
 		}},
 		{"disclosed keys must be curve points", func(input *SecretBatchUserDisclosureV1Input) {
-			input.Policy, input.DisclosedFieldBitmap, input.SelectedAmount = TransferPrivacyPolicyDiscloseFrom, TransferPrivacyPolicyDiscloseFrom, 0
+			input.Policy, input.DisclosedFieldBitmap, input.SelectedAmount = TransferPrivacyPolicyDiscloseFrom, TransferPrivacyPolicyDiscloseFrom, amount.FromUint64(0)
 			input.SelectedFromSpendX, input.SelectedFromSpendY, input.SelectedFromViewX, input.SelectedFromViewY = privacycrypto.FieldValueFromUint64(1), privacycrypto.FieldValueFromUint64(2), privacycrypto.FieldValueFromUint64(3), privacycrypto.FieldValueFromUint64(4)
 			input.SelectedToSpendX, input.SelectedToSpendY, input.SelectedToViewX, input.SelectedToViewY = zero, zero, zero, zero
 		}},
@@ -284,7 +285,7 @@ func TestSecretBatchFullDisclosureValidationParity(t *testing.T) {
 	recipientSpendX, recipientSpendY := secretPoint(t, 23)
 	recipientViewX, recipientViewY := secretPoint(t, 29)
 	base := SecretBatchFullDisclosureV1Input{
-		OutputIndex: 3, Commitment: privacycrypto.FieldValueFromUint64(101), Amount: 7, AssetID: privacycrypto.FieldValueFromUint64(7),
+		OutputIndex: 3, Commitment: privacycrypto.FieldValueFromUint64(101), Amount: amount.FromUint64(7), AssetID: privacycrypto.FieldValueFromUint64(7),
 		SenderSpendX: senderSpendX, SenderSpendY: senderSpendY, SenderViewX: senderViewX, SenderViewY: senderViewY,
 		RecipientSpendX: recipientSpendX, RecipientSpendY: recipientSpendY, RecipientViewX: recipientViewX, RecipientViewY: recipientViewY,
 		Blinding: privacycrypto.FieldValueFromUint64(43),
@@ -316,7 +317,7 @@ func TestSecretBatchFullDisclosureValidationParity(t *testing.T) {
 
 func legacyTransferDisclosureDigest(input SecretTransferDisclosureV1Input) ([]byte, error) {
 	return ComputeTransferDisclosureDigestBytes(
-		input.Policy, input.OutputIndex, secretFieldBytes(input.Commitment), new(big.Int).SetUint64(input.Amount), fieldBig(input.AssetID),
+		input.Policy, input.OutputIndex, secretFieldBytes(input.Commitment), Amount128BigInt(input.Amount), fieldBig(input.AssetID),
 		fieldBig(input.FromSpendPubKeyX), fieldBig(input.FromSpendPubKeyY), fieldBig(input.FromViewPubKeyX), fieldBig(input.FromViewPubKeyY),
 		fieldBig(input.ToSpendPubKeyX), fieldBig(input.ToSpendPubKeyY), fieldBig(input.ToViewPubKeyX), fieldBig(input.ToViewPubKeyY), fieldBig(input.Blinding),
 	)
@@ -324,7 +325,7 @@ func legacyTransferDisclosureDigest(input SecretTransferDisclosureV1Input) ([]by
 
 func legacyFullTransferDisclosureDigest(input SecretFullTransferDisclosureV1Input) ([]byte, error) {
 	return ComputeFullTransferDisclosureDigestBytes(
-		input.OutputIndex, secretFieldBytes(input.Commitment), new(big.Int).SetUint64(input.Amount), fieldBig(input.AssetID),
+		input.OutputIndex, secretFieldBytes(input.Commitment), Amount128BigInt(input.Amount), fieldBig(input.AssetID),
 		fieldBig(input.FromSpendPubKeyX), fieldBig(input.FromSpendPubKeyY), fieldBig(input.FromViewPubKeyX), fieldBig(input.FromViewPubKeyY),
 		fieldBig(input.ToSpendPubKeyX), fieldBig(input.ToSpendPubKeyY), fieldBig(input.ToViewPubKeyX), fieldBig(input.ToViewPubKeyY), fieldBig(input.Blinding),
 	)
@@ -333,7 +334,7 @@ func legacyFullTransferDisclosureDigest(input SecretFullTransferDisclosureV1Inpu
 func legacyBatchUserDisclosureInput(input SecretBatchUserDisclosureV1Input) BatchUserDisclosureV1Input {
 	return BatchUserDisclosureV1Input{
 		OutputIndex: input.OutputIndex, Commitment: fieldBig(input.Commitment), Policy: input.Policy, DisclosedFieldBitmap: input.DisclosedFieldBitmap,
-		SelectedAmount:        new(big.Int).SetUint64(input.SelectedAmount),
+		SelectedAmount:        Amount128BigInt(input.SelectedAmount),
 		SelectedFromSpendKeyX: fieldBig(input.SelectedFromSpendX), SelectedFromSpendKeyY: fieldBig(input.SelectedFromSpendY),
 		SelectedFromViewKeyX: fieldBig(input.SelectedFromViewX), SelectedFromViewKeyY: fieldBig(input.SelectedFromViewY),
 		SelectedToSpendKeyX: fieldBig(input.SelectedToSpendX), SelectedToSpendKeyY: fieldBig(input.SelectedToSpendY),
@@ -344,7 +345,7 @@ func legacyBatchUserDisclosureInput(input SecretBatchUserDisclosureV1Input) Batc
 
 func legacyBatchFullDisclosureInput(input SecretBatchFullDisclosureV1Input) BatchFullDisclosureV1Input {
 	return BatchFullDisclosureV1Input{
-		OutputIndex: input.OutputIndex, Commitment: fieldBig(input.Commitment), Amount: new(big.Int).SetUint64(input.Amount), AssetID: fieldBig(input.AssetID),
+		OutputIndex: input.OutputIndex, Commitment: fieldBig(input.Commitment), Amount: Amount128BigInt(input.Amount), AssetID: fieldBig(input.AssetID),
 		SenderSpendKeyX: fieldBig(input.SenderSpendX), SenderSpendKeyY: fieldBig(input.SenderSpendY),
 		SenderViewKeyX: fieldBig(input.SenderViewX), SenderViewKeyY: fieldBig(input.SenderViewY),
 		RecipientSpendKeyX: fieldBig(input.RecipientSpendX), RecipientSpendKeyY: fieldBig(input.RecipientSpendY),
@@ -370,7 +371,7 @@ func TestUnmarshalSecretNotePlaintextV1UsesFixedTransport(t *testing.T) {
 	require.NoError(t, err)
 	secret, err := UnmarshalSecretNotePlaintextV1(encoded)
 	require.NoError(t, err)
-	require.Equal(t, uint64(123), secret.Amount)
+	require.Equal(t, amount.FromUint64(123), secret.Amount)
 	roundTrip, err := MarshalSecretNotePlaintextV1(secret)
 	require.NoError(t, err)
 	require.Equal(t, encoded, roundTrip)
@@ -403,7 +404,7 @@ func TestComputeSecretAssetIDV1MatchesLegacy(t *testing.T) {
 }
 
 func TestSecretTransportsRejectAutomaticDisclosure(t *testing.T) {
-	for _, value := range []any{SecretNoteV1{Amount: 99887766, Memo: "private memo"}, SecretDisclosurePlaintextV1{Amount: 99887766}} {
+	for _, value := range []any{SecretNoteV1{Amount: amount.FromUint64(99887766), Memo: "private memo"}, SecretDisclosurePlaintextV1{Amount: amount.FromUint64(99887766)}} {
 		require.Contains(t, fmt.Sprintf("%+v", value), "<redacted>")
 		require.NotContains(t, fmt.Sprintf("%#v", value), "99887766")
 		_, err := json.Marshal(value)
@@ -411,7 +412,7 @@ func TestSecretTransportsRejectAutomaticDisclosure(t *testing.T) {
 	}
 }
 func TestSecretDisclosureRejectsMalformedSemantics(t *testing.T) {
-	p := SecretDisclosurePlaintextV1{Plane: DisclosurePlaneUserV1, Policy: 1, DisclosedFieldBitmap: 1, Commitment: privacycrypto.FieldValueFromUint64(1), AssetID: privacycrypto.FieldValueFromUint64(2), DisclosureBlinding: privacycrypto.FieldValueFromUint64(3), Amount: 4}
+	p := SecretDisclosurePlaintextV1{Plane: DisclosurePlaneUserV1, Policy: 1, DisclosedFieldBitmap: 1, Commitment: privacycrypto.FieldValueFromUint64(1), AssetID: privacycrypto.FieldValueFromUint64(2), DisclosureBlinding: privacycrypto.FieldValueFromUint64(3), Amount: amount.FromUint64(4)}
 	encoded, err := MarshalSecretDisclosurePlaintextV1(&p)
 	require.NoError(t, err)
 	for _, mutate := range []func([]byte){
@@ -435,7 +436,7 @@ func TestSecretDisclosureRejectsMalformedSemantics(t *testing.T) {
 func TestSecretNoteCodecRejectsIdentityKey(t *testing.T) {
 	sx, sy := secretPoint(t, 17)
 	vx, vy := secretPoint(t, 19)
-	note := SecretNoteV1{ReceiverSpendPubKeyX: sx, ReceiverSpendPubKeyY: sy, ReceiverViewPubKeyX: vx, ReceiverViewPubKeyY: vy, Amount: 1, AssetID: privacycrypto.FieldValueFromUint64(2), Randomness: privacycrypto.FieldValueFromUint64(3)}
+	note := SecretNoteV1{ReceiverSpendPubKeyX: sx, ReceiverSpendPubKeyY: sy, ReceiverViewPubKeyX: vx, ReceiverViewPubKeyY: vy, Amount: amount.FromUint64(1), AssetID: privacycrypto.FieldValueFromUint64(2), Randomness: privacycrypto.FieldValueFromUint64(3)}
 	encoded, err := MarshalSecretNotePlaintextV1(&note)
 	require.NoError(t, err)
 	clear(encoded[20:84])
@@ -448,4 +449,48 @@ func TestSecretNoteCodecRejectsIdentityKey(t *testing.T) {
 	encoded, err = MarshalSecretNotePlaintextV1(&note)
 	require.Error(t, err)
 	require.Nil(t, encoded)
+}
+
+func TestSecretAmount128CodecBoundaries(t *testing.T) {
+	for _, decimal := range []string{"0", "18446744073709551616", amount.MaxDecimal} {
+		t.Run(decimal, func(t *testing.T) {
+			note := fixedPayloadTestNote()
+			note.Amount, _ = new(big.Int).SetString(decimal, 10)
+			encoded, err := MarshalNotePlaintextV1(note)
+			require.NoError(t, err)
+			secret, err := UnmarshalSecretNotePlaintextV1(encoded)
+			require.NoError(t, err)
+			require.Equal(t, decimal, secret.Amount.String())
+			require.Equal(t, decimal, secret.ToProverWitnessV1().Amount.String())
+			field := Amount128FieldValue(secret.Amount)
+			require.Zero(t, note.Amount.Cmp(fieldBig(field)))
+			roundTrip, err := MarshalSecretNotePlaintextV1(secret)
+			require.NoError(t, err)
+			require.Equal(t, encoded, roundTrip)
+			encoded[17] = 1
+			_, err = UnmarshalSecretNotePlaintextV1(encoded)
+			require.ErrorContains(t, err, "version")
+			_, err = UnmarshalNotePlaintextV1(encoded)
+			require.ErrorContains(t, err, "version")
+
+			payload := &DisclosurePlaintextV1{
+				Plane: DisclosurePlaneFullV1, OutputIndex: 0, Policy: DisclosureFullMarkerV1, DisclosedFieldBitmap: TransferPrivacyPolicyDiscloseAmountToFrom,
+				Commitment: note.ComputeCommitment(), Amount: note.Amount, AssetID: note.AssetID,
+				SenderSpendKeyX: note.ReceiverSpendPubKeyX, SenderSpendKeyY: note.ReceiverSpendPubKeyY, SenderViewKeyX: note.ReceiverViewPubKeyX, SenderViewKeyY: note.ReceiverViewPubKeyY,
+				RecipientSpendKeyX: note.ReceiverSpendPubKeyX, RecipientSpendKeyY: note.ReceiverSpendPubKeyY, RecipientViewKeyX: note.ReceiverViewPubKeyX, RecipientViewKeyY: note.ReceiverViewPubKeyY, DisclosureBlinding: big.NewInt(47),
+			}
+			raw, err := MarshalDisclosurePlaintextV1(payload)
+			require.NoError(t, err)
+			disclosure, err := UnmarshalSecretDisclosurePlaintextV1(raw)
+			require.NoError(t, err)
+			require.Equal(t, decimal, disclosure.Amount.String())
+			encodedDisclosure, err := MarshalSecretDisclosurePlaintextV1(disclosure)
+			require.NoError(t, err)
+			require.Equal(t, raw, encodedDisclosure)
+		})
+	}
+	note := fixedPayloadTestNote()
+	note.Amount = new(big.Int).Add(MaxShieldedAmount(), big.NewInt(1))
+	_, err := MarshalNotePlaintextV1(note)
+	require.ErrorContains(t, err, "128-bit")
 }

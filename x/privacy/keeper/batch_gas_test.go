@@ -35,6 +35,15 @@ func TestBatchGasPrechargeV1MetersEveryFrozenCategory(t *testing.T) {
 	require.Equal(t, BatchPerTreeNodeWriteGasV1*BatchMaxTreeNodeWritesV1, breakdown.TreeWrites)
 	require.Equal(t, BatchPerGlobalLookupGasV1*BatchMaxGlobalLookupsV1, breakdown.GlobalLookups)
 	require.Positive(t, breakdown.Total)
+
+	// The enlarged uint128 envelopes fit exactly; the resource bound still
+	// rejects even one extra canonical byte.
+	_, err = privacyzk.ComputeBatchGasV1(BatchGasModelV1, BatchResourceBoundsV1, privacyzk.BatchResourceUsageV1{
+		InputCount: privacyzk.BatchResourceMaxInputsV1, OutputCount: privacyzk.BatchResourceMaxOutputsV1,
+		CanonicalPayloadBytes: payloadBytes + 1, TypedScanStateBytes: typedStateBytes,
+		TreeNodeWrites: BatchMaxTreeNodeWritesV1, GlobalLookups: BatchMaxGlobalLookupsV1,
+	})
+	require.ErrorContains(t, err, "canonical payload bytes 66409 exceeds bound 66408")
 }
 
 func TestBatchGasShapeProfile(t *testing.T) {

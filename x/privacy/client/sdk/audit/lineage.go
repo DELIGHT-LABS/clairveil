@@ -3,9 +3,9 @@ package audit
 import (
 	"bytes"
 	"fmt"
-	"math/big"
 	"sort"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/crypto/auditfield"
 )
 
@@ -31,7 +31,7 @@ type LineageWithdrawal struct {
 	InputCommitment auditfield.Field32
 	Recipient       []byte
 	Denom           string
-	Amount          uint64
+	Amount          privacyamount.Amount128
 	RootDeposits    []uint64
 }
 
@@ -154,19 +154,26 @@ func validatePrivateConservation(asset auditfield.Field32, inputs []*mutableLine
 	if asset.IsZero() || len(inputs) == 0 || len(outputs) == 0 {
 		return fmt.Errorf("AUDIT_INCOMPLETE: empty private conservation relation")
 	}
-	inputTotal, outputTotal := new(big.Int), new(big.Int)
+	var inputTotal, outputTotal privacyamount.Amount128
+	var err error
 	owner := inputs[0].AuditNote
 	for _, input := range inputs {
 		if input.Asset != asset || input.SpendX != owner.SpendX || input.SpendY != owner.SpendY || input.ViewX != owner.ViewX || input.ViewY != owner.ViewY {
 			return fmt.Errorf("AUDIT_INCOMPLETE: private inputs have different asset or owner")
 		}
-		inputTotal.Add(inputTotal, new(big.Int).SetUint64(input.Amount))
+		inputTotal, err = inputTotal.Add(input.Amount)
+		if err != nil {
+			return fmt.Errorf("AUDIT_INCOMPLETE: input total exceeds uint128")
+		}
 	}
 	for _, output := range outputs {
 		if output.Asset != asset {
 			return fmt.Errorf("AUDIT_INCOMPLETE: private output has different asset")
 		}
-		outputTotal.Add(outputTotal, new(big.Int).SetUint64(output.Amount))
+		outputTotal, err = outputTotal.Add(output.Amount)
+		if err != nil {
+			return fmt.Errorf("AUDIT_INCOMPLETE: output total exceeds uint128")
+		}
 	}
 	if inputTotal.Cmp(outputTotal) != 0 {
 		return fmt.Errorf("AUDIT_INCOMPLETE: private amounts do not conserve")

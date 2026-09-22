@@ -159,7 +159,7 @@ func buildSpendableAssetTotals(foundNotes []FoundNote) []spendableAssetTotal {
 		if _, exists := byAsset[assetIDHex]; !exists {
 			byAsset[assetIDHex] = new(big.Int)
 		}
-		byAsset[assetIDHex].Add(byAsset[assetIDHex], new(big.Int).SetUint64(note.Note.Amount))
+		byAsset[assetIDHex].Add(byAsset[assetIDHex], privacytypes.Amount128BigInt(note.Note.Amount))
 	}
 
 	order := make([]string, 0, len(byAsset))

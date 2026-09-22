@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"testing"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/stretchr/testify/require"
 
 	privacybatchtransfer "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/batchtransfer"
@@ -27,13 +28,13 @@ type batchTransferContractFixture struct {
 	MaxInputs       int    `json:"max_inputs"`
 	MaxOutputs      int    `json:"max_outputs"`
 	Cases           []struct {
-		ID                  string   `json:"id"`
-		InputAmounts        []uint64 `json:"input_amounts"`
-		PaymentAmounts      []uint64 `json:"payment_amounts"`
-		ExpectedOutputRoles []string `json:"expected_output_roles"`
-		OutputMode          string   `json:"output_mode"`
-		DisclosureModes     []string `json:"disclosure_modes"`
-		SelfView            string   `json:"self_view"`
+		ID                  string                    `json:"id"`
+		InputAmounts        []privacyamount.Amount128 `json:"input_amounts"`
+		PaymentAmounts      []privacyamount.Amount128 `json:"payment_amounts"`
+		ExpectedOutputRoles []string                  `json:"expected_output_roles"`
+		OutputMode          string                    `json:"output_mode"`
+		DisclosureModes     []string                  `json:"disclosure_modes"`
+		SelfView            string                    `json:"self_view"`
 	} `json:"cases"`
 	RestartRetry struct {
 		StableOperationID             bool `json:"stable_operation_id"`
@@ -96,15 +97,17 @@ func TestBatchTransferContract(t *testing.T) {
 		require.Contains(t, []string{"compact", "exact32"}, testCase.OutputMode)
 		require.Contains(t, []string{"enabled", "disabled"}, testCase.SelfView)
 
-		var inputTotal, paymentTotal uint64
+		var inputTotal, paymentTotal privacyamount.Amount128
 		for _, amount := range testCase.InputAmounts {
-			inputTotal += amount
+			inputTotal, err = inputTotal.Add(amount)
+			require.NoError(t, err)
 		}
 		for _, amount := range testCase.PaymentAmounts {
-			require.Positive(t, amount)
-			paymentTotal += amount
+			require.False(t, amount.IsZero())
+			paymentTotal, err = paymentTotal.Add(amount)
+			require.NoError(t, err)
 		}
-		require.LessOrEqual(t, paymentTotal, inputTotal)
+		require.LessOrEqual(t, paymentTotal.Cmp(inputTotal), 0)
 		changeCount, paddingCount := 0, 0
 		for _, role := range testCase.ExpectedOutputRoles {
 			switch role {
@@ -118,7 +121,7 @@ func TestBatchTransferContract(t *testing.T) {
 			}
 		}
 		require.Equal(t, len(testCase.PaymentAmounts), len(testCase.ExpectedOutputRoles)-changeCount-paddingCount)
-		if paymentTotal < inputTotal {
+		if paymentTotal.Cmp(inputTotal) < 0 {
 			require.Equal(t, 1, changeCount)
 		} else {
 			require.Zero(t, changeCount)

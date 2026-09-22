@@ -213,7 +213,7 @@ func auditPlainFromPreparedBatchPayload(payload *PreparedBatchTransferPayload) (
 			continue
 		}
 		note := payload.Outputs[i].Note
-		for _, value := range []privacycrypto.FieldValue{privacycrypto.FieldValueFromUint64(note.Amount), note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY, note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY} {
+		for _, value := range []privacycrypto.FieldValue{privacytypes.Amount128FieldValue(note.Amount), note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY, note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY} {
 			field, err := batchAuditFieldFromValue(value)
 			if err != nil {
 				return nil, err
@@ -250,7 +250,7 @@ func auditPlainFromPreparedAuditV2BatchPayload(payload *PreparedAuditV2BatchTran
 			continue
 		}
 		note := payload.Outputs[i].Note
-		for _, value := range []privacycrypto.FieldValue{privacycrypto.FieldValueFromUint64(note.Amount), note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY, note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY} {
+		for _, value := range []privacycrypto.FieldValue{privacytypes.Amount128FieldValue(note.Amount), note.ReceiverSpendPubKeyX, note.ReceiverSpendPubKeyY, note.ReceiverViewPubKeyX, note.ReceiverViewPubKeyY} {
 			field, err := batchAuditFieldFromValue(value)
 			if err != nil {
 				return nil, err

@@ -24,7 +24,7 @@ const (
 	AuditSuite         = uint16(2)
 	AuditPlainSchema   = uint16(1)
 
-	CircuitSetID = "privacy-note-v1-audit-field-v1"
+	CircuitSetID = "privacy-note-v1-u128-audit-field-v1"
 
 	AuditEnvelopeDomain     = "clairveil.audit.envelope.v1"
 	AuditKDFDomain          = "clairveil.audit.field.kdf.v1"
@@ -308,7 +308,7 @@ var publicInputSchema = [...]PublicInputField{
 	{"ExpiresAtUnix", "uint64"}, {"MerkleRoot", "bn254-fr"},
 	{"InputCount", "uint5"}, {"OutputCount", "uint6"}, {"NullifierRoot", "bn254-fr"},
 	{"CommitmentRoot", "bn254-fr"}, {"UserDisclosureRoot", "bn254-fr"}, {"SelfViewRoot", "bn254-fr"},
-	{"PublicAmount", "uint64"}, {"PublicAsset", "bn254-fr"},
+	{"PublicAmount", "uint128"}, {"PublicAsset", "bn254-fr"},
 	{"PublicTargetHi", "uint128"}, {"PublicTargetLo", "uint128"},
 	{"AuxHi", "uint128"}, {"AuxLo", "uint128"},
 	{"CipherRoot0", "bn254-fr"}, {"CipherRoot1", "bn254-fr"},

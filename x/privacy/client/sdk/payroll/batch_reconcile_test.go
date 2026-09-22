@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	cryptoeddsa "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
@@ -376,7 +377,7 @@ func batchReconcileTestNote(t *testing.T, spend, view *crypto_tedwards.PointAffi
 	require.NoError(t, err)
 	vx, vy, err := privacycrypto.PublicPointFieldValues(*view)
 	require.NoError(t, err)
-	note, err := privacytypes.NewSecretNoteV1(sx, sy, vx, vy, uint64(amount), privacytypes.ComputeSecretAssetIDV1("uclair"), privacycrypto.FieldValueFromUint64(uint64(randomness)), "")
+	note, err := privacytypes.NewSecretNoteV1(sx, sy, vx, vy, privacyamount.FromUint64(uint64(amount)), privacytypes.ComputeSecretAssetIDV1("uclair"), privacycrypto.FieldValueFromUint64(uint64(randomness)), "")
 	require.NoError(t, err)
 	return *note
 }

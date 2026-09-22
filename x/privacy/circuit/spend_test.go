@@ -84,11 +84,23 @@ func TestSpendCircuitBindsAssetID(t *testing.T) {
 }
 
 func TestSpendCircuitRejectsAmountOutsideRange(t *testing.T) {
-	tooLarge := new(big.Int).Add(privacytypes.MaxShieldedAmount(), big.NewInt(1))
-	assignment := buildValidSpendAssignmentWithAmount(t, big.NewInt(424242), tooLarge)
-
-	assert := test.NewAssert(t)
-	assert.ProverFailed(&SpendCircuit{}, assignment, test.WithCurves(ecc.BN254))
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &SpendCircuit{})
+	require.NoError(t, err)
+	for _, overflow := range []bool{false, true} {
+		amount := privacytypes.MaxShieldedAmount()
+		if overflow {
+			amount.Add(amount, big.NewInt(1))
+		}
+		assignment := buildValidSpendAssignmentWithAmount(t, big.NewInt(424242), amount)
+		witness, err := frontend.NewWitness(assignment, ecc.BN254.ScalarField())
+		require.NoError(t, err)
+		err = ccs.IsSolved(witness)
+		if overflow {
+			require.Error(t, err)
+		} else {
+			require.NoError(t, err)
+		}
+	}
 }
 
 func TestSpendCircuitRejectsMalformedSpendPubKey(t *testing.T) {

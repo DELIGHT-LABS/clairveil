@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"math/big"
-	"math/bits"
 
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -152,9 +151,9 @@ func validateJoinSplitOwnerDisclosureProjectionV1(request JoinSplitOwnerIntentSi
 		return fmt.Errorf("transfer signing change output SecretNoteV1 does not match the final effect commitment")
 	}
 
-	inputTotal, inputCarry := bits.Add64(request.InputNotes[0].Amount, request.InputNotes[1].Amount, 0)
-	outputTotal, outputCarry := bits.Add64(request.RecipientOutputNote.Amount, request.ChangeOutputNote.Amount, 0)
-	if inputCarry != outputCarry || inputTotal != outputTotal {
+	inputTotal, inputErr := request.InputNotes[0].Amount.Add(request.InputNotes[1].Amount)
+	outputTotal, outputErr := request.RecipientOutputNote.Amount.Add(request.ChangeOutputNote.Amount)
+	if inputErr != nil || outputErr != nil || inputTotal != outputTotal {
 		return fmt.Errorf("transfer signing input and output amounts are not conserved")
 	}
 

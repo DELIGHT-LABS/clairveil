@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"testing"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/stretchr/testify/require"
 
@@ -251,7 +252,7 @@ func secretCommitmentHex(t *testing.T, note privacytypes.SecretNoteV1) string {
 }
 
 func testPlannerSecretFoundNote(amount int64, denom, nullifier string, height int64) privacyscan.SecretFoundNote {
-	return privacyscan.SecretFoundNote{Note: privacytypes.SecretNoteV1{Amount: uint64(amount), AssetID: privacytypes.ComputeSecretAssetIDV1(denom), Randomness: privacycrypto.FieldValueFromUint64(uint64(amount) + 1000)}, Nullifier: nullifier, Height: height}
+	return privacyscan.SecretFoundNote{Note: privacytypes.SecretNoteV1{Amount: privacyamount.FromUint64(uint64(amount)), AssetID: privacytypes.ComputeSecretAssetIDV1(denom), Randomness: privacycrypto.FieldValueFromUint64(uint64(amount) + 1000)}, Nullifier: nullifier, Height: height}
 }
 
 func testSecretInputs(t *testing.T, inputs [2]privacyscan.FoundNote) [2]privacyscan.SecretFoundNote {
@@ -267,9 +268,9 @@ func mustSecretInput(t *testing.T, found privacyscan.FoundNote) privacyscan.Secr
 		require.NoError(t, err)
 		return result
 	}
-	amount := uint64(0)
+	var amount privacyamount.Amount128
 	if found.Note.Amount != nil {
-		amount = found.Note.Amount.Uint64()
+		amount, _ = privacytypes.Amount128FromBigInt(found.Note.Amount)
 	}
 	secret := privacyscan.SecretFoundNote{Note: privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: field(found.Note.ReceiverSpendPubKeyX), ReceiverSpendPubKeyY: field(found.Note.ReceiverSpendPubKeyY), ReceiverViewPubKeyX: field(found.Note.ReceiverViewPubKeyX), ReceiverViewPubKeyY: field(found.Note.ReceiverViewPubKeyY), Amount: amount, AssetID: field(found.Note.AssetID), Randomness: field(found.Note.Randomness), Memo: found.Note.Memo}}
 	secret.IsSpent, secret.TxHash, secret.Height, secret.GlobalSequence, secret.OutputIndex, secret.AssetDenom = found.IsSpent, found.TxHash, found.Height, found.GlobalSequence, found.OutputIndex, found.AssetDenom

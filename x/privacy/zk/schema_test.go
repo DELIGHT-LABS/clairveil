@@ -13,8 +13,8 @@ import (
 
 func TestPublicInputSchemaDigestsGoldenVectors(t *testing.T) {
 	for circuitID, expected := range map[string]string{
-		"deposit":                  "c3231fb5ae62539d2e4baeb78aa4be8a4c44e3cd8fa325ba60f13b7f563d5a1e",
-		"spend":                    "d0a033aa2f7b6e098873307a815545ee3e83d974026c0e52bf39a038e08f4872",
+		"deposit":                  "47892885a109e9864ef7640dc558bf3b0d54f6b9d918d796932a9ab41fe51ddf",
+		"spend":                    "7b3111bdcaa990f4820895427df571e21dd773881a8da8f3ee3acc15528d6658",
 		"joinsplit":                "4946e23db34529c6fce0a95ce69f6df08563a305ddcc70c7b6b786471e03aa82",
 		"batch-joinsplit-16x32-v1": "5606327d69dcb06c00811f2135291d39a2ea1cedf554f114f7eb4a178098d333",
 	} {

@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"time"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	fr_mimc "github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
@@ -392,7 +393,7 @@ func fixtureSecretNote(spend, view crypto_tedwards.PointAffine, amount, randomne
 	if err != nil {
 		panic(err)
 	}
-	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, amount, privacytypes.ComputeSecretAssetIDV1(generatedFixtureDenom), privacycrypto.FieldValueFromUint64(randomness), memo)
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, privacyamount.FromUint64(amount), privacytypes.ComputeSecretAssetIDV1(generatedFixtureDenom), privacycrypto.FieldValueFromUint64(randomness), memo)
 	if err != nil {
 		panic(err)
 	}

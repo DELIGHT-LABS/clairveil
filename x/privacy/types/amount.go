@@ -2,10 +2,11 @@ package types
 
 import (
 	"fmt"
+	"github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"math/big"
 )
 
-const ShieldedAmountBitLength = 64
+const ShieldedAmountBitLength = amount.BitLength
 
 var maxShieldedAmount = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), ShieldedAmountBitLength), big.NewInt(1))
 
@@ -57,4 +58,19 @@ func isCanonicalNonNegativeDecimal(value string) bool {
 		}
 	}
 	return true
+}
+
+// Amount128FromBigInt validates the public integer boundary before conversion.
+func Amount128FromBigInt(value *big.Int) (amount.Amount128, error) {
+	if err := ValidateShieldedAmount("amount", value); err != nil {
+		return amount.Amount128{}, err
+	}
+	var raw [16]byte
+	value.FillBytes(raw[:])
+	return amount.FromBytes16(raw), nil
+}
+
+func Amount128BigInt(value amount.Amount128) *big.Int {
+	raw := value.Bytes16()
+	return new(big.Int).SetBytes(raw[:])
 }

@@ -222,6 +222,7 @@ func (c *JoinSplitCircuit) defineRelation(api frontend.API, finish func([]fronte
 		totalOutputAmount = api.Add(totalOutputAmount, c.OutputAmounts[i])
 	}
 
+	assertAmountRange(api, totalInputAmount)
 	api.AssertIsEqual(totalInputAmount, totalOutputAmount)
 
 	policyBits := api.ToBinary(c.UserPrivacyPolicy, 3)

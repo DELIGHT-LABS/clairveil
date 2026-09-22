@@ -9,6 +9,7 @@ import (
 	"time"
 
 	privatefile "github.com/DELIGHT-LABS/clairveil/internal/privatefile"
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -317,6 +318,7 @@ func signingRequest(p *PreparedBatchTransferPayload, canonical []byte) (BatchTra
 	ns := make([][]byte, len(p.Inputs))
 	ins := make([]BatchTransferSigningInput, len(p.Inputs))
 	inputTotal := new(big.Int)
+	var inputTotalNative privacyamount.Amount128
 	for i := range p.Inputs {
 		ns[i] = append([]byte(nil), p.Inputs[i].Nullifier...)
 		c, err := p.Inputs[i].Note.CommitmentV1()
@@ -332,7 +334,12 @@ func signingRequest(p *PreparedBatchTransferPayload, canonical []byte) (BatchTra
 			SpendPubKey: append([]byte(nil), spendBytes[:]...), ViewPubKey: append([]byte(nil), viewBytes[:]...),
 			Amount: p.Inputs[i].Note.Amount, AssetID: p.Inputs[i].Note.AssetID, Randomness: p.Inputs[i].Note.Randomness,
 		}
-		inputTotal.Add(inputTotal, new(big.Int).SetUint64(p.Inputs[i].Note.Amount))
+		nextTotal, err := inputTotalNative.Add(p.Inputs[i].Note.Amount)
+		if err != nil {
+			return BatchTransferSigningRequest{}, fmt.Errorf("operation total exceeds uint128: %w", err)
+		}
+		inputTotalNative = nextTotal
+		inputTotal = privacytypes.Amount128BigInt(nextTotal)
 	}
 	ownerSpend, _ := fixedPoint(p.Inputs[0].Note.ReceiverSpendPubKeyX, p.Inputs[0].Note.ReceiverSpendPubKeyY)
 	ownerView, _ := fixedPoint(p.Inputs[0].Note.ReceiverViewPubKeyX, p.Inputs[0].Note.ReceiverViewPubKeyY)

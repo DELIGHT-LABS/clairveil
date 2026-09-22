@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	cryptoeddsa "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
@@ -139,7 +140,7 @@ func TestPreparedPayloadMutationExpirySignatureAndFileMode(t *testing.T) {
 	require.NoError(t, err)
 	request, err := signingRequest(payload, canonical)
 	require.NoError(t, err)
-	request.OrderedOutputs[0].Amount++
+	request.OrderedOutputs[0].Amount, _ = request.OrderedOutputs[0].Amount.Add(privacyamount.FromUint64(1))
 	require.ErrorContains(t, ValidateBatchTransferSigningRequest(request), "commitment recomputation")
 	request, err = signingRequest(payload, canonical)
 	require.NoError(t, err)
@@ -404,7 +405,29 @@ func testNote(t *testing.T, spend, view *crypto_tedwards.PointAffine, amount, ra
 	require.NoError(t, err)
 	asset := privacytypes.ComputeSecretAssetIDV1("uclair")
 	r := privacycrypto.FieldValueFromUint64(uint64(randomness))
-	n, err := privacytypes.NewSecretNoteV1(sx, sy, vx, vy, uint64(amount), asset, r, "")
+	n, err := privacytypes.NewSecretNoteV1(sx, sy, vx, vy, privacyamount.FromUint64(uint64(amount)), asset, r, "")
 	require.NoError(t, err)
 	return *n
+}
+
+func TestPlanBatchTransferRejectsConservedOperationOverflow(t *testing.T) {
+	owner, view := testKey(t, 1), testKey(t, 2)
+	maximum := testNote(t, owner, view, 1, 11)
+	var err error
+	maximum.Amount, err = privacytypes.Amount128FromBigInt(privacytypes.MaxShieldedAmount())
+	require.NoError(t, err)
+	one := testNote(t, owner, view, 1, 12)
+	input := PlanBatchTransferInput{
+		Inputs:           []InputNote{{Note: maximum}, {Note: one}},
+		Payments:         []Payment{{SpendPubKey: owner, ViewPubKey: view, Amount: privacytypes.MaxShieldedAmount()}, {SpendPubKey: owner, ViewPubKey: view, Amount: big.NewInt(1)}},
+		OwnerSpendPubKey: owner, OwnerViewPubKey: view, Mode: OutputModeCompact,
+	}
+	_, err = PlanBatchTransfer(input)
+	require.ErrorContains(t, err, "operation total exceeds uint128")
+	input.Inputs[0].Note.Amount, err = maximum.Amount.Sub(privacyamount.FromUint64(1))
+	require.NoError(t, err)
+	input.Payments = input.Payments[:1]
+	plan, err := PlanBatchTransfer(input)
+	require.NoError(t, err)
+	require.Zero(t, plan.InputTotal.Cmp(privacytypes.MaxShieldedAmount()))
 }

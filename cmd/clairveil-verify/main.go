@@ -68,6 +68,6 @@ func writeVerifiedNote(w io.Writer, plaintext []byte) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "Decryption successful\nAmount: %d\nAsset: %s\nMemo: %s\n", note.Amount, note.AssetIDHex(), note.Memo)
+	_, err = fmt.Fprintf(w, "Decryption successful\nAmount: %s\nAsset: %s\nMemo: %s\n", note.Amount.String(), note.AssetIDHex(), note.Memo)
 	return err
 }

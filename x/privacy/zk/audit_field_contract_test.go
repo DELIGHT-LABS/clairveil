@@ -9,10 +9,10 @@ import (
 
 func TestT13AuditFieldSchemaGolden(t *testing.T) {
 	hashes := []string{
-		"5582ac050f0aecc4a40d02acfc948deb94932443e9857167b8a15602c5f9df7e",
-		"2e9cd75633922450f0aab068b2af26b94b2b3d71cc75426303fcf88554e5b8fa",
-		"79c7ff4a0ba411ccfaee0376291f9c1dfe65b4e38acf6ea1384749eefb07e333",
-		"93668901c968802861b13658290c2d703f6837de8ae7af7ef0bf65c906bbfd84",
+		"80b74ba0aa18f13e9379bf18df7a7828f1d0ae997da8339dc47dc88a5306ca9c",
+		"6e7576dea2a86f54d8606f0c88d64b5b814b5f4c36c0889dcc54af4a63546ce7",
+		"1a2108c9101745f83aca90d0aca2f90cca143243c58364732c879329883518b7",
+		"e405f7e1c0bbed8168a93d9853ec6da3cb7acd5c35bb593e597a2839cebfd724",
 	}
 	for i, id := range AuditFieldCircuitIDs() {
 		fields, err := PublicInputSchema(string(id))

@@ -38,7 +38,7 @@ func PrepareAuditV2FromSpend(snapshot privacyaudit.Snapshot, legacy *PreparedSpe
 		return nil, fmt.Errorf("invalid selected withdraw note: %w", err)
 	}
 	coin, err := sdk.ParseCoinNormalized(amount)
-	if err != nil || !coin.IsPositive() || coin.String() != amount || coin.Amount.BigInt().Cmp(new(big.Int).SetUint64(legacy.Note.Amount)) != 0 {
+	if err != nil || !coin.IsPositive() || coin.String() != amount || coin.Amount.BigInt().Cmp(privacytypes.Amount128BigInt(legacy.Note.Amount)) != 0 {
 		return nil, fmt.Errorf("withdraw amount does not match the selected note")
 	}
 	expectedAsset := privacytypes.ComputeAssetIDV1(coin.Denom).FillBytes(make([]byte, 32))

@@ -3,8 +3,8 @@ package transfer
 import (
 	"fmt"
 	"io"
-	"math"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -25,7 +25,7 @@ type SecretJoinSplitRequest struct {
 	SenderViewX  privacycrypto.FieldValue
 	SenderViewY  privacycrypto.FieldValue
 
-	TransferAmount uint64
+	TransferAmount privacyamount.Amount128
 }
 
 // SecretJoinSplitOutputs holds freshly sampled output notes and their fixed
@@ -41,7 +41,7 @@ type SecretJoinSplitOutputs struct {
 // PrepareSecretJoinSplitOutputsForAsset is the output-only form used by the
 // existing circuit builder. Its caller has already selected inputs and is at
 // the explicit conversion boundary; it never accepts a legacy Note.
-func PrepareSecretJoinSplitOutputsForAsset(reader io.Reader, asset privacycrypto.FieldValue, recipientAmount, changeAmount uint64, recipientSpendX, recipientSpendY, recipientViewX, recipientViewY, senderSpendX, senderSpendY, senderViewX, senderViewY privacycrypto.FieldValue) (*SecretJoinSplitOutputs, error) {
+func PrepareSecretJoinSplitOutputsForAsset(reader io.Reader, asset privacycrypto.FieldValue, recipientAmount, changeAmount privacyamount.Amount128, recipientSpendX, recipientSpendY, recipientViewX, recipientViewY, senderSpendX, senderSpendY, senderViewX, senderViewY privacycrypto.FieldValue) (*SecretJoinSplitOutputs, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("secret note randomness reader is required")
 	}
@@ -72,14 +72,14 @@ func PrepareSecretJoinSplitOutputs(reader io.Reader, request SecretJoinSplitRequ
 		return nil, fmt.Errorf("secret note randomness reader is required")
 	}
 	left, right := request.Inputs[0].Note, request.Inputs[1].Note
-	if request.TransferAmount > math.MaxUint64-left.Amount {
-		return nil, fmt.Errorf("input amount overflow")
+	total, err := left.Amount.Add(right.Amount)
+	if err != nil {
+		return nil, fmt.Errorf("input amount overflow: %w", err)
 	}
-	total := left.Amount + right.Amount
-	if request.TransferAmount > total {
+	change, err := total.Sub(request.TransferAmount)
+	if err != nil {
 		return nil, fmt.Errorf("transfer amount exceeds selected input total")
 	}
-	change := total - request.TransferAmount
 	return PrepareSecretJoinSplitOutputsForAsset(reader, left.AssetID, request.TransferAmount, change,
 		request.RecipientSpendX, request.RecipientSpendY, request.RecipientViewX, request.RecipientViewY,
 		request.SenderSpendX, request.SenderSpendY, request.SenderViewX, request.SenderViewY)

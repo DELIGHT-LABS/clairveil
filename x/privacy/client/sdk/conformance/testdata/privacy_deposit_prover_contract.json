@@ -25,7 +25,7 @@
     "amount": {
       "encoding": "canonical_non_negative_decimal",
       "minimum": "0",
-      "maximum": "18446744073709551615"
+      "maximum": "340282366920938463463374607431768211455"
     }
   },
   "canonical_positive_request": {

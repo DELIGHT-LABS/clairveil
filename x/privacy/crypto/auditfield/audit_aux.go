@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	depositRecoveryCiphertextSize  = 398
-	noteRecoveryCiphertextSize     = 430
-	publicDisclosurePayloadSize    = 392
-	encryptedDisclosurePayloadSize = 472
+	depositRecoveryCiphertextSize  = 406
+	noteRecoveryCiphertextSize     = 438
+	publicDisclosurePayloadSize    = 400
+	encryptedDisclosurePayloadSize = 480
 	viewTagSize                    = 2
 )
 

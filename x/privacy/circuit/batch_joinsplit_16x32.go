@@ -254,6 +254,7 @@ func (c *BatchJoinSplit16x32) defineRelation(api frontend.API, finish func([]fro
 			api.AssertIsEqual(api.Mul(bothEnabled, api.IsZero(api.Sub(commitments[i], commitments[j]))), 0)
 		}
 	}
+	assertAmountRange(api, totalInput)
 	api.AssertIsEqual(totalInput, totalOutput)
 
 	computedNullifierRoot := batchVectorRootCircuit(api, &h, privacytypes.BatchVectorNullifierV1, c.InputCount, nullifiers, inputEnabled)

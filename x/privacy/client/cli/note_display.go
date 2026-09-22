@@ -17,11 +17,11 @@ func (n displayedNote) MarshalJSON() ([]byte, error) {
 		SpendY     json.Number `json:"rsy"`
 		ViewX      json.Number `json:"rvx"`
 		ViewY      json.Number `json:"rvy"`
-		Amount     uint64      `json:"am"`
+		Amount     string      `json:"am"`
 		Asset      json.Number `json:"as"`
 		Randomness json.Number `json:"rn"`
 		Memo       string      `json:"mm"`
-	}{decimalField(n.ReceiverSpendPubKeyX.Bytes()), decimalField(n.ReceiverSpendPubKeyY.Bytes()), decimalField(n.ReceiverViewPubKeyX.Bytes()), decimalField(n.ReceiverViewPubKeyY.Bytes()), n.Amount, decimalField(n.AssetID.Bytes()), decimalField(n.Randomness.Bytes()), n.Memo})
+	}{decimalField(n.ReceiverSpendPubKeyX.Bytes()), decimalField(n.ReceiverSpendPubKeyY.Bytes()), decimalField(n.ReceiverViewPubKeyX.Bytes()), decimalField(n.ReceiverViewPubKeyY.Bytes()), n.Amount.String(), decimalField(n.AssetID.Bytes()), decimalField(n.Randomness.Bytes()), n.Memo})
 }
 
 func decimalField(raw [32]byte) json.Number {

@@ -89,6 +89,9 @@ func (s *batchPayrollPlanSearch) plan(input PayrollInput, available []TreasuryNo
 	}
 	for paymentCount := maxPayments; paymentCount >= 1; paymentCount-- {
 		paymentTotal := sumPayrollItemAmounts(input.Items[itemOffset : itemOffset+paymentCount])
+		if paymentTotal.Cmp(privacytypes.MaxShieldedAmount()) > 0 {
+			continue
+		}
 		for _, selection := range selectBatchTreasuryInputCandidates(available, paymentTotal) {
 			change := new(big.Int).Sub(selection.total, paymentTotal)
 			if change.Cmp(privacytypes.MaxShieldedAmount()) > 0 {
@@ -134,7 +137,7 @@ func buildBatchPayrollOperation(input PayrollInput, itemOffset, paymentCount, op
 }
 
 func selectBatchTreasuryInputCandidates(available []TreasuryNote, target *big.Int) []batchTreasuryInputSelection {
-	if target == nil || target.Sign() <= 0 {
+	if target == nil || target.Sign() <= 0 || target.Cmp(privacytypes.MaxShieldedAmount()) > 0 {
 		return nil
 	}
 	byOwner := make(map[string][]TreasuryNote)
@@ -188,6 +191,9 @@ func enumerateOwnerBatchInputCandidates(notes []TreasuryNote, target *big.Int) [
 			return
 		}
 		visited++
+		if total.Cmp(privacytypes.MaxShieldedAmount()) > 0 {
+			return
+		}
 		if total.Cmp(target) >= 0 {
 			candidate := cloneTreasuryNotes(selected)
 			sort.Slice(candidate, func(i, j int) bool { return candidate[i].NoteID < candidate[j].NoteID })

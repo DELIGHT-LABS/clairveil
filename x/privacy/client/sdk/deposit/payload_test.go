@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/stretchr/testify/require"
@@ -215,7 +216,7 @@ func testDepositNote(t testing.TB, amount int64) privacytypes.SecretNoteV1 {
 	require.NoError(t, err)
 	viewX, viewY, err := privacycrypto.PublicPointFieldValues(view)
 	require.NoError(t, err)
-	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, uint64(amount), privacytypes.ComputeSecretAssetIDV1("uclair"), privacycrypto.FieldValueFromUint64(17), "")
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, privacyamount.FromUint64(uint64(amount)), privacytypes.ComputeSecretAssetIDV1("uclair"), privacycrypto.FieldValueFromUint64(17), "")
 	require.NoError(t, err)
 	return *note
 }

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
@@ -28,9 +29,9 @@ const (
 )
 
 // amountBig is confined to the public planning layer. SecretNoteV1 carries
-// amounts as uint64; the existing planner accepts public user-requested
+// amounts as Amount128; the existing planner accepts public user-requested
 // targets as big.Int for Cosmos compatibility.
-func amountBig(amount uint64) *big.Int { return new(big.Int).SetUint64(amount) }
+func amountBig(value privacyamount.Amount128) *big.Int { return privacytypes.Amount128BigInt(value) }
 
 func ResolveRecipient(targetAddr string) (*crypto_tedwards.PointAffine, *crypto_tedwards.PointAffine, error) {
 	targetAddr = strings.TrimSpace(targetAddr)
@@ -183,7 +184,7 @@ func finalTransferOutputsWithinBound(total *big.Int, target *big.Int, maxOutputA
 	if target.Sign() < 0 || target.Cmp(maxOutputAmount) > 0 {
 		return false
 	}
-	if total.Cmp(target) < 0 {
+	if total.Cmp(target) < 0 || total.Cmp(maxOutputAmount) > 0 {
 		return false
 	}
 

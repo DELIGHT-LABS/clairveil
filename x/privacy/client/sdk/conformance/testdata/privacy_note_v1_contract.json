@@ -27,9 +27,9 @@
     "empty_root_32_hex": "057551a52590c07629bf07fa2b61832f852fb69ff8472bb21c30e5675ae8e8c1"
   },
   "encoding": {
-    "version": "privacy-fixed-v1",
-    "note_plaintext_bytes": 350,
-    "disclosure_plaintext_bytes": 392,
+    "version": "privacy-fixed-v2",
+    "note_plaintext_bytes": 358,
+    "disclosure_plaintext_bytes": 400,
     "envelope_header_bytes": 20
   }
 }

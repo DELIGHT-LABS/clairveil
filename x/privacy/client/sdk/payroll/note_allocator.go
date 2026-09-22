@@ -467,11 +467,10 @@ func payrollItemAllocationOrder(items []PayrollItemInput) []int {
 }
 
 type noteAllocationState struct {
-	notes         []TreasuryNote
-	next          []int
-	prev          []int
-	positiveFrom  int
-	maxOutputPlus *big.Int
+	notes        []TreasuryNote
+	next         []int
+	prev         []int
+	positiveFrom int
 }
 
 func newNoteAllocationState(available []TreasuryNote) *noteAllocationState {
@@ -487,11 +486,10 @@ func newNoteAllocationState(available []TreasuryNote) *noteAllocationState {
 		return available[i].Amount.Sign() > 0
 	})
 	return &noteAllocationState{
-		notes:         available,
-		next:          next,
-		prev:          prev,
-		positiveFrom:  positiveFrom,
-		maxOutputPlus: privacytypes.MaxShieldedAmount(),
+		notes:        available,
+		next:         next,
+		prev:         prev,
+		positiveFrom: positiveFrom,
 	}
 }
 
@@ -532,7 +530,7 @@ func (s *noteAllocationState) firstPositiveWithinBound(target *big.Int) (int, bo
 }
 
 func (s *noteAllocationState) selectPositivePair(target *big.Int) ([]TreasuryNote, error) {
-	maxTotal := new(big.Int).Add(target, s.maxOutputPlus)
+	maxTotal := privacytypes.MaxShieldedAmount()
 	left := s.findNext(s.positiveFrom)
 	right := s.lastAvailablePositive()
 	bestLeft := -1
@@ -620,7 +618,7 @@ func finalPayrollOutputsWithinBound(total *big.Int, target *big.Int) bool {
 	if target.Sign() <= 0 || target.Cmp(maxOutputAmount) > 0 {
 		return false
 	}
-	if total.Cmp(target) < 0 {
+	if total.Cmp(target) < 0 || total.Cmp(privacytypes.MaxShieldedAmount()) > 0 {
 		return false
 	}
 	change := new(big.Int).Sub(total, target)

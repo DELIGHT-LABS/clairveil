@@ -37,11 +37,11 @@ func TestProverHTTPSchemaContract(t *testing.T) {
 		require.Error(t, schema.Validate(fixture))
 	})
 
-	t.Run("rejects amount above uint64", func(t *testing.T) {
+	t.Run("rejects amount above uint128", func(t *testing.T) {
 		fixture := requireJSONObject(t, loadJSONSchemaValue(t, fixturePaths[1]))
 		request := requireJSONObject(t, fixture["canonical_positive_request"])
 		payload := requireJSONObject(t, request["payload"])
-		payload["amount"] = "18446744073709551616"
+		payload["amount"] = "340282366920938463463374607431768211456"
 		require.Error(t, schema.Validate(fixture))
 	})
 

@@ -454,7 +454,11 @@ func buildSpendAssignmentFromPreparedWithdrawPayload(payload PreparedWithdrawPro
 	if err != nil {
 		return nil, err
 	}
-	note := privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: sx, ReceiverSpendPubKeyY: sy, ReceiverViewPubKeyX: vx, ReceiverViewPubKeyY: vy, Amount: amount.Uint64(), AssetID: asset, Randomness: randomness}
+	nativeAmount, err := privacytypes.Amount128FromBigInt(amount)
+	if err != nil {
+		return nil, err
+	}
+	note := privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: sx, ReceiverSpendPubKeyY: sy, ReceiverViewPubKeyX: vx, ReceiverViewPubKeyY: vy, Amount: nativeAmount, AssetID: asset, Randomness: randomness}
 	if err := note.ValidateV1(); err != nil {
 		return nil, err
 	}

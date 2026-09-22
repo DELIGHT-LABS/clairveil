@@ -13,6 +13,6 @@ func (note SecretNoteV1) ToProverWitnessV1() Note {
 	return Note{
 		ReceiverSpendPubKeyX: toBig(spendX), ReceiverSpendPubKeyY: toBig(spendY),
 		ReceiverViewPubKeyX: toBig(viewX), ReceiverViewPubKeyY: toBig(viewY),
-		Amount: new(big.Int).SetUint64(note.Amount), AssetID: toBig(assetID), Randomness: toBig(randomness), Memo: note.Memo,
+		Amount: toBig(note.Amount.Bytes32()), AssetID: toBig(assetID), Randomness: toBig(randomness), Memo: note.Memo,
 	}
 }

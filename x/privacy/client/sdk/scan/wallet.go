@@ -3,7 +3,7 @@ package scan
 import (
 	"encoding/json"
 	"fmt"
-	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -28,9 +28,9 @@ type LoadLocalWalletFileResult struct {
 	CorruptBackupRenameErr error
 }
 
-func SummarizeSpendableNotes(notes []SecretFoundNote) ([]SecretFoundNote, uint64, error) {
+func SummarizeSpendableNotes(notes []SecretFoundNote) ([]SecretFoundNote, *big.Int, error) {
 	spendable := make([]SecretFoundNote, 0, len(notes))
-	var total uint64
+	total := new(big.Int)
 
 	for _, fn := range notes {
 		if fn.IsSpent {
@@ -38,10 +38,7 @@ func SummarizeSpendableNotes(notes []SecretFoundNote) ([]SecretFoundNote, uint64
 		}
 
 		spendable = append(spendable, fn)
-		if total > math.MaxUint64-fn.Note.Amount {
-			return nil, 0, fmt.Errorf("spendable note total overflows uint64")
-		}
-		total += fn.Note.Amount
+		total.Add(total, privacytypes.Amount128BigInt(fn.Note.Amount))
 	}
 
 	return spendable, total, nil
@@ -151,7 +148,7 @@ func foundNoteIdentityKey(note SecretFoundNote) string {
 		"fallback:%d:%s:%s",
 		note.Height,
 		strings.ToLower(strings.TrimSpace(note.TxHash)),
-		fmt.Sprintf("%d", note.Note.Amount),
+		note.Note.Amount.String(),
 	)
 }
 
@@ -172,5 +169,5 @@ func foundNoteDisplayLess(left, right SecretFoundNote) bool {
 		return leftNullifier < rightNullifier
 	}
 
-	return left.Note.Amount < right.Note.Amount
+	return left.Note.Amount.Cmp(right.Note.Amount) < 0
 }

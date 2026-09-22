@@ -3,20 +3,20 @@ package batchtransfer
 import (
 	"fmt"
 	"io"
-	"math"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	privacyscan "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/scan"
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 )
 
 // SecretBatchTransferOutputRequest is a pre-prover output with fixed field
-// coordinates and uint64 amount only.
+// coordinates and Amount128 amount only.
 type SecretBatchTransferOutputRequest struct {
 	Kind           string
 	SpendX, SpendY privacycrypto.FieldValue
 	ViewX, ViewY   privacycrypto.FieldValue
-	Amount         uint64
+	Amount         privacyamount.Amount128
 }
 
 // SecretBatchTransferRequest is the wallet-side batch selection. Existing
@@ -43,21 +43,22 @@ func PrepareSecretBatchTransferOutputs(reader io.Reader, request SecretBatchTran
 	}
 	asset := request.Inputs[0].Note.AssetID
 	assetBytes := asset.Bytes()
-	var inputTotal, outputTotal uint64
+	var inputTotal, outputTotal privacyamount.Amount128
+	var err error
 	for i := range request.Inputs {
 		if request.Inputs[i].Note.AssetID.Bytes() != assetBytes {
 			return nil, fmt.Errorf("input %d asset differs", i)
 		}
-		if inputTotal > math.MaxUint64-request.Inputs[i].Note.Amount {
-			return nil, fmt.Errorf("input amount overflow")
+		inputTotal, err = inputTotal.Add(request.Inputs[i].Note.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("input amount overflow: %w", err)
 		}
-		inputTotal += request.Inputs[i].Note.Amount
 	}
 	for i := range request.Outputs {
-		if outputTotal > math.MaxUint64-request.Outputs[i].Amount {
-			return nil, fmt.Errorf("output amount overflow")
+		outputTotal, err = outputTotal.Add(request.Outputs[i].Amount)
+		if err != nil {
+			return nil, fmt.Errorf("output amount overflow: %w", err)
 		}
-		outputTotal += request.Outputs[i].Amount
 	}
 	if inputTotal != outputTotal {
 		return nil, fmt.Errorf("batch output total differs from input total")

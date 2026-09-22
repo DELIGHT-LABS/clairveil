@@ -62,7 +62,7 @@ func TestBuildWithdrawPayloadBuildsPreparedPayload(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	require.Equal(t, int64(10), int64(result.SelectedNote.Note.Amount))
+	require.Equal(t, int64(10), privacytypes.Amount128BigInt(result.SelectedNote.Note.Amount).Int64())
 	require.NotNil(t, result.Payload)
 	require.Equal(t, "10uclair", result.Payload.Amount)
 	require.Equal(t, recipient.String(), result.Payload.Recipient)
@@ -121,7 +121,7 @@ func TestBuildWithdrawPayloadAutoPlansAndRescans(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	require.Equal(t, int64(10), int64(result.SelectedNote.Note.Amount))
+	require.Equal(t, int64(10), privacytypes.Amount128BigInt(result.SelectedNote.Note.Amount).Int64())
 	require.Len(t, source.calls, 2)
 	require.Len(t, planner.calls, 1)
 }

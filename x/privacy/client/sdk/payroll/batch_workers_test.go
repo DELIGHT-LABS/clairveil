@@ -342,15 +342,15 @@ func TestBuildBatchOperationGraphBindsRecipientAndDisclosurePlan(t *testing.T) {
 		items[i] = PayrollPlanItem{
 			CompanyID: "company", PayrollID: "payroll", BatchID: "batch", ItemID: "item-" + string(rune('a'+i)),
 			EmployeeID: "employee", OperationID: "bound-operation", RecipientAddress: address,
-			ExpectedRecipientHash: HashRecipient(address), Amount: new(big.Int).SetUint64(output.Note.Amount),
-			ExpectedAmountHash: HashAmount("uclair", new(big.Int).SetUint64(output.Note.Amount)), Denom: "uclair",
+			ExpectedRecipientHash: HashRecipient(address), Amount: privacytypes.Amount128BigInt(output.Note.Amount),
+			ExpectedAmountHash: HashAmount("uclair", privacytypes.Amount128BigInt(output.Note.Amount)), Denom: "uclair",
 			DisclosurePolicy: PayrollDisclosurePolicy{UserPrivacyPolicy: output.PrivacyPolicy, UserDisclosureMode: output.DisclosureMode, UserDisclosureTargetPubKeyHex: hex.EncodeToString(output.DisclosureTargetPubKey)},
 		}
 	}
 	plan := BatchPayrollOperationPlan{
 		OperationID: "bound-operation", Items: items,
-		InputNotes: []TreasuryNote{{NoteID: "note-a", OwnerKeyID: "owner", NullifierLookupKey: "lookup", NullifierLookupKeyID: "lookup-v1", Denom: "uclair", Amount: new(big.Int).SetUint64(payload.Inputs[0].Note.Amount)}},
-		InputTotal: new(big.Int).SetUint64(payload.Inputs[0].Note.Amount), PaymentTotal: new(big.Int).SetUint64(payload.Inputs[0].Note.Amount),
+		InputNotes: []TreasuryNote{{NoteID: "note-a", OwnerKeyID: "owner", NullifierLookupKey: "lookup", NullifierLookupKeyID: "lookup-v1", Denom: "uclair", Amount: privacytypes.Amount128BigInt(payload.Inputs[0].Note.Amount)}},
+		InputTotal: privacytypes.Amount128BigInt(payload.Inputs[0].Note.Amount), PaymentTotal: privacytypes.Amount128BigInt(payload.Inputs[0].Note.Amount),
 		Change: new(big.Int), OutputCount: len(items), HasChange: false,
 	}
 	derivedLookupKey, err := testPayrollCipher{}.PayrollNullifierLookupKey(context.Background(), plan.InputNotes[0].NullifierLookupKeyID, payload.Inputs[0].Nullifier)

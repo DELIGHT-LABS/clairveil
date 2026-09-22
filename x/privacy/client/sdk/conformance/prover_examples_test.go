@@ -98,7 +98,7 @@ func TestWriteProverExampleBundleFixture(t *testing.T) {
 
 	payload.UserDisclosureDigestHex, payload.UserDisclosurePayloadHex = rewriteDisclosureEnvelope(
 		t,
-		payload.UserDisclosurePayloadHex,
+		referenceDisclosurePayload(t, payload, privacydisclosure.PlaneUser),
 		big.NewInt(referenceUserDisclosureScalar),
 		userBlinding,
 		recipientCommitment,
@@ -106,7 +106,7 @@ func TestWriteProverExampleBundleFixture(t *testing.T) {
 	)
 	payload.AuditDisclosureDigestHex, payload.AuditDisclosurePayloadHex = rewriteDisclosureEnvelope(
 		t,
-		payload.AuditDisclosurePayloadHex,
+		referenceDisclosurePayload(t, payload, privacydisclosure.PlaneAudit),
 		big.NewInt(referenceAuditDisclosureScalar),
 		fullBlinding,
 		recipientCommitment,
@@ -114,7 +114,7 @@ func TestWriteProverExampleBundleFixture(t *testing.T) {
 	)
 	payload.SelfViewDisclosureDigestHex, payload.SelfViewDisclosurePayloadHex = rewriteDisclosureEnvelope(
 		t,
-		payload.SelfViewDisclosurePayloadHex,
+		referenceDisclosurePayload(t, payload, privacydisclosure.PlaneSelfView),
 		big.NewInt(referenceSelfViewDisclosureScalar),
 		fullBlinding,
 		recipientCommitment,
@@ -158,21 +158,41 @@ func TestWriteProverExampleBundleFixture(t *testing.T) {
 	require.NoError(t, os.WriteFile(proverExampleBundleFixturePath(t), append(bz, '\n'), 0o644))
 }
 
+func referenceDisclosurePayload(t *testing.T, source *privacytransfer.PreparedTransferPayload, plane string) *privacydisclosure.Payload {
+	t.Helper()
+	address := func(spendHex, viewHex string) string {
+		spend, err := privacycrypto.DecodeCanonicalPoint(mustDecodeHex(t, spendHex))
+		require.NoError(t, err)
+		view, err := privacycrypto.DecodeCanonicalPoint(mustDecodeHex(t, viewHex))
+		require.NoError(t, err)
+		result, err := privacytypes.EncodeShieldedAddressWithView(spend, view)
+		require.NoError(t, err)
+		return result
+	}
+	policy := source.UserPrivacyPolicy
+	if plane != privacydisclosure.PlaneUser {
+		policy = privacytypes.TransferPrivacyPolicyDiscloseAmountToFrom
+	}
+	result := &privacydisclosure.Payload{Plane: plane, Policy: policy, OutputIndex: 0, AssetIDHex: source.AssetIDHex}
+	if policy&privacytypes.TransferPrivacyPolicyDiscloseAmount != 0 {
+		result.Amount = source.Outputs[0].Amount
+	}
+	if policy&privacytypes.TransferPrivacyPolicyDiscloseFrom != 0 {
+		result.FromShieldedAddress = address(source.Inputs[0].SpendPubKeyHex, source.Inputs[0].ViewPubKeyHex)
+	}
+	if policy&privacytypes.TransferPrivacyPolicyDiscloseTo != 0 {
+		result.ToShieldedAddress = address(source.Outputs[0].SpendPubKeyHex, source.Outputs[0].ViewPubKeyHex)
+	}
+	return result
+}
+
 func rewriteDisclosureEnvelope(
 	t *testing.T,
-	cipherHex string,
+	payload *privacydisclosure.Payload,
 	scalar, blinding *big.Int,
 	commitmentHex, assetIDHex string,
 ) (string, string) {
 	t.Helper()
-	payload, err := privacydisclosure.DecryptPayloadHex(cipherHex, mustSecretScalar(t, scalar))
-	if err != nil {
-		legacyCipherText := mustDecodeHex(t, cipherHex)
-		legacyPlainText, decryptErr := privacycrypto.AsymDecrypt(legacyCipherText, mustSecretScalar(t, scalar))
-		require.NoError(t, decryptErr)
-		payload = new(privacydisclosure.Payload)
-		require.NoError(t, json.Unmarshal(legacyPlainText, payload))
-	}
 	payload.Version = privacydisclosure.PayloadVersion
 	payload.BlindingHex = mustCanonicalBigIntHex(t, blinding)
 	payload.CommitmentHex = commitmentHex

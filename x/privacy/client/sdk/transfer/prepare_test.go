@@ -81,8 +81,8 @@ func TestPrepareJoinSplitTransferBuildsAssignmentAndOutputs(t *testing.T) {
 	require.Equal(t, rootBytes, prepared.CommonRoot)
 	require.Len(t, prepared.InputNullifiers, 2)
 	require.Len(t, prepared.OutputCommitments, 2)
-	require.Equal(t, int64(7), int64(prepared.RecipientNote.Amount))
-	require.Equal(t, int64(5), int64(prepared.ChangeNote.Amount))
+	require.Equal(t, int64(7), privacytypes.Amount128BigInt(prepared.RecipientNote.Amount).Int64())
+	require.Equal(t, int64(5), privacytypes.Amount128BigInt(prepared.ChangeNote.Amount).Int64())
 	assignmentAssetID, ok := prepared.Assignment.AssetID.(*big.Int)
 	require.True(t, ok)
 	require.Equal(t, 0, assignmentAssetID.Cmp(privacytypes.ComputeAssetIDV1("uclair")))
@@ -248,7 +248,7 @@ func TestPrepareJoinSplitTransferRejectsChangeAmountAboveShieldedLimit(t *testin
 			SenderViewPubKey:     fixture.senderViewPubKey,
 		},
 	)
-	require.ErrorContains(t, err, "change amount exceeds 64-bit shielded amount limit")
+	require.ErrorContains(t, err, "input amount exceeds 128-bit shielded amount limit")
 	require.Empty(t, fixture.merkleProvider.requests)
 }
 

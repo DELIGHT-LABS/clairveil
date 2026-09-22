@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	"github.com/consensys/gnark-crypto/ecc"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
@@ -145,7 +146,7 @@ func integrationDepositNote() privacytypes.SecretNoteV1 {
 	if err != nil {
 		panic(err)
 	}
-	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, 7, privacycrypto.FieldValueFromUint64(11), privacycrypto.FieldValueFromUint64(13), "")
+	note, err := privacytypes.NewSecretNoteV1(spendX, spendY, viewX, viewY, privacyamount.FromUint64(7), privacycrypto.FieldValueFromUint64(11), privacycrypto.FieldValueFromUint64(13), "")
 	if err != nil {
 		panic(err)
 	}

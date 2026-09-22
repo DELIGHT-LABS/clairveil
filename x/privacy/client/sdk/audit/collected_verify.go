@@ -108,14 +108,22 @@ func collectedRecord(network [32]byte, row CollectedAuditTx) (*auditRecord, [][]
 		module := authtypes.NewModuleAddress(privacytypes.ModuleName)
 		if m.Kind() == auditfield.KindDeposit {
 			input.Principal = creator
-			transparent = &TransparentAuditEffect{Kind: m.Kind(), From: creator, To: module, Denom: coin.Denom, Amount: coin.Amount.Uint64()}
+			nativeAmount, err := privacytypes.Amount128FromBigInt(coin.Amount.BigInt())
+			if err != nil {
+				return nil, nil, err
+			}
+			transparent = &TransparentAuditEffect{Kind: m.Kind(), From: creator, To: module, Denom: coin.Denom, Amount: nativeAmount}
 		} else {
 			recipient, err := sdk.AccAddressFromBech32(m.Recipient())
 			if err != nil {
 				return nil, nil, err
 			}
 			input.Principal = recipient
-			transparent = &TransparentAuditEffect{Kind: m.Kind(), From: module, To: recipient, Denom: coin.Denom, Amount: coin.Amount.Uint64()}
+			nativeAmount, err := privacytypes.Amount128FromBigInt(coin.Amount.BigInt())
+			if err != nil {
+				return nil, nil, err
+			}
+			transparent = &TransparentAuditEffect{Kind: m.Kind(), From: module, To: recipient, Denom: coin.Denom, Amount: nativeAmount}
 		}
 	}
 	pi, err := buildPublicInputs(input, inputs, commitments, aux, auxBytes, m.Root())

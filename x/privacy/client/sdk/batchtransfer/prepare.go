@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
 	privacyfield "github.com/DELIGHT-LABS/clairveil/x/privacy/client/sdk/field"
@@ -89,7 +90,11 @@ func PrepareBatchTransfer(ctx context.Context, provider MerklePathProvider, plan
 		if err != nil {
 			return nil, err
 		}
-		note := privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: xs, ReceiverSpendPubKeyY: ys, ReceiverViewPubKeyX: xv, ReceiverViewPubKeyY: yv, Amount: output.Amount.Uint64(), AssetID: plan.Inputs[0].Note.AssetID, Randomness: r, Memo: string(output.Kind)}
+		nativeAmount, err := privacytypes.Amount128FromBigInt(output.Amount)
+		if err != nil {
+			return nil, err
+		}
+		note := privacytypes.SecretNoteV1{ReceiverSpendPubKeyX: xs, ReceiverSpendPubKeyY: ys, ReceiverViewPubKeyX: xv, ReceiverViewPubKeyY: yv, Amount: nativeAmount, AssetID: plan.Inputs[0].Note.AssetID, Randomness: r, Memo: string(output.Kind)}
 		if err := note.ValidateV1(); err != nil {
 			return nil, fmt.Errorf("output %d NoteV1: %w", i, err)
 		}
@@ -132,6 +137,7 @@ func validateBatchTransferPlanForPreparation(plan *BatchTransferPlan) error {
 	}
 
 	inputTotal := new(big.Int)
+	var inputTotalNative privacyamount.Amount128
 	seenNullifiers := make(map[string]struct{}, len(plan.Inputs))
 	for i := range plan.Inputs {
 		note := plan.Inputs[i].Note
@@ -154,7 +160,12 @@ func validateBatchTransferPlanForPreparation(plan *BatchTransferPlan) error {
 			return fmt.Errorf("duplicate input nullifier at index %d", i)
 		}
 		seenNullifiers[nullifier] = struct{}{}
-		inputTotal.Add(inputTotal, new(big.Int).SetUint64(note.Amount))
+		nextTotal, err := inputTotalNative.Add(note.Amount)
+		if err != nil {
+			return fmt.Errorf("operation total exceeds uint128: %w", err)
+		}
+		inputTotalNative = nextTotal
+		inputTotal = privacytypes.Amount128BigInt(nextTotal)
 	}
 
 	ownerSpend := pointBytesFromNote(plan.Inputs[0].Note, true)

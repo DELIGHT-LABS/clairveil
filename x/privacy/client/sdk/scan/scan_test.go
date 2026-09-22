@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"testing"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	cmttypes "github.com/cometbft/cometbft/rpc/core/types"
 	"github.com/stretchr/testify/require"
 
@@ -127,12 +128,12 @@ func TestProcessScanEventUsesViewTag(t *testing.T) {
 
 	found := ProcessScanEvent(event, rootSeed, &spendScalar, &viewScalar)
 	require.Len(t, found, 1)
-	require.Equal(t, uint64(11), found[0].Note.Amount)
+	require.Equal(t, privacyamount.FromUint64(11), found[0].Note.Amount)
 
 	event.Outputs[0].ViewTagHex = "ffff"
 	found = ProcessScanEvent(event, rootSeed, &spendScalar, &viewScalar)
 	require.Len(t, found, 1)
-	require.Equal(t, uint64(11), found[0].Note.Amount)
+	require.Equal(t, privacyamount.FromUint64(11), found[0].Note.Amount)
 
 	found = processScanEventWithOptions(event, rootSeed, &spendScalar, &viewScalar, processOptions{SkipViewTagMismatch: true})
 	require.Empty(t, found)
@@ -221,11 +222,11 @@ func TestProcessPrivacyScanBatchOutputDecryptsDespiteMismatchedViewTag(t *testin
 	output := &privacytypes.PrivacyScanOutputV2{Height: 10, GlobalSequence: 8, OutputIndex: 5, EventType: privacytypes.EventTypeBatchTransferV1, Commitment: commitment, Ciphertext: wrapped, ViewTag: []byte{0xff, 0xff}, TxHash: make([]byte, 32), AuditKeyId: "audit-key-id", AuditKeyEpoch: 3}
 	found, err := ProcessPrivacyScanOutput(output, rootSeed, &spendScalar, &viewScalar, false)
 	require.NoError(t, err)
-	require.Equal(t, uint64(31), found.Note.Amount)
+	require.Equal(t, privacyamount.FromUint64(31), found.Note.Amount)
 	require.Equal(t, uint32(5), found.OutputIndex)
 	secretFound, err := ProcessSecretPrivacyScanOutput(output, rootSeed, &spendScalar, &viewScalar, false)
 	require.NoError(t, err)
-	require.Equal(t, uint64(31), secretFound.Note.Amount)
+	require.Equal(t, privacyamount.FromUint64(31), secretFound.Note.Amount)
 	require.Equal(t, found.Nullifier, secretFound.Nullifier)
 	require.Equal(t, "audit-key-id", secretFound.AuditKeyID)
 	require.Equal(t, uint64(3), secretFound.AuditKeyEpoch)

@@ -164,7 +164,7 @@ func buildAssignment(p *PreparedBatchTransferPayload, ownerSignature []byte) (*c
 		}
 	}
 	for i, in := range p.Inputs {
-		a.InputAmounts[i] = in.Note.Amount
+		a.InputAmounts[i] = privacytypes.Amount128BigInt(in.Note.Amount)
 		a.InputRandomness[i] = fixedPublicBig(in.Note.Randomness)
 		for j, raw := range in.MerklePath {
 			if j >= circuit.MerkleDepth {
@@ -192,7 +192,7 @@ func buildAssignment(p *PreparedBatchTransferPayload, ownerSignature []byte) (*c
 		vp, _ := fixedPoint(out.Note.ReceiverViewPubKeyX, out.Note.ReceiverViewPubKeyY)
 		assignKey(&a.OutputSpendPubKeys[i], sp)
 		assignKey(&a.OutputViewPubKeys[i], vp)
-		a.OutputAmounts[i] = out.Note.Amount
+		a.OutputAmounts[i] = privacytypes.Amount128BigInt(out.Note.Amount)
 		a.OutputRandomness[i] = fixedPublicBig(out.Note.Randomness)
 		a.OutputPrivacyPolicies[i] = new(big.Int).SetUint64(uint64(out.PrivacyPolicy))
 		a.UserDisclosureBlindings[i] = fixedPublicBig(out.UserDisclosureBlinding)

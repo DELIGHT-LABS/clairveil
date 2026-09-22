@@ -3,8 +3,8 @@ package deposit
 import (
 	"encoding/hex"
 	"fmt"
-	"strconv"
 
+	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
 	crypto_tedwards "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 
 	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
@@ -61,7 +61,7 @@ func BuildPreparedDepositProverPayload(note privacytypes.SecretNoteV1) (*Prepare
 		Version:                PreparedDepositProverPayloadVersion,
 		ReceiverSpendPubKeyHex: spendKeyHex,
 		ReceiverViewPubKeyHex:  viewKeyHex,
-		Amount:                 strconv.FormatUint(note.Amount, 10),
+		Amount:                 note.Amount.String(),
 		AssetIDHex:             assetIDHex,
 		RandomnessHex:          randomnessHex,
 		NoteCommitmentHex:      commitmentHex,
@@ -224,15 +224,8 @@ func decodeDepositFieldHex(value, fieldName string) (privacycrypto.FieldValue, e
 	return field, nil
 }
 
-func parseDepositAmount(value string) (uint64, error) {
-	if value == "" || (len(value) > 1 && value[0] == '0') {
-		return 0, fmt.Errorf("deposit prover payload amount must be a canonical base-10 integer")
-	}
-	amount, err := strconv.ParseUint(value, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("deposit prover payload amount must be a canonical uint64: %w", err)
-	}
-	return amount, nil
+func parseDepositAmount(value string) (privacyamount.Amount128, error) {
+	return privacyamount.Parse(value)
 }
 
 func validateExactLowerHex(value string, length int, fieldName string) error {

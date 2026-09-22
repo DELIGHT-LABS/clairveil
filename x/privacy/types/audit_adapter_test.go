@@ -40,3 +40,19 @@ func TestAuditGeneratedAdapterOwnsBytesAndUsesLeafCodec(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestAuditGeneratedAdapterAmountUint128(t *testing.T) {
+	output := &v2.OutputEffect{Commitment: af.Field32FromUint64(7).Bytes(), Ciphertext: validEnvelopeBytes(t, EnvelopeDepositNoteV1)}
+	msg := &v2.MsgDeposit{Creator: sdk.AccAddress(bytes.Repeat([]byte{1}, 20)).String(), Output: output, Proof: make([]byte, 164), ExpiresAtUnix: 1, Audit: &v2.AuditAuthorization{KeyId: make([]byte, 32), Epoch: 1, Envelope: make([]byte, 336)}}
+	for _, value := range []string{"18446744073709551616", "100000000000000000000", "340282366920938463463374607431768211455"} {
+		msg.Amount = value + "uclair"
+		m, err := ValidateAuditMessage(msg)
+		require.NoError(t, err)
+		require.Equal(t, value, m.Coin().Amount.String())
+	}
+	for _, value := range []string{"0", "340282366920938463463374607431768211456"} {
+		msg.Amount = value + "uclair"
+		_, err := ValidateAuditMessage(msg)
+		require.Error(t, err)
+	}
+}

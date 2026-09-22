@@ -308,7 +308,7 @@ func transferBatchFoundNoteKey(note FoundNote) string {
 		return fmt.Sprintf("commitment:%x", raw[:])
 	}
 
-	return fmt.Sprintf("fallback:%d:%s:%s", note.Height, strings.ToLower(strings.TrimSpace(note.TxHash)), fmt.Sprintf("%d", note.Note.Amount))
+	return fmt.Sprintf("fallback:%d:%s:%s", note.Height, strings.ToLower(strings.TrimSpace(note.TxHash)), note.Note.Amount.String())
 }
 
 func transferBatchOutputItems(coins []sdk.Coin, msgs []sdk.Msg) ([]transferBatchItemOutput, error) {

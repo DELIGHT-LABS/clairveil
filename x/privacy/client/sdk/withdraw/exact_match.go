@@ -2,6 +2,7 @@ package withdraw
 
 import (
 	"fmt"
+	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
 	"math/big"
 	"sort"
 	"strings"
@@ -44,7 +45,7 @@ func formatSpendableNoteAmounts(notes []privacyscan.SecretFoundNote, denom strin
 
 	amounts := make([]*big.Int, 0, len(notes))
 	for _, note := range notes {
-		amounts = append(amounts, new(big.Int).SetUint64(note.Note.Amount))
+		amounts = append(amounts, privacytypes.Amount128BigInt(note.Note.Amount))
 	}
 
 	sort.Slice(amounts, func(i, j int) bool {
