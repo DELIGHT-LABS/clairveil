@@ -2,6 +2,8 @@
 
 > Legacy archive: 이 NoteV1/16x32 specification과 fixed fixture는 conformance history로 보존됩니다. 현재 V2 runtime이나 live prover contract가 아닙니다. 현재 공통 route는 [Proverd HTTP API](clairveil-proverd-http-api-kr.md)를 사용하세요.
 
+> 현재 uint128 계약은 `privacy-note-v1-u128-audit-field-v1`, `privacy-fixed-v2`, 16바이트 금액을 사용합니다. 아래 frozen legacy의 금액 폭·offset·hash 표는 과거 기록이며, 현재 크기와 범위는 [HTTP API 금액 계약](clairveil-proverd-http-api-kr.md#uint128-금액-계약)을 따릅니다.
+
 ## 1. 상태와 범위
 
 이 문서는 frozen legacy NoteV1 fixture와 inner 16-input/32-output relation의 domain separation, 고정 인코딩, aggregate vector root, disclosure digest, scan state, artifact identity, resource accounting에만 normative하다. Current runtime message는 `clairveil.privacy.v2.MsgBatchTransfer`와 audit-field wrapper/PI23 contract를 사용한다.

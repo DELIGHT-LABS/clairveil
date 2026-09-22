@@ -107,7 +107,7 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 2. Define remote prover authentication, TLS, rate limit, timeout, logging, and data-retention policy.
 3. Define wallet storage encryption and seed/key derivation custody policy.
 4. Define audit epoch private-key custody, governance rotation, and incident response.
-5. Pin and verify the consensus `privacy-note-v1-audit-field-v1` identity through the manifest/startup checks, and add signed artifact release metadata.
+5. Pin and verify the consensus `privacy-note-v1-u128-audit-field-v1` identity through the manifest/startup checks, and add signed artifact release metadata.
 6. Run Clairveil conformance fixtures against the downstream JS/TS SDK.
 7. Run local node e2e with downstream prefixes, denoms, public V4 audit configuration, and V1 wallet/V2 audit query routes.
 8. Add chain-specific threat model for EVM, policy module, precompile, relayer, and frontend integrations.
@@ -119,7 +119,7 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 
 For `POST /v1/prover/deposit`, the wallet-to-prover trust boundary includes the receiver public keys, amount, asset ID, randomness, and commitment. The encrypted note, creator, denom, memo, seed, and chain ID remain outside it. A remote prover can correlate this witness metadata, so its body logs, telemetry, retention, authentication, admission, and readiness are security controls; automatic failover expands the protected-asset exposure. The route's exact contract is the [deposit API](clairveil-proverd-http-api.md#deposit), with shared transport controls in the [general HTTP API](clairveil-proverd-http-api.md).
 
-The active identity is `privacy-note-v1`, with required descriptors `deposit`, `spend`, `joinsplit`, and `batch-joinsplit-16x32-v1`; the canonical payload contract is `privacy-fixed-v1`. Earlier state, raw ciphertext, JSON note/disclosure plaintext, three-circuit artifacts, proof jobs, and wallet caches are deliberately incompatible. Reusing them creates cross-version aliasing and stale-root risks, so the supported transition is fresh genesis plus artifact/cache deletion and full rescan.
+The active identity is `privacy-note-v1-u128-audit-field-v1`, with required descriptors `deposit-audit-field-u128-v1`, `spend-audit-field-u128-v1`, `joinsplit-2x2-audit-field-u128-v1`, and `batch-joinsplit-16x32-audit-field-u128-v1`; the canonical payload contract is `privacy-fixed-v2`. Earlier state, raw ciphertext, JSON note/disclosure plaintext, three-circuit artifacts, proof jobs, and wallet caches are deliberately incompatible. Reusing them creates cross-version aliasing and stale-root risks, so the supported transition is fresh genesis plus artifact/cache deletion and full rescan.
 
 New or clarified trust-boundary threats are:
 

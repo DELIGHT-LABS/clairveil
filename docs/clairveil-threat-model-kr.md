@@ -105,7 +105,7 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 2. Define remote prover authentication, TLS, rate limit, timeout, logging, and data-retention policy.
 3. Define wallet storage encryption and seed/key derivation custody policy.
 4. Audit epoch private-key custody, governance rotation, incident response를 정의합니다.
-5. Manifest/startup check로 consensus `privacy-note-v1-audit-field-v1` identity를 고정·검증하고 signed artifact release metadata를 사용합니다.
+5. Manifest/startup check로 consensus `privacy-note-v1-u128-audit-field-v1` identity를 고정·검증하고 signed artifact release metadata를 사용합니다.
 6. Run Clairveil conformance fixtures against the downstream JS/TS SDK.
 7. Downstream prefix, denom, public V4 audit configuration, V1 wallet/V2 audit query route로 local node e2e를 실행합니다.
 8. Add chain-specific threat model for EVM, policy module, precompile, relayer, and frontend integrations.
@@ -117,7 +117,7 @@ Before a downstream project treats Clairveil as production-ready, it should at m
 
 `POST /v1/prover/deposit`의 wallet-to-prover trust boundary에는 receiver public key, amount, asset ID, randomness, commitment가 포함됩니다. Encrypted note, creator, denom, memo, seed, chain ID는 밖에 남습니다. Remote prover는 이 witness metadata를 correlate할 수 있으므로 body log, telemetry, retention, authentication, admission, readiness가 security control이며 automatic failover는 보호 대상 노출을 확대합니다. Exact contract는 [deposit API](clairveil-proverd-http-api-kr.md#deposit), 공통 transport control은 [general HTTP API](clairveil-proverd-http-api-kr.md)에 있습니다.
 
-Active identity는 required descriptor `deposit`, `spend`, `joinsplit`, `batch-joinsplit-16x32-v1`을 가진 `privacy-note-v1`이고 canonical payload contract는 `privacy-fixed-v1`입니다. 이전 state, raw ciphertext, JSON note/disclosure plaintext, three-circuit artifact, proof job, wallet cache는 의도적으로 호환되지 않습니다. 재사용하면 cross-version alias와 stale-root risk가 생기므로 지원하는 전환 방식은 fresh genesis, artifact/cache 삭제, full rescan입니다.
+Active identity는 required descriptor `deposit-audit-field-u128-v1`, `spend-audit-field-u128-v1`, `joinsplit-2x2-audit-field-u128-v1`, `batch-joinsplit-16x32-audit-field-u128-v1`을 가진 `privacy-note-v1-u128-audit-field-v1`이고 canonical payload contract는 `privacy-fixed-v2`입니다. 이전 state, raw ciphertext, JSON note/disclosure plaintext, three-circuit artifact, proof job, wallet cache는 의도적으로 호환되지 않습니다. 재사용하면 cross-version alias와 stale-root risk가 생기므로 지원하는 전환 방식은 fresh genesis, artifact/cache 삭제, full rescan입니다.
 
 새롭거나 더 명확해진 trust-boundary threat는 아래와 같습니다.
 

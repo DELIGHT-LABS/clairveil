@@ -2,8 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { randomBytes } from "node:crypto";
 
 const route = "/v2/prover/audit-field";
-const circuitSetID = "privacy-note-v1-audit-field-v1";
-const circuitID = "deposit-audit-field-v1";
+const circuitSetID = "privacy-note-v1-u128-audit-field-v1";
+const circuitID = "deposit-audit-field-u128-v1";
 const pi23Length = 23;
 
 interface AuditRequest {
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
     const response = await prove(server.baseURL, token, request);
     validateResponse(request, response);
     let rejected = false;
-    try { validateResponse(request, { ...response, circuit_id: "spend-audit-field-v1" }); } catch { rejected = true; }
+    try { validateResponse(request, { ...response, circuit_id: "spend-audit-field-u128-v1" }); } catch { rejected = true; }
     equal(rejected, true, "mismatched response rejection");
     console.log("Clairveil JS V2 audit-field prover HTTP client demo passed");
     console.log("- route: " + route + "; PI23 bindings checked: " + String(pi23Length));

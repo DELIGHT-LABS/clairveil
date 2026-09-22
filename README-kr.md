@@ -35,9 +35,9 @@ English version: [README.md](README.md)
 | 항목 | 현재 기준 |
 | --- | --- |
 | 공개 상태 | `PUBLICATION_READY_EXPERIMENTAL`; source/reference 공개 가능 상태이며 production 배포 승인이 아님 |
-| Consensus circuit set | audit-field V2 runtime state의 `privacy-note-v1-audit-field-v1` |
+| Consensus circuit set | audit-field V2 runtime state의 `privacy-note-v1-u128-audit-field-v1` |
 | Current client contract | V2 asset message, exact artifact binding과 final PI23을 포함한 audit-field request/response envelope `v1` |
-| Retained legacy fixture | `privacy-fixed-v1`; transfer payload `v5`, proof/prover contract `v2` |
+| Retained legacy fixture | `privacy-fixed-v2`; transfer payload `v5`, proof/prover contract `v2` |
 | Batch surface | `BatchJoinSplit16x32`, `MsgBatchTransfer`; batch integration용 Go SDK/prover/scanner/payroll/CLI reference 구현 |
 | Upgrade 경계 | 이전 artifact, proof job, note/scan cache, non-audited genesis와 호환되지 않음. fresh genesis/reset 및 rescan 필요 |
 | 남은 production gate | formal trusted setup, 외부 security/circuit audit, signed production artifact, downstream chain/product 검증 |

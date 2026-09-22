@@ -45,7 +45,7 @@ Domain label 파생과 정확한 argument 순서는 [BatchJoinSplit16x32 계약]
 
 이 commitment는 on-chain leaf로 저장됩니다. amount, asset, randomness, spend/view public key는 직접 공개되지 않고 commitment에 묶입니다.
 
-모든 shielded amount는 non-negative 64-bit integer로 constrain됩니다. Keeper, SDK, payload, circuit 검증은 같은 bound를 사용합니다.
+모든 shielded amount는 non-negative 128-bit integer로 constrain됩니다. Keeper, SDK, payload, circuit 검증은 개별 금액과 한 operation의 입력·출력 합계에 같은 `M = 2^128-1` bound를 사용합니다. 자산별 wallet·payroll·audit 집계와 누적 입출금은 임의 정밀도로 합산하며, 현재 pool liability와 bank 잔액에는 기존 256-bit bound만 적용합니다.
 
 ## 3. DepositCircuit
 
@@ -71,7 +71,7 @@ Domain label 파생과 정확한 argument 순서는 [BatchJoinSplit16x32 계약]
 
 1. `Commitment = MiMC(domain_field("clairveil.note-commitment.v1"), spend_pubkey_x, spend_pubkey_y, view_pubkey_x, view_pubkey_y, Amount, AssetID, Randomness)`이며, 위의 canonical NoteV1 수식과 정확히 같습니다.
 2. shielded public key point가 circuit point로 유효합니다.
-3. `Amount`가 64-bit shielded amount bound 안에 있습니다.
+3. `Amount`가 128-bit shielded amount bound 안에 있습니다.
 
 ### 증명하지 않는 것
 
@@ -114,7 +114,7 @@ Domain label 파생과 정확한 argument 순서는 [BatchJoinSplit16x32 계약]
 2. `Signature`가 `ReceiverSpendPubKey`에 대해 유효하고 `SpendIntentV2`의 chain domain, root, nullifier, amount, asset, recipient digest, expiry를 인증합니다.
 3. Recipient digest는 `SHA-256("clairveil.withdraw-recipient.v1" || u32be(len(raw_recipient_bytes)) || raw_recipient_bytes)`이며 field reduction 없이 big-endian 128-bit limb 두 개로 나눕니다. 따라서 leading-zero byte string이 다른 recipient와 alias되지 않습니다.
 4. `Nullifier = MiMC(Randomness, spend_pubkey_x, spend_pubkey_y)`입니다.
-5. `Amount`가 64-bit shielded amount bound 안에 있습니다.
+5. `Amount`가 128-bit shielded amount bound 안에 있습니다.
 6. 즉 같은 note를 다시 쓰면 같은 nullifier가 나오고 keeper가 재사용을 거부할 수 있습니다.
 
 ### 증명하지 않는 것
@@ -180,7 +180,7 @@ outputs = 2
 4. 두 nullifier가 서로 다르고 두 output commitment도 서로 다릅니다.
 5. 두 output commitment가 secret output data와 일치합니다.
 6. `sum(input amounts) = sum(output amounts)`입니다.
-7. 각 input/output amount가 64-bit shielded amount bound 안에 있습니다.
+7. 각 input/output amount가 128-bit shielded amount bound 안에 있습니다.
 8. user disclosure가 켜진 경우 policy로 선택한 field와 non-zero blinding이 `UserDisclosureDigest`에 묶입니다.
 9. audit/self-view full disclosure는 non-zero blinding을 사용하고 `FullDisclosureDigest`에 묶입니다.
 10. Ordered nullifier, commitment, ciphertext, view tag, 모든 disclosure envelope, expiry는 서명 전에 확정되고 canonical payload digest를 통해 묶입니다. Relayer가 `creator`만 바꿀 수 있도록 `creator`, proof bytes, fee, gas, memo, sequence, tx signature는 제외됩니다.
@@ -237,7 +237,7 @@ transfer는 mandatory audit disclosure를 항상 포함해야 합니다. 회로�
 
 ## 8. BatchJoinSplit16x32
 
-Batch 회로는 exact active prefix와 zero disabled sentinel, 독립적인 depth-32 membership path, canonical subgroup key, active input/output distinctness, 64-bit value conservation, output별 user/full disclosure digest, owner signature 하나로 input 1..16개와 output 1..32개를 증명합니다. Deposit, Spend, JoinSplit2x2와 NoteV1 relation을 공유합니다.
+Batch 회로는 exact active prefix와 zero disabled sentinel, 독립적인 depth-32 membership path, canonical subgroup key, active input/output distinctness, 128-bit value conservation, output별 user/full disclosure digest, owner signature 하나로 input 1..16개와 output 1..32개를 증명합니다. Deposit, Spend, JoinSplit2x2와 NoteV1 relation을 공유합니다.
 
 `DISCLOSURE-BLINDING-SEPARATION`은 output별 user-vs-note, full-vs-note, full-vs-user inequality와 exact all-private/disabled gating을 강제합니다. Production 2x2는 output-0 relation을 circuit과 shared native/prepared/structured signing validation에서 강제합니다. SDK 전체의 secret freshness는 별도의 더 강한 정책입니다.
 

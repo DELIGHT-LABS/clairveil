@@ -19,7 +19,7 @@ Korean version: [clairveil-operations-guide-kr.md](clairveil-operations-guide-kr
 
 A production-like node must receive a public V4 audit configuration containing the initial audit key and proof of possession, register the privacy module account as a bank module account, and bind the configured circuit identity to the supplied artifact manifest. Keep the V1 scan/tree/reserve/asset queries available for wallet synchronization, and separately expose the V2 `audit/configuration`, `audit/key_schedule`, and `audit/keys/{epoch}` queries for live audit configuration and key history. Complete a snapshot/restore rehearsal before release. These stores are normal Cosmos state and wallet scan state, not a transaction replay archive or audit ledger.
 
-Enable V2 audit transfers only with the four-circuit `privacy-note-v1-audit-field-v1` consensus identity and matching local audit-field VKs.
+Enable V2 audit transfers only with the four-circuit `privacy-note-v1-u128-audit-field-v1` consensus identity and matching local audit-field VKs.
 
 ```bash
 clairveild start \
@@ -38,7 +38,7 @@ clairveil-setup --out artifacts/privacy --development
 
 `--circuit` and `--overwrite` are removed. The old selective JoinSplit rotation and hashes are legacy history, not an executable setup recipe. Generate a fresh development bundle in a new directory, bind it at fresh genesis, and require strict preflight; never mix it with an old manifest.
 
-`privacy-note-v1-audit-field-v1` requires descriptors in the exact order `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, `batch-joinsplit-16x32-audit-field-v1`. Validators compare the consensus identity and load only the four VKs; prover readiness lazily loads only its selected R1CS/PK pair. `privacy_zk_manifest.json` schema `v2` must match `CircuitSetIdentity` schema `v1`, including ordered descriptors, VK SHA-256, and public-input schema SHA-256. Environment checksums add a consistency check but cannot override consensus identity; any mismatch must fail startup/readiness.
+`privacy-note-v1-u128-audit-field-v1` requires descriptors in the exact order `deposit-audit-field-u128-v1`, `spend-audit-field-u128-v1`, `joinsplit-2x2-audit-field-u128-v1`, `batch-joinsplit-16x32-audit-field-u128-v1`. Validators compare the consensus identity and load only the four VKs; prover readiness lazily loads only its selected R1CS/PK pair. `privacy_zk_manifest.json` schema `v2` must match `CircuitSetIdentity` schema `v1`, including ordered descriptors, VK SHA-256, and public-input schema SHA-256. Environment checksums add a consistency check but cannot override consensus identity; any mismatch must fail startup/readiness.
 
 Repository artifacts are development artifacts, not a formal trusted setup or production distribution. Production releases must record the circuit source commit, generation command, checksum manifest, and signer; mount artifacts read-only; pass the directory through `--audit-artifacts`; and block stale artifacts or chain-verifier mismatches. Node startup performs the manifest and consensus-identity checks automatically. The recorded batch artifact hashes and resource history remain in [clairveil-batch-joinsplit-16x32.md](clairveil-batch-joinsplit-16x32.md).
 
@@ -85,7 +85,7 @@ Query `tree_state` and confirm `leaf_count`, `max_leaves`, `remaining_leaves`, a
 
 Use one configured prover endpoint and disable automatic failover. A same-endpoint retry after timeout/response checks is allowed. Sending a witness-bearing request to another endpoint requires explicit user or product-policy opt-in that names the additional operator and privacy boundary; availability alone does not authorize disclosure expansion.
 
-Current contract: `/v2/prover/audit-field` with request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 byte slices, and final PI23. Check the response with the exact local artifact identity before building a V2 message. The transfer/withdraw/batch/deposit V1 material is legacy evidence, not a V2 input. Exclude request bodies, bearer credentials, signatures, disclosure plaintext/blindings, and proofs from logs, traces, crash dumps, and analytics.
+Current contract: `/v2/prover/audit-field` with request/response envelope `v1`, `privacy-note-v1-u128-audit-field-v1`, base64 byte slices, and final PI23. Check the response with the exact local artifact identity before building a V2 message. The transfer/withdraw/batch/deposit V1 material is legacy evidence, not a V2 input. Exclude request bodies, bearer credentials, signatures, disclosure plaintext/blindings, and proofs from logs, traces, crash dumps, and analytics.
 
 ### Production HTTP Boundary
 

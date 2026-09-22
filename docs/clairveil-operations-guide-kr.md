@@ -19,7 +19,7 @@
 
 Production-like node는 initial audit key와 proof of possession을 담은 public V4 audit configuration을 입력받고, privacy module account를 bank module account로 등록하며, configured circuit identity를 supplied artifact manifest에 결합해야 합니다. Wallet 동기화용 V1 scan/tree/reserve/asset query와 별도로 live audit configuration/key history용 V2 `audit/configuration`, `audit/key_schedule`, `audit/keys/{epoch}` query를 노출합니다. Release 전 snapshot/restore rehearsal도 완료해야 합니다. 이 store는 일반 Cosmos state와 wallet scan state이며 transaction replay archive나 audit ledger가 아닙니다.
 
-V2 audit transfer는 four-circuit `privacy-note-v1-audit-field-v1` consensus identity와 일치하는 local audit-field VK가 있을 때만 활성화합니다.
+V2 audit transfer는 four-circuit `privacy-note-v1-u128-audit-field-v1` consensus identity와 일치하는 local audit-field VK가 있을 때만 활성화합니다.
 
 ```bash
 clairveild start \
@@ -38,7 +38,7 @@ clairveil-setup --out artifacts/privacy --development
 
 `--circuit`, `--overwrite`는 제거되었습니다. 이전 selective JoinSplit rotation과 hash는 실행 가능한 setup 절차가 아닌 legacy history입니다. 새 directory에 fresh development bundle을 만들고 fresh genesis에서 binding하며 strict preflight를 요구하세요. Old manifest와 섞으면 안 됩니다.
 
-`privacy-note-v1-audit-field-v1`은 `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, `batch-joinsplit-16x32-audit-field-v1` exact order의 descriptor를 요구합니다. Validator는 consensus identity를 비교하고 네 VK만 load하며 prover readiness는 선택한 R1CS/PK pair만 lazy load합니다. `privacy_zk_manifest.json` schema `v2`는 ordered descriptor, VK SHA-256, public-input schema SHA-256을 포함해 `CircuitSetIdentity` schema `v1`과 일치해야 합니다. Environment checksum은 추가 consistency check일 뿐 consensus identity를 override할 수 없고, mismatch는 startup/readiness를 실패시켜야 합니다.
+`privacy-note-v1-u128-audit-field-v1`은 `deposit-audit-field-u128-v1`, `spend-audit-field-u128-v1`, `joinsplit-2x2-audit-field-u128-v1`, `batch-joinsplit-16x32-audit-field-u128-v1` exact order의 descriptor를 요구합니다. Validator는 consensus identity를 비교하고 네 VK만 load하며 prover readiness는 선택한 R1CS/PK pair만 lazy load합니다. `privacy_zk_manifest.json` schema `v2`는 ordered descriptor, VK SHA-256, public-input schema SHA-256을 포함해 `CircuitSetIdentity` schema `v1`과 일치해야 합니다. Environment checksum은 추가 consistency check일 뿐 consensus identity를 override할 수 없고, mismatch는 startup/readiness를 실패시켜야 합니다.
 
 Repository artifact는 development artifact이며 formal trusted setup이나 production distribution이 아닙니다. Production release는 circuit source commit, generation command, checksum manifest, signer를 기록하고 artifact를 read-only mount하며 directory를 `--audit-artifacts`로 전달하고 stale artifact 또는 chain verifier mismatch를 release blocker로 처리해야 합니다. Node startup은 manifest와 consensus identity 검사를 자동으로 수행합니다. 기록된 batch artifact hash와 resource history는 [clairveil-batch-joinsplit-16x32-kr.md](clairveil-batch-joinsplit-16x32-kr.md)에 남아 있습니다.
 
@@ -85,7 +85,7 @@ Snapshot, restore, migration 뒤에는 `Leaf/*`, `MerkleNode/*`, `CommitmentInde
 
 Configured prover endpoint 하나를 사용하고 automatic failover를 비활성화합니다. Timeout/response check 뒤 같은 endpoint를 retry하는 것은 허용됩니다. Witness-bearing request를 다른 endpoint로 보내려면 추가 operator와 privacy boundary를 명시한 사용자 또는 product-policy의 explicit opt-in이 필요하며 availability만으로 disclosure 범위를 넓힐 수 없습니다.
 
-현재 contract는 `/v2/prover/audit-field`, request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 byte slice, final PI23입니다. V2 message 전에 exact local artifact identity로 response를 확인해야 합니다. Transfer/withdraw/batch/deposit V1 자료는 V2 input이 아닌 legacy evidence입니다. Request body, bearer credential, signature, disclosure plaintext/blinding, proof를 log, trace, crash dump, analytics에서 제외합니다.
+현재 contract는 `/v2/prover/audit-field`, request/response envelope `v1`, `privacy-note-v1-u128-audit-field-v1`, base64 byte slice, final PI23입니다. V2 message 전에 exact local artifact identity로 response를 확인해야 합니다. Transfer/withdraw/batch/deposit V1 자료는 V2 input이 아닌 legacy evidence입니다. Request body, bearer credential, signature, disclosure plaintext/blinding, proof를 log, trace, crash dump, analytics에서 제외합니다.
 
 ### Production HTTP 경계
 

@@ -10,7 +10,7 @@
 - Envelope는 `Header32 || Nonce16 || E.X32 || E.Y32 || cipher[n] || tag32`다. Header는 `SHA256("clairveil.audit.envelope.v1")[0:16] || u16be(2) || u16be(2) || kind || inputs || outputs || zero[9]`이다. plaintext field 수와 frame byte 수는 각각 6/336, 2/208, 13/560, 177/5808이다.
 - `EnvelopeFrame`/`ParseEnvelopeFrame`은 길이, header, count, 예약 바이트, Fr 정규성과 E의 on-curve·prime subgroup·nonidentity를 검사한다. `Point64`는 검증된 점만 보유하고 `AuditKey`는 정규 Point64로 KeyID를 재계산한다.
 - Context는 nonce-free Kind와 PI0..20을 소유한다. T는 `[2,2,kind] || PI0..20 || nonce128`의 25 fields다. nonce는 실제 frame에서 얻는다. Context 구조 검사는 registry, 메시지, proof 또는 체인 출처 인증을 대신하지 않는다.
-- `EncodeAuxFrame`은 독립 구조 encoder다. 중첩 recovery/disclosure envelope header·plaintext metadata 검증은 완료하지 않았으며, 중첩 payload의 완전한 message 의미 검증은 P4 adapter와 결합해야 한다. Aux는 `u16be(1)||kind||activeOutputCount` 뒤에 output 순서대로 recovery ciphertext, view tag, policy, mode, user digest, user target, user payload, self digest, self payload를 인코딩한다. 가변 bytes는 `u32be(length)||bytes`, policy는 u32be, mode는 u8, digest는 F32다. Audit envelope, commitment, proof, creator, fee는 Aux에 넣지 않는다. Recipient-encrypted target은 정규 compressed point와 subgroup을 검증하며 mode/policy/digest 일관성을 검사한다. Fixed payload 길이는 deposit recovery 398, transfer/batch recovery 430, view tag 2, public disclosure 392, encrypted disclosure 472 bytes다. 실제 generated `OutputEffect` adapter는 P4 소유다.
+- `EncodeAuxFrame`은 독립 구조 encoder다. 중첩 recovery/disclosure envelope header·plaintext metadata 검증은 완료하지 않았으며, 중첩 payload의 완전한 message 의미 검증은 P4 adapter와 결합해야 한다. Aux는 `u16be(1)||kind||activeOutputCount` 뒤에 output 순서대로 recovery ciphertext, view tag, policy, mode, user digest, user target, user payload, self digest, self payload를 인코딩한다. 가변 bytes는 `u32be(length)||bytes`, policy는 u32be, mode는 u8, digest는 F32다. Audit envelope, commitment, proof, creator, fee는 Aux에 넣지 않는다. Recipient-encrypted target은 정규 compressed point와 subgroup을 검증하며 mode/policy/digest 일관성을 검사한다. Fixed payload 길이는 deposit recovery 406, transfer/batch recovery 438, view tag 2, public disclosure 400, encrypted disclosure 480 bytes다. 실제 generated `OutputEffect` adapter는 P4 소유다.
 
 공개 domain helper는 다음 정확한 식을 제공한다. LP는 u32be 길이 prefix다.
 
@@ -23,16 +23,16 @@
 
 ## 공개 schema와 manifest
 
-Set ID는 `privacy-note-v1-audit-field-v1`이다. `zk.AuditFieldCircuitIDs`는 다음 네 descriptor만 반환한다.
+Set ID는 `privacy-note-v1-u128-audit-field-v1`이다. `zk.AuditFieldCircuitIDs`는 다음 네 descriptor만 반환한다.
 
 | Circuit ID | PI23 schema SHA256 |
 |---|---|
-| `deposit-audit-field-v1` | `5582ac050f0aecc4a40d02acfc948deb94932443e9857167b8a15602c5f9df7e` |
-| `spend-audit-field-v1` | `2e9cd75633922450f0aab068b2af26b94b2b3d71cc75426303fcf88554e5b8fa` |
-| `joinsplit-2x2-audit-field-v1` | `79c7ff4a0ba411ccfaee0376291f9c1dfe65b4e38acf6ea1384749eefb07e333` |
-| `batch-joinsplit-16x32-audit-field-v1` | `93668901c968802861b13658290c2d703f6837de8ae7af7ef0bf65c906bbfd84` |
+| `deposit-audit-field-u128-v1` | `80b74ba0aa18f13e9379bf18df7a7828f1d0ae997da8339dc47dc88a5306ca9c` |
+| `spend-audit-field-u128-v1` | `6e7576dea2a86f54d8606f0c88d64b5b814b5f4c36c0889dcc54af4a63546ce7` |
+| `joinsplit-2x2-audit-field-u128-v1` | `1a2108c9101745f83aca90d0aca2f90cca143243c58364732c879329883518b7` |
+| `batch-joinsplit-16x32-audit-field-u128-v1` | `e405f7e1c0bbed8168a93d9853ec6da3cb7acd5c35bb593e597a2839cebfd724` |
 
-PI 순서와 encoding 이름의 소유자는 `PublicInputSchema()`다. `zk.PublicInputSchemaSHA256`는 기존 `clairveil.public-input-schema.v1` encoder를 사용한다. Schema hash preimage는 domain 뒤에 LP(circuit ID), u32be(field count), 각 field의 u32be(1-based index), LP(name), LP(encoding) 순이다.
+PI23 순서와 개수를 유지하며 `PublicAmount`는 uint128, `KeyEpoch`와 `ExpiresAtUnix`는 uint64다. encoding 이름의 소유자는 `PublicInputSchema()`다. `zk.PublicInputSchemaSHA256`는 기존 `clairveil.public-input-schema.v1` encoder를 사용한다. Schema hash preimage는 domain 뒤에 LP(circuit ID), u32be(field count), 각 field의 u32be(1-based index), LP(name), LP(encoding) 순이다.
 
 `zk.AuditFieldArtifactDescriptors()`는 위 circuit 순서로 각각 R1CS, proving key, verifying key의 총 12개 descriptor를 반환한다. 파일 이름은 `privacy_` 뒤에 circuit ID의 hyphen을 underscore로 치환한 값과 `_r1cs.bin`, `_pk.bin`, `_vk.bin`을 붙인다. Checksum 변수 이름은 `CLAIRVEIL_` 뒤에 같은 stem과 suffix를 대문자로 치환하고 `_SHA256`을 붙인다.
 

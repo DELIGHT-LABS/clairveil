@@ -278,7 +278,7 @@ Important constraints:
 - Build both outputs, ordered ciphertexts/view tags, user/audit/self-view envelopes, independent disclosure blindings, chain ID, and absolute expiry first. Then encode the canonical transfer effect, derive `TransferIntentV2`, and create exactly one `owner_signature_hex`. There are no per-input note-hash signatures.
 - The canonical binary effect uses fixed field order and `u32be(length) || bytes` for variable bytes. It includes format version, root, ordered nullifiers/commitments/ciphertexts/view tags, every disclosure field, and expiry. It excludes proof, `creator`, fee/gas/memo/sequence/tx signature, and its own digest. The keeper recomputes it from `MsgTransfer`.
 - Final `MsgTransfer` must include exactly two `view_tags`, aligned with `new_commitments` and `cipher_texts`.
-- Disclosure plaintext/query version is `privacy-fixed-v1`. Enabled user disclosure and full audit/self-view disclosure use independent fresh CSPRNG blindings. After decrypting, recover the blinding and recompute the digest; decryption alone is not verification.
+- Disclosure plaintext/query version is `privacy-fixed-v2`. Enabled user disclosure and full audit/self-view disclosure use independent fresh CSPRNG blindings. After decrypting, recover the blinding and recompute the digest; decryption alone is not verification.
 - For recipient output `0`, enforce `DBS-01` (`policy != 0 => user_blinding != output_randomness`), `DBS-02` (`full_blinding != output_randomness`), and `DBS-03` (`full_blinding != user_blinding`). All-private canonicalizes user blinding to zero and gates off only `DBS-01`. Output `1` is an active change note without a disclosure witness, not a disabled slot.
 - Run the semantic validator before sending a prepared payload to any prover and before releasing an owner signature. Use the stable secret-free codes in `privacy_disclosure_blinding_v1_contract.json`; do not include randomness/blinding values in errors or telemetry.
 - `expires_at_unix` is absolute. The chain rejects at `block_time >= expires_at_unix`.
@@ -461,7 +461,7 @@ The JS SDK handoff is complete when the following work.
 ## 14. What The JS SDK Can Treat As Stable From The Go Core
 
 The JS SDK can currently treat these as stable contracts.
-- Current prover integration is `POST` `/v2/prover/audit-field` with request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 `[]byte` fields, and final PI23.
+- Current prover integration is `POST` `/v2/prover/audit-field` with request/response envelope `v1`, `privacy-note-v1-u128-audit-field-v1`, base64 `[]byte` fields, and final PI23.
 - A client must perform local verification with the exact artifact identity after checking the repeated response binding. The older `/v1` example contracts below are legacy-only fixture references, not a live V2 SDK surface.
 
 - current `clairveil.privacy.v2` asset/admin messages and V2 audit queries
@@ -474,8 +474,8 @@ The JS SDK can currently treat these as stable contracts.
 - mandatory V2 audit authorization with active key epoch
 - user disclosure policy/mode labels
 - current V2 asset messages require audit-field proof and authorization under the shared envelope `v1`/PI23 contract
-- retained legacy fixtures: deposit payload/proof/request/response `v1`; transfer payload `v5` and proof/request/response `v2`; withdraw payload/proof/request/response `v2`; batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, and request/response `v1`; disclosure plaintext/query `privacy-fixed-v1`. These are not the current V2 wire.
-- active circuit set `privacy-note-v1-audit-field-v1` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
+- retained legacy fixtures: deposit payload/proof/request/response `v1`; transfer payload `v5` and proof/request/response `v2`; withdraw payload/proof/request/response `v2`; batch payload `batch-transfer-payload-v1`, proof `batch-transfer-proof-v1`, and request/response `v1`; disclosure plaintext/query `privacy-fixed-v2`. These are not the current V2 wire.
+- active circuit set `privacy-note-v1-u128-audit-field-v1` with consensus `CircuitSetIdentity` schema `v1` and manifest schema `v2`
 - sole live prover HTTP path `/v2/prover/audit-field`; the listed `/v1` routes are retained fixtures only
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
 - `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error codes and completed production 2x2 circuit/native/prepared/structured pre-sign enforcement; downstream signers must preserve the fail-before-release contract, including rejection of SDK-wide secret reuse and non-canonical field aliases. The security, protocol, chain-core, client-integration, and independent-publication-validation gates have passed, and the source is `PUBLICATION_READY_EXPERIMENTAL`
@@ -534,7 +534,8 @@ The repository now includes the production core plus a reference Go batch builde
 
 The following rules are breaking and normative for new SDK work:
 
-- The active circuit set is `privacy-note-v1`. Note, disclosure, and encrypted-envelope binary data use `privacy-fixed-v1`; `NotePlaintextV1` is exactly 350 bytes, `DisclosurePlaintextV1` is exactly 392 bytes, and every encrypted payload includes the canonical 20-byte envelope header and exact kind. Raw ciphertext, JSON plaintext, trailing bytes, and cross-kind decoding must be rejected.
+- The active circuit set is `privacy-note-v1-u128-audit-field-v1`. Note, disclosure, and encrypted-envelope binary data use `privacy-fixed-v2`; `NotePlaintextV1` is exactly 358 bytes, `DisclosurePlaintextV1` is exactly 400 bytes, and every encrypted payload includes the canonical 20-byte envelope header and exact kind. Raw ciphertext, JSON plaintext, trailing bytes, and cross-kind decoding must be rejected.
+- Amounts are canonical decimal strings bounded by `M = 2^128-1`; calculate with `bigint` and check both input/output totals of each proof against `M`. Do not cap per-asset wallet balances or payroll/audit totals across proofs. Wallet files use version `3`; codec lengths and reserve bounds follow the [HTTP API amount contract](clairveil-proverd-http-api.md#uint128-amount-contract).
 - This transition requires fresh genesis. Delete cached notes, scan cursors, prepared/proof jobs, circuit identity metadata, and old development artifacts, then regenerate artifacts and rescan. There is no compatibility decode or in-place state migration from the earlier contract.
 - `AssetRegistryV1` is the authoritative one-to-one mapping between canonical denom and 32-byte `asset_id`. A client may derive an ID for validation, but must not invent a denom by interpreting or hashing an ID; resolve it through the registry query and fail closed on a mismatch.
 - Wallet synchronization uses the unified `privacy-scan-v2` projection and lexicographic cursor `(height, global_sequence, output_index)`. Persist the whole cursor atomically. Obtain every Merkle path from a snapshot that matches the selected root exactly; mixing a current path with an older root is invalid. Current-root paths use incremental nodes and do not consume the online historical-rebuild budget. A non-current historical path requires persisted root/count/height metadata; the public query admits at most 1,024 leaves and two concurrent rebuilds per keeper, otherwise it returns `ResourceExhausted`. Use the current root or a trusted local historical index above that online bound. The separate offline recovery/export bound remains `MaxMerkleRebuildLeaves` (1,048,576). Remote historical lookups can reveal wallet timing and interest, so retain the privacy warning and use privacy-preserving infrastructure where the product threat model requires it.

@@ -461,7 +461,7 @@ def require_current_contract_inventory(source, start_marker, end_marker, require
 common_version_terms = [
     "`/v2/prover/audit-field`",
     "request/response envelope `v1`",
-    "`privacy-note-v1-audit-field-v1`",
+    "`privacy-note-v1-u128-audit-field-v1`",
     "final PI23",
 ]
 inventory_checks = [

@@ -276,7 +276,7 @@ x/privacy/client/sdk/transfer/service.go
 - 두 output, ordered ciphertext/view tag, user/audit/self-view envelope, 독립 disclosure blinding, chain ID, absolute expiry를 먼저 확정합니다. 그 다음 canonical transfer effect와 `TransferIntentV2`를 계산하고 정확히 하나의 `owner_signature_hex`를 만듭니다. Per-input note-hash signature는 없습니다.
 - Canonical binary effect는 고정 field 순서와 variable byte의 `u32be(length) || bytes` encoding을 사용합니다. Format version, root, ordered nullifier/commitment/ciphertext/view tag, 모든 disclosure field, expiry를 포함하고 proof, `creator`, fee/gas/memo/sequence/tx signature, digest 자신은 제외합니다. Keeper가 `MsgTransfer`에서 다시 계산합니다.
 - 최종 `MsgTransfer`는 `new_commitments`, `cipher_texts`와 순서가 맞는 정확히 2개의 `view_tags`를 포함해야 합니다.
-- Disclosure plaintext/query version은 `privacy-fixed-v1`입니다. Enabled user disclosure와 full audit/self-view disclosure는 서로 독립적인 fresh CSPRNG blinding을 사용합니다. 복호화 후 blinding을 복원해 digest를 재계산해야 하며 decrypt 성공만으로 verified 처리하면 안 됩니다.
+- Disclosure plaintext/query version은 `privacy-fixed-v2`입니다. Enabled user disclosure와 full audit/self-view disclosure는 서로 독립적인 fresh CSPRNG blinding을 사용합니다. 복호화 후 blinding을 복원해 digest를 재계산해야 하며 decrypt 성공만으로 verified 처리하면 안 됩니다.
 - Recipient output `0`에 `DBS-01`(`policy != 0 => user_blinding != output_randomness`), `DBS-02`(`full_blinding != output_randomness`), `DBS-03`(`full_blinding != user_blinding`)를 강제합니다. All-private는 user blinding을 zero로 canonicalize하고 `DBS-01`만 gate off합니다. Output `1`은 disclosure witness가 없는 active change note이지 disabled slot이 아닙니다.
 - Prepared payload를 prover에 보내기 전과 owner signature를 release하기 전에 semantic validator를 실행합니다. `privacy_disclosure_blinding_v1_contract.json`의 stable secret-free code를 사용하고 error/telemetry에 randomness/blinding 값을 포함하지 않습니다.
 - `expires_at_unix`는 absolute 값이고 chain은 `block_time >= expires_at_unix`에서 거부합니다.
@@ -459,7 +459,7 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 ## 14. Go core 쪽에서 JS SDK가 믿어도 되는 것
 
 현재 JS SDK가 안정 계약으로 삼아도 되는 항목은 아래입니다.
-- 현재 prover integration은 `POST` `/v2/prover/audit-field`, request/response envelope `v1`, `privacy-note-v1-audit-field-v1`, base64 `[]byte` field, final PI23입니다.
+- 현재 prover integration은 `POST` `/v2/prover/audit-field`, request/response envelope `v1`, `privacy-note-v1-u128-audit-field-v1`, base64 `[]byte` field, final PI23입니다.
 - Client는 반복 response binding 뒤 exact artifact identity로 local verification을 수행해야 합니다. 아래의 이전 `/v1` example contract는 live V2 SDK surface가 아닌 legacy-only fixture reference입니다.
 
 - current `clairveil.privacy.v2` asset/admin message와 V2 audit query
@@ -472,8 +472,8 @@ JS SDK handoff가 완료되었다고 보려면 아래가 가능해야 합니다.
 - active key epoch의 mandatory V2 audit authorization
 - user disclosure policy/mode label
 - current V2 asset message는 공통 envelope `v1`/PI23 contract의 audit-field proof와 authorization을 요구
-- 보존 legacy fixture: deposit payload/proof/request/response `v1`, transfer payload `v5`와 proof/request/response `v2`, withdraw payload/proof/request/response `v2`, batch payload `batch-transfer-payload-v1`·proof `batch-transfer-proof-v1`·request/response `v1`, disclosure plaintext/query `privacy-fixed-v1`. Current V2 wire가 아님
-- active circuit set `privacy-note-v1-audit-field-v1`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
+- 보존 legacy fixture: deposit payload/proof/request/response `v1`, transfer payload `v5`와 proof/request/response `v2`, withdraw payload/proof/request/response `v2`, batch payload `batch-transfer-payload-v1`·proof `batch-transfer-proof-v1`·request/response `v1`, disclosure plaintext/query `privacy-fixed-v2`. Current V2 wire가 아님
+- active circuit set `privacy-note-v1-u128-audit-field-v1`, consensus `CircuitSetIdentity` schema `v1`, manifest schema `v2`
 - sole live prover HTTP path `/v2/prover/audit-field`; 나열된 `/v1` route는 보존 fixture 전용
 - conformance fixture files under `x/privacy/client/sdk/conformance/testdata`
 - `DISCLOSURE-BLINDING-SEPARATION` V1 semantics/error code와 완료된 production 2x2 circuit/native/prepared/structured pre-sign enforcement. Downstream signer도 SDK-wide secret reuse와 non-canonical field alias 거부를 포함한 fail-before-release contract를 유지해야 함. security, protocol, chain-core, and client-integration gates와 독립 공개 검증은 PASS했고 source는 `PUBLICATION_READY_EXPERIMENTAL`
@@ -532,7 +532,8 @@ Repository에는 production core와 reference Go batch builder, bounded proof ad
 
 새 SDK 작업에는 아래 breaking rule을 normative하게 적용합니다.
 
-- Active circuit set은 `privacy-note-v1`입니다. Note, disclosure, encrypted-envelope binary data는 `privacy-fixed-v1`을 사용합니다. `NotePlaintextV1`은 정확히 350 bytes, `DisclosurePlaintextV1`은 정확히 392 bytes이며 모든 encrypted payload에는 canonical 20-byte envelope header와 정확한 kind가 있어야 합니다. Raw ciphertext, JSON plaintext, trailing bytes, cross-kind decoding은 거부합니다.
+- Active circuit set은 `privacy-note-v1-u128-audit-field-v1`입니다. Note, disclosure, encrypted-envelope binary data는 `privacy-fixed-v2`를 사용합니다. `NotePlaintextV1`은 정확히 358 bytes, `DisclosurePlaintextV1`은 정확히 400 bytes이며 모든 encrypted payload에는 canonical 20-byte envelope header와 정확한 kind가 있어야 합니다. Raw ciphertext, JSON plaintext, trailing bytes, cross-kind decoding은 거부합니다.
+- 금액은 `M = 2^128-1` 이하 canonical decimal string이며 계산에는 `bigint`를 사용합니다. 한 proof의 입력·출력 합계에도 `M` 상한을 검사합니다. 자산별 wallet 잔액·여러 proof의 payroll/audit 합계에는 상한을 적용하지 않습니다. Wallet 파일은 version `3`이며 codec 길이와 reserve 범위는 [HTTP API 금액 계약](clairveil-proverd-http-api-kr.md#uint128-금액-계약)을 따릅니다.
 - 이 전환에는 fresh genesis가 필요합니다. Cached note, scan cursor, prepared/proof job, circuit identity metadata, old development artifact를 삭제한 뒤 artifact를 다시 생성하고 rescan합니다. 이전 계약을 위한 compatibility decode나 in-place state migration은 없습니다.
 - `AssetRegistryV1`이 canonical denom과 32-byte `asset_id`의 authoritative one-to-one mapping입니다. Client는 검증을 위해 ID를 derive할 수 있지만 ID를 해석하거나 hash해서 denom을 임의로 만들면 안 됩니다. Registry query로 resolve하고 mismatch에서는 fail closed합니다.
 - Wallet sync는 unified `privacy-scan-v2` projection과 lexicographic cursor `(height, global_sequence, output_index)`를 사용합니다. 전체 cursor를 atomically 저장합니다. 모든 Merkle path는 선택한 root와 정확히 일치하는 snapshot에서 가져와야 하며 current path와 older root를 섞으면 invalid입니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical lookup은 wallet timing과 관심 대상을 노출하므로 privacy warning을 유지하고 product threat model이 요구하면 privacy-preserving infrastructure를 사용합니다.

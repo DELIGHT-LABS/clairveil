@@ -339,7 +339,7 @@ go run ./cmd/clairveil-setup \
 
 ```
 
-현재 development 순서는 `privacy-note-v1-audit-field-v1`: `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, `batch-joinsplit-16x32-audit-field-v1`입니다. Validator는 exact consensus identity 비교 뒤 matching VK 네 개를 load하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. `clairveil-setup`은 `--out`, `--development`만 지원합니다. 이전 `--circuit`/`--overwrite` 절차와 batch artifact measurement는 현재 runtime evidence가 아닌 legacy record입니다.
+현재 development 순서는 `privacy-note-v1-u128-audit-field-v1`: `deposit-audit-field-u128-v1`, `spend-audit-field-u128-v1`, `joinsplit-2x2-audit-field-u128-v1`, `batch-joinsplit-16x32-audit-field-u128-v1`입니다. Validator는 exact consensus identity 비교 뒤 matching VK 네 개를 load하고 prover는 선택한 R1CS/PK pair를 lazy load합니다. `clairveil-setup`은 `--out`, `--development`만 지원합니다. 이전 `--circuit`/`--overwrite` 절차와 batch artifact measurement는 현재 runtime evidence가 아닌 legacy record입니다.
 
 Node startup은 manifest와 consensus circuit identity를 자동으로 검증합니다. Generated checksum env file은 external release tooling에서 사용할 수 있지만 필수 `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE` runtime switch는 없습니다.
 

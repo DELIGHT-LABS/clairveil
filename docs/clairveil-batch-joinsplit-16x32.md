@@ -2,6 +2,8 @@
 
 > Legacy archive: this NoteV1/16x32 specification and its fixed fixtures are preserved conformance history. They are not the current V2 runtime or a live prover contract. For the current shared route, use [Proverd HTTP API](clairveil-proverd-http-api.md).
 
+> The current uint128 contract uses `privacy-note-v1-u128-audit-field-v1`, `privacy-fixed-v2`, and 16-byte amounts. The frozen legacy widths, offsets, and hashes below are historical; see the [current HTTP API amount contract](clairveil-proverd-http-api.md#uint128-amount-contract) for current sizes and bounds.
+
 ## 1. Status and scope
 
 This document is normative only for the frozen legacy NoteV1 fixtures and inner 16-input/32-output relation: domain separation, fixed encodings, aggregate vector roots, disclosure digests, scan state, artifact identity, and resource accounting. Current runtime messages use `clairveil.privacy.v2.MsgBatchTransfer` and the audit-field wrapper/PI23 contract.

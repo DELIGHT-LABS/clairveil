@@ -388,7 +388,7 @@ clairveild tx privacy relay-withdraw out/withdraw-payload.json \
 
 The summary prints the resolved absolute expiry and chain ID, and JSON uses the same `expires_at_unix`. Submission at or after that second fails; the relayer cannot extend it. Prepared payload/proof JSON is privacy-sensitive, and the prover payload still contains private note witness even though output/recipient/chain/expiry cannot be changed. Production wallets need encrypted storage and expiry/deletion policy.
 
-Current CLI handoff versions are transfer payload `v5`, transfer proof/prover contract `v2`, withdraw prover/final payload and proof/prover/relay contract `v2`, and disclosure plaintext/query `privacy-fixed-v1`. Regenerate legacy files.
+Current CLI handoff versions are transfer payload `v5`, transfer proof/prover contract `v2`, withdraw prover/final payload and proof/prover/relay contract `v2`, and disclosure plaintext/query `privacy-fixed-v2`. Regenerate legacy files.
 
 ## 9. Query
 
@@ -461,7 +461,7 @@ This binary exists only to inspect legacy ciphertext produced with the old SHA-2
 clairveil-verify -enc '<BASE64_LEGACY_CIPHERTEXT>' -secret '<LEGACY_ADDRESS_OR_SEED>'
 ```
 
-It is incompatible with the current keyring-signature root seed and `privacy-fixed-v1` typed envelope. It also prints a derived scalar prefix and the decrypted plaintext, so never use it with production secrets or data. Validate current notes through `clairveild tx privacy list-notes`, the typed `privacy_scan` flow, and the conformance fixtures instead.
+It is incompatible with the current keyring-signature root seed and `privacy-fixed-v2` typed envelope. It also prints a derived scalar prefix and the decrypted plaintext, so never use it with production secrets or data. Validate current notes through `clairveild tx privacy list-notes`, the typed `privacy_scan` flow, and the conformance fixtures instead.
 
 ### clairveil-proverd
 
@@ -550,7 +550,7 @@ The Make targets above are the maintained runnable interfaces for the repository
 
 ## 11. Batch Protocol Compatibility
 
-The V2 circuit set generated and checked by the CLI is `privacy-note-v1-audit-field-v1`. Notes, disclosures, and encrypted envelopes use canonical `privacy-fixed-v1`; commands emit/consume the typed envelope rather than raw ciphertext or legacy JSON plaintext. `AssetRegistryV1` is authoritative for resolving canonical denoms and 32-byte asset IDs. On upgrade, use fresh genesis, delete local wallet/scan/proof caches and old development artifacts, reuse the reviewed matching artifacts, and rescan. There is no legacy decode or in-place state migration.
+The V2 circuit set generated and checked by the CLI is `privacy-note-v1-u128-audit-field-v1`. Notes, disclosures, and encrypted envelopes use canonical `privacy-fixed-v2`; commands emit/consume the typed envelope rather than raw ciphertext or legacy JSON plaintext. `AssetRegistryV1` is authoritative for resolving canonical denoms and 32-byte asset IDs. On upgrade, use fresh genesis, delete local wallet/scan/proof caches and old development artifacts, reuse the reviewed matching artifacts, and rescan. There is no legacy decode or in-place state migration.
 
 Wallet scan state is ordered by the complete cursor `(height, global_sequence, output_index)`. Any spend path must be obtained from a snapshot for exactly the selected root. Current-root paths use incremental nodes and do not consume the online historical-rebuild budget. A non-current historical path requires persisted root/count/height metadata; the public query admits at most 1,024 leaves and two concurrent rebuilds per keeper, otherwise it returns `ResourceExhausted`. Use the current root or a trusted local historical index above that online bound. The separate offline recovery/export bound remains `MaxMerkleRebuildLeaves` (1,048,576). Remote historical root/path queries can reveal wallet interest, so retain the privacy warning and prefer local or privacy-preserving infrastructure when that matters.
 

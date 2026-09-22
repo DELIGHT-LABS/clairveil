@@ -341,7 +341,7 @@ go run ./cmd/clairveil-setup \
 
 ```
 
-The current development order is `privacy-note-v1-audit-field-v1`: `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, `batch-joinsplit-16x32-audit-field-v1`. Validators load the four matching VKs after exact consensus identity comparison; the prover lazily loads a selected R1CS/PK pair. `clairveil-setup` supports only `--out` and `--development`; the old `--circuit`/`--overwrite` procedure and batch artifact measurements are legacy records, not current runtime evidence.
+The current development order is `privacy-note-v1-u128-audit-field-v1`: `deposit-audit-field-u128-v1`, `spend-audit-field-u128-v1`, `joinsplit-2x2-audit-field-u128-v1`, `batch-joinsplit-16x32-audit-field-u128-v1`. Validators load the four matching VKs after exact consensus identity comparison; the prover lazily loads a selected R1CS/PK pair. `clairveil-setup` supports only `--out` and `--development`; the old `--circuit`/`--overwrite` procedure and batch artifact measurements are legacy records, not current runtime evidence.
 
 Node startup validates the manifest and consensus circuit identity automatically. The generated checksum env file may be used by external release tooling, but there is no required `CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE` runtime switch.
 

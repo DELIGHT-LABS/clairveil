@@ -47,7 +47,7 @@ The domain label derivation and exact argument order are normative in the [Batch
 
 The commitment is stored as an on-chain leaf. Amount, asset, randomness, spend public key, and view public key are not directly revealed; they are bound into the commitment.
 
-All shielded amounts are constrained as non-negative 64-bit integers. Keeper, SDK, payload, and circuit checks use the same bound.
+All shielded amounts are constrained as non-negative 128-bit integers. Keeper, SDK, payload, and circuit checks apply the same `M = 2^128-1` bound to each amount and each operation's input/output totals. Per-asset wallet, payroll, audit, and cumulative deposit/withdraw totals use arbitrary precision; current pool liability and bank balances retain the existing 256-bit bound.
 
 ## 3. DepositCircuit
 
@@ -73,7 +73,7 @@ All shielded amounts are constrained as non-negative 64-bit integers. Keeper, SD
 
 1. `Commitment = MiMC(domain_field("clairveil.note-commitment.v1"), spend_pubkey_x, spend_pubkey_y, view_pubkey_x, view_pubkey_y, Amount, AssetID, Randomness)`, exactly as in the canonical NoteV1 formula above.
 2. The shielded public keys are valid circuit points.
-3. `Amount` fits the 64-bit shielded amount bound.
+3. `Amount` fits the 128-bit shielded amount bound.
 
 ### What It Does Not Prove
 
@@ -116,7 +116,7 @@ The `SpendIntentV2` public-input order is consensus-critical:
 2. `Signature` is valid for `ReceiverSpendPubKey` and authenticates the chain domain, root, nullifier, amount, asset, recipient digest, and expiry in `SpendIntentV2`.
 3. The recipient digest is `SHA-256("clairveil.withdraw-recipient.v1" || u32be(len(raw_recipient_bytes)) || raw_recipient_bytes)`, split into two non-reduced big-endian 128-bit limbs. Leading-zero byte strings therefore cannot alias another recipient.
 4. `Nullifier = MiMC(Randomness, spend_pubkey_x, spend_pubkey_y)`.
-5. `Amount` fits the 64-bit shielded amount bound.
+5. `Amount` fits the 128-bit shielded amount bound.
 6. Reusing the same note yields the same nullifier, which lets the keeper reject double spend.
 
 ### What It Does Not Prove
@@ -182,7 +182,7 @@ The `TransferIntentV2` public-input order is consensus-critical:
 4. The two nullifiers are distinct, and both output commitments are distinct.
 5. Both output commitments match the secret output data.
 6. `sum(input amounts) = sum(output amounts)`.
-7. Each input and output amount fits the 64-bit shielded amount bound.
+7. Each input and output amount fits the 128-bit shielded amount bound.
 8. When user disclosure is enabled, the fields selected by policy and a non-zero blinding are bound into `UserDisclosureDigest`.
 9. Audit/self-view full disclosure uses a non-zero blinding and is bound into `FullDisclosureDigest`.
 10. Ordered nullifiers, commitments, ciphertexts, view tags, all disclosure envelopes, and expiry are finalized before signing and are bound through the canonical payload digest. `creator`, proof bytes, fee, gas, memo, sequence, and tx signature are excluded so a relayer may replace only `creator`.
@@ -239,7 +239,7 @@ Circuit changes must also update proof builders/verifiers, affected proto/CLI/sc
 
 ## 8. BatchJoinSplit16x32
 
-The batch circuit proves 1..16 inputs and 1..32 outputs using exact active prefixes and zero disabled sentinels, independent depth-32 membership paths, canonical subgroup keys, active input/output distinctness, 64-bit value conservation, per-output user/full disclosure digests and one owner signature. It shares the NoteV1 relation with Deposit, Spend and JoinSplit2x2.
+The batch circuit proves 1..16 inputs and 1..32 outputs using exact active prefixes and zero disabled sentinels, independent depth-32 membership paths, canonical subgroup keys, active input/output distinctness, 128-bit value conservation, per-output user/full disclosure digests and one owner signature. It shares the NoteV1 relation with Deposit, Spend and JoinSplit2x2.
 
 `DISCLOSURE-BLINDING-SEPARATION` enforces per-output user-vs-note, full-vs-note and full-vs-user inequalities with exact all-private/disabled gating. Production 2x2 enforces the output-0 relation in the circuit and shared native/prepared/structured signing validation. SDK-wide secret freshness is a separate stronger policy.
 

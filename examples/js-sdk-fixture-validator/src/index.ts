@@ -204,7 +204,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "../../..");
 const testdataDir = join(repoRoot, "x/privacy/client/sdk/conformance/testdata");
 const schemaDir = join(repoRoot, "docs/schemas");
-const maxShieldedAmount = (1n << 64n) - 1n;
+const maxShieldedAmount = (1n << 128n) - 1n;
 const expectedActiveReservationStatuses = [
   "Reserved",
   "Proving",
@@ -368,6 +368,34 @@ function assertShieldedAmountString(value: string, label: string): void {
   }
   if (BigInt(value) > maxShieldedAmount) {
     throw new Error(`${label}: expected <= ${maxShieldedAmount.toString()}, got ${value}`);
+  }
+}
+
+function assertOperationAmounts(inputs: string[], outputs: string[]): void {
+  const sum = (amounts: string[], label: string): bigint => amounts.reduce((total, value, index) => {
+    assertShieldedAmountString(value, `${label}[${index}]`);
+    return total + BigInt(value);
+  }, 0n);
+  const inputTotal = sum(inputs, "operation inputs");
+  const outputTotal = sum(outputs, "operation outputs");
+  if (inputTotal > maxShieldedAmount || outputTotal > maxShieldedAmount) {
+    throw new Error("operation amount sum exceeds uint128");
+  }
+  assertEqual(inputTotal, outputTotal, "operation amount conservation");
+}
+
+function validateAmountBoundaries(): void {
+  const max = maxShieldedAmount.toString();
+  assertShieldedAmountString((1n << 64n).toString(), "amount above uint64");
+  assertOperationAmounts([(maxShieldedAmount - 1n).toString(), "1"], [max, "0"]);
+  for (const [inputs, outputs] of [
+    [[max, "1"], [max, "1"]],
+    [["1"], ["0"]],
+    [[(maxShieldedAmount + 1n).toString()], ["0"]],
+  ]) {
+    let rejected = false;
+    try { assertOperationAmounts(inputs, outputs); } catch { rejected = true; }
+    assertEqual(rejected, true, "invalid operation amount rejection");
   }
 }
 
@@ -754,6 +782,7 @@ function validateProverExampleBundle(bundle: ProverExampleBundle): void {
   transferPayload.outputs.forEach((output, index) => {
     assertShieldedAmountString(output.amount, `transfer output ${index} amount`);
   });
+  assertOperationAmounts(transferPayload.inputs.map((input) => input.amount), transferPayload.outputs.map((output) => output.amount));
   assertEqual(transferPayload.view_tag_hexes.length, 2, "transfer view tag count");
   transferPayload.view_tag_hexes.forEach((viewTag, index) => {
     assertHexLength(viewTag, 2, `transfer view tag ${index}`);
@@ -952,6 +981,7 @@ function validateWalletFixtures(): void {
 }
 
 function main(): void {
+  validateAmountBoundaries();
   const proverBundle = readFixture<ProverExampleBundle>("privacy_prover_example_bundle.json");
   const sendFlow = readFixture<SendCapableReferenceFlow>("privacy_send_capable_reference_flow.json");
   const relayWithdrawContract = readFixture<RelayWithdrawContract>("privacy_relay_withdraw_contract.json");

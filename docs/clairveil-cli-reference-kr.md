@@ -386,7 +386,7 @@ clairveild tx privacy relay-withdraw out/withdraw-payload.json \
 
 Summary가 resolved absolute expiry와 chain ID를 출력하고 JSON도 같은 `expires_at_unix`를 사용합니다. 해당 second 이상에서는 제출이 실패하고 relayer는 연장할 수 없습니다. Prepared payload/proof JSON은 privacy-sensitive하며 output/recipient/chain/expiry를 바꿀 수 없어도 prover payload에는 private note witness가 남습니다. Production wallet은 암호화 저장과 만료/삭제 정책을 가져야 합니다.
 
-현재 CLI handoff version은 transfer payload `v5`, transfer proof/prover contract `v2`, withdraw prover/final payload와 proof/prover/relay contract `v2`, disclosure plaintext/query `privacy-fixed-v1`입니다. Legacy file은 다시 생성합니다.
+현재 CLI handoff version은 transfer payload `v5`, transfer proof/prover contract `v2`, withdraw prover/final payload와 proof/prover/relay contract `v2`, disclosure plaintext/query `privacy-fixed-v2`입니다. Legacy file은 다시 생성합니다.
 
 ## 9. Query
 
@@ -459,7 +459,7 @@ clairveild export \
 clairveil-verify -enc '<BASE64_LEGACY_CIPHERTEXT>' -secret '<LEGACY_ADDRESS_OR_SEED>'
 ```
 
-현행 keyring-signature root seed 및 `privacy-fixed-v1` typed envelope와 호환되지 않습니다. Derived scalar prefix와 복호화한 plaintext도 출력하므로 production secret이나 data에 사용하지 마세요. 현행 note는 `clairveild tx privacy list-notes`, typed `privacy_scan` flow, conformance fixture로 검증합니다.
+현행 keyring-signature root seed 및 `privacy-fixed-v2` typed envelope와 호환되지 않습니다. Derived scalar prefix와 복호화한 plaintext도 출력하므로 production secret이나 data에 사용하지 마세요. 현행 note는 `clairveild tx privacy list-notes`, typed `privacy_scan` flow, conformance fixture로 검증합니다.
 
 ### clairveil-proverd
 
@@ -548,7 +548,7 @@ Rehearsal은 0이 아닌 `RUN_LOCALNET`을 거절하는 legacy simulation입니�
 
 ## 11. Batch protocol compatibility
 
-CLI가 생성하고 검사하는 V2 circuit set은 `privacy-note-v1-audit-field-v1`입니다. Note, disclosure, encrypted envelope는 canonical `privacy-fixed-v1`을 사용합니다. Command는 raw ciphertext나 legacy JSON plaintext가 아니라 typed envelope를 emit/consume합니다. `AssetRegistryV1`이 canonical denom과 32-byte asset ID resolve의 authoritative source입니다. Upgrade 시 fresh genesis를 사용하고 local wallet/scan/proof cache와 old development artifact를 삭제한 뒤 검토된 일치 artifact를 재사용하고 rescan합니다. Legacy decode나 in-place state migration은 없습니다.
+CLI가 생성하고 검사하는 V2 circuit set은 `privacy-note-v1-u128-audit-field-v1`입니다. Note, disclosure, encrypted envelope는 canonical `privacy-fixed-v2`을 사용합니다. Command는 raw ciphertext나 legacy JSON plaintext가 아니라 typed envelope를 emit/consume합니다. `AssetRegistryV1`이 canonical denom과 32-byte asset ID resolve의 authoritative source입니다. Upgrade 시 fresh genesis를 사용하고 local wallet/scan/proof cache와 old development artifact를 삭제한 뒤 검토된 일치 artifact를 재사용하고 rescan합니다. Legacy decode나 in-place state migration은 없습니다.
 
 Wallet scan state는 전체 cursor `(height, global_sequence, output_index)`로 정렬됩니다. 모든 spend path는 선택한 root와 정확히 같은 snapshot에서 얻어야 합니다. Current-root path는 incremental node를 사용하므로 online historical-rebuild budget을 소비하지 않습니다. Non-current historical path는 persisted root/count/height metadata를 요구하며 public query는 최대 1,024 leaves와 keeper당 동시 rebuild 2개만 허용하고 그 이상은 `ResourceExhausted`를 반환합니다. Online bound를 넘으면 current root 또는 trusted local historical index를 사용합니다. 별도 offline recovery/export bound는 `MaxMerkleRebuildLeaves`(1,048,576)입니다. Remote historical root/path query는 wallet interest를 노출하므로 privacy warning을 유지하고 중요하면 local 또는 privacy-preserving infrastructure를 우선합니다.
 

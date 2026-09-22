@@ -12,7 +12,15 @@ This is the current shared HTTP contract for `clairveil-proverd`. It describes t
 
 `/v2` is the HTTP route major version. It is deliberately independent of the JSON envelope version: both request and response structs currently require the literal string `v1`.
 
-The V2 route is development-only. `clairveil-proverd` requires a matching `privacy-note-v1-audit-field-v1` artifact directory and refuses to start without `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`. Use an explicitly trusted, locally controlled prover: the complete witness includes transaction secrets.
+The V2 route is development-only. `clairveil-proverd` requires a matching `privacy-note-v1-u128-audit-field-v1` artifact directory and refuses to start without `CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR`. Use an explicitly trusted, locally controlled prover: the complete witness includes transaction secrets.
+
+## uint128 amount contract
+
+Each note/disclosure amount and each operation's input/output totals are in `0..M`; public deposit/withdraw amounts are in `1..M`, where `M = 340282366920938463463374607431768211455`. PI23 keeps its order and count; `PublicAmount` is encoded in a 32-byte field with the upper 16 bytes zero. Conservation alone is insufficient: `[M,1] -> [M,1]` is rejected, while `[M-1,1] -> [M,0]` is accepted. Epoch, expiry, sequence, and index widths are unchanged.
+
+JSON amounts are canonical decimal strings; JS calculations use `bigint`. Per-asset wallet balances, payroll/audit totals across operations, and cumulative deposits/withdrawals have no uint128 cap. Reserve cumulative deposits `D` and withdrawals `W` are arbitrary-precision non-negative strings; only their difference `D-W` and current bank amounts retain the existing 256-bit bound. Wallet and pool balances of `2M` are therefore valid.
+
+The current codec is `privacy-fixed-v2`/binary version `2`, and wallet files use version `3`. Note/disclosure plaintext amounts use 16-byte unsigned BE; their domains are `clairveil.note-plaintext.v2`, `clairveil.disclosure-plaintext.v2`, and `clairveil.encrypted-envelope.v2`. Plaintexts are respectively `358` and `400` bytes; deposit/transfer recovery envelopes are `406` and `438` bytes; encrypted disclosure envelopes are `480` bytes. Use fresh genesis and new artifacts; old payload/wallet decoders are unsupported.
 
 ## Request and response binding
 
@@ -21,23 +29,23 @@ All requests are strict JSON objects with exactly these fields:
 ```json
 {
   "version": "v1",
-  "circuit_set_id": "privacy-note-v1-audit-field-v1",
-  "circuit_id": "deposit-audit-field-v1",
+  "circuit_set_id": "privacy-note-v1-u128-audit-field-v1",
+  "circuit_id": "deposit-audit-field-u128-v1",
   "artifact_hash": "base64-encoded 32 bytes",
   "public_inputs": ["base64-encoded canonical field element", "... exactly 23 entries"],
   "witness": "base64-encoded complete gnark witness"
 }
 ```
 
-`circuit_id` must be one of `deposit-audit-field-v1`, `spend-audit-field-v1`, `joinsplit-2x2-audit-field-v1`, or `batch-joinsplit-16x32-audit-field-v1`. Go's standard JSON encoding represents every `[]byte` field as a base64 JSON string; `public_inputs` is therefore an array of base64 strings, not hexadecimal. Each supplied public input must decode to one canonical BN254 field element, and there must be exactly final PI23 inputs. The full witness must decode exactly and its public part must equal those 23 inputs in order.
+`circuit_id` must be one of `deposit-audit-field-u128-v1`, `spend-audit-field-u128-v1`, `joinsplit-2x2-audit-field-u128-v1`, or `batch-joinsplit-16x32-audit-field-u128-v1`. Go's standard JSON encoding represents every `[]byte` field as a base64 JSON string; `public_inputs` is therefore an array of base64 strings, not hexadecimal. Each supplied public input must decode to one canonical BN254 field element, and there must be exactly final PI23 inputs. The full witness must decode exactly and its public part must equal those 23 inputs in order.
 
 The successful response repeats the complete public binding:
 
 ```json
 {
   "version": "v1",
-  "circuit_set_id": "privacy-note-v1-audit-field-v1",
-  "circuit_id": "deposit-audit-field-v1",
+  "circuit_set_id": "privacy-note-v1-u128-audit-field-v1",
+  "circuit_id": "deposit-audit-field-u128-v1",
   "artifact_hash": "base64-encoded 32 bytes",
   "public_inputs": ["same 23 base64 values, in order"],
   "proof": "base64-encoded canonical BN254 Groth16 proof"
