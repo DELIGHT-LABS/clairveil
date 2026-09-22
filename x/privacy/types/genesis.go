@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"strings"
 
-	sdkmath "cosmossdk.io/math"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -426,16 +426,20 @@ func validateGenesisReserveBalancesV1(balances []*ReserveBalanceV1, assets []*As
 			return fmt.Errorf("balances must be strictly denom-sorted")
 		}
 		previousDenom = balance.CanonicalDenom
-		deposited, ok := sdkmath.NewIntFromString(balance.TotalDeposited)
-		if !ok || deposited.IsNegative() {
+		deposited, ok := new(big.Int).SetString(balance.TotalDeposited, 10)
+		if !ok || deposited.Sign() < 0 || deposited.String() != balance.TotalDeposited {
 			return fmt.Errorf("balance %d total_deposited is invalid", i)
 		}
-		withdrawn, ok := sdkmath.NewIntFromString(balance.TotalWithdrawn)
-		if !ok || withdrawn.IsNegative() {
+		withdrawn, ok := new(big.Int).SetString(balance.TotalWithdrawn, 10)
+		if !ok || withdrawn.Sign() < 0 || withdrawn.String() != balance.TotalWithdrawn {
 			return fmt.Errorf("balance %d total_withdrawn is invalid", i)
 		}
-		if withdrawn.GT(deposited) {
+		liability := new(big.Int).Sub(deposited, withdrawn)
+		if liability.Sign() < 0 {
 			return fmt.Errorf("balance %d withdrawals exceed deposits", i)
+		}
+		if liability.BitLen() > 256 {
+			return fmt.Errorf("balance %d liability exceeds uint256", i)
 		}
 	}
 	return nil

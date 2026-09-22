@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"fmt"
+	"math/big"
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -115,4 +116,20 @@ func TestInitGenesisReserveBalancesV1RejectsUnregisteredAsset(t *testing.T) {
 		TotalWithdrawn: "0",
 	}})
 	require.ErrorContains(t, err, `denom "uatom" is not registered`)
+}
+
+func TestInitGenesisReserveBalancesV1RejectsInvalidCountersAndLiability(t *testing.T) {
+	overflow := new(big.Int).Lsh(big.NewInt(1), 256).String()
+	for _, tc := range []struct{ deposited, withdrawn string }{
+		{"01", "0"}, {"1", "+0"}, {"-1", "0"}, {"1", "2"}, {overflow, "0"},
+	} {
+		t.Run(tc.deposited+"/"+tc.withdrawn, func(t *testing.T) {
+			k, ctx, _ := setupMsgServerKeeper()
+			_, err := k.RegisterCanonicalAssetV1(ctx, "uclair")
+			require.NoError(t, err)
+			require.Error(t, k.InitGenesisReserveBalancesV1(ctx, []*privacytypes.ReserveBalanceV1{{
+				CanonicalDenom: "uclair", TotalDeposited: tc.deposited, TotalWithdrawn: tc.withdrawn,
+			}}))
+		})
+	}
 }

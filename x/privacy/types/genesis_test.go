@@ -176,3 +176,36 @@ func validTestCircuitSetIdentity() *CircuitSetIdentity {
 	}
 	return identity
 }
+
+func TestGenesisReserveCountersUnboundedAndLiabilityUint256(t *testing.T) {
+	huge := new(big.Int).Exp(big.NewInt(10), big.NewInt(78), nil)
+	maxLiability := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	for _, tc := range []struct {
+		name, deposited, withdrawn string
+		valid                      bool
+	}{
+		{"large equal counters", huge.String(), huge.String(), true},
+		{"max liability", new(big.Int).Add(huge, maxLiability).String(), huge.String(), true},
+		{"negative liability", huge.String(), new(big.Int).Add(huge, big.NewInt(1)).String(), false},
+		{"liability overflow", new(big.Int).Add(new(big.Int).Add(huge, maxLiability), big.NewInt(1)).String(), huge.String(), false},
+		{"leading zero", "01", "0", false},
+		{"signed zero", "1", "+0", false},
+		{"negative counter", "-1", "0", false},
+		{"empty counter", "", "0", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gs := DefaultGenesis(validTestCircuitSetIdentity())
+			gs.ReserveBalances = []*ReserveBalanceV1{{CanonicalDenom: "uclair", TotalDeposited: tc.deposited, TotalWithdrawn: tc.withdrawn}}
+			if !tc.valid {
+				require.Error(t, gs.Validate())
+				return
+			}
+			require.NoError(t, gs.Validate())
+			encoded := ModuleCdc.MustMarshalJSON(gs)
+			var decoded GenesisState
+			ModuleCdc.MustUnmarshalJSON(encoded, &decoded)
+			require.NoError(t, decoded.Validate())
+			require.Equal(t, gs.ReserveBalances, decoded.ReserveBalances)
+		})
+	}
+}

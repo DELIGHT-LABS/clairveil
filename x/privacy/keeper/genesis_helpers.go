@@ -2,10 +2,10 @@ package keeper
 
 import (
 	"fmt"
+	"math/big"
 	"sort"
 	"strings"
 
-	sdkmath "cosmossdk.io/math"
 	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 
 	"github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -144,13 +144,17 @@ func (k Keeper) InitGenesisReserveBalancesV1(ctx sdk.Context, balances []*types.
 		if !registered {
 			return fmt.Errorf("genesis reserve balance %d denom %q is not registered", i, balance.CanonicalDenom)
 		}
-		deposited, ok := sdkmath.NewIntFromString(balance.TotalDeposited)
-		if !ok || deposited.IsNegative() {
+		deposited, err := parseReserveAmount(balance.TotalDeposited)
+		if err != nil {
 			return fmt.Errorf("genesis reserve balance %d total_deposited is invalid", i)
 		}
-		withdrawn, ok := sdkmath.NewIntFromString(balance.TotalWithdrawn)
-		if !ok || withdrawn.IsNegative() || withdrawn.GT(deposited) {
+		withdrawn, err := parseReserveAmount(balance.TotalWithdrawn)
+		if err != nil {
 			return fmt.Errorf("genesis reserve balance %d total_withdrawn is invalid", i)
+		}
+		liability := new(big.Int).Sub(deposited, withdrawn)
+		if liability.Sign() < 0 || liability.BitLen() > 256 {
+			return fmt.Errorf("genesis reserve balance %d liability is invalid", i)
 		}
 		if err := k.setReserveAmount(ctx, types.GetReserveDepositKey(balance.CanonicalDenom), deposited); err != nil {
 			return err
@@ -202,7 +206,8 @@ func (k Keeper) ExportGenesisReserveBalancesV1(ctx sdk.Context) ([]*types.Reserv
 		if err != nil {
 			return nil, err
 		}
-		if deposited.IsNegative() || withdrawn.IsNegative() || withdrawn.GT(deposited) {
+		liability := new(big.Int).Sub(deposited, withdrawn)
+		if liability.Sign() < 0 || liability.BitLen() > 256 {
 			return nil, fmt.Errorf("reserve counter for %s is inconsistent", denom)
 		}
 		balances = append(balances, &types.ReserveBalanceV1{

@@ -189,7 +189,7 @@ func TestDepositWithFunderPreservesZeroValueAndMessageOwnership(t *testing.T) {
 	snapshot, err := k.GetReserveSnapshot(ctx, "uclair")
 	require.NoError(t, err)
 	require.True(t, snapshot.ModuleBalance.IsZero())
-	require.True(t, snapshot.TotalDeposited.IsZero())
+	require.Zero(t, snapshot.TotalDeposited.Sign())
 	require.True(t, snapshot.InvariantHolds)
 	requireExactDepositEvent(t, ctx, msg)
 }

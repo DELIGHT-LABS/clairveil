@@ -39,7 +39,10 @@ func EvaluateReserve(response *privacytypes.QueryReserveResponse) (ReserveStatus
 		"total withdrawn": response.TotalWithdrawn, "expected module balance": response.ExpectedModuleBalance,
 		"liability": response.Liability, "surplus": response.Surplus, "shortfall": response.Shortfall,
 	} {
-		value, err := parseReserveUint256(raw)
+		value, err := parseReserveCounter(raw)
+		if err == nil && name != "total deposited" && name != "total withdrawn" && value.BitLen() > 256 {
+			err = fmt.Errorf("outside uint256")
+		}
 		if err != nil {
 			return ReserveStatus{}, fmt.Errorf("invalid reserve %s: %w", name, err)
 		}
@@ -67,7 +70,7 @@ func EvaluateReserve(response *privacytypes.QueryReserveResponse) (ReserveStatus
 	}, nil
 }
 
-func parseReserveUint256(raw string) (*big.Int, error) {
+func parseReserveCounter(raw string) (*big.Int, error) {
 	if raw == "" || (raw != "0" && (raw[0] < '1' || raw[0] > '9')) {
 		return nil, fmt.Errorf("noncanonical decimal")
 	}
@@ -77,8 +80,8 @@ func parseReserveUint256(raw string) (*big.Int, error) {
 		}
 	}
 	parsed, ok := new(big.Int).SetString(raw, 10)
-	if !ok || parsed.Sign() < 0 || parsed.BitLen() > 256 {
-		return nil, fmt.Errorf("outside uint256")
+	if !ok || parsed.Sign() < 0 {
+		return nil, fmt.Errorf("invalid nonnegative decimal")
 	}
 	return parsed, nil
 }

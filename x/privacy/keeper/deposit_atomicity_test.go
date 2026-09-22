@@ -377,7 +377,7 @@ func TestDepositWithFunderZeroValueKeepsTransparentBalances(t *testing.T) {
 
 	snapshot, err := k.GetReserveSnapshot(ctx, "uclair")
 	require.NoError(t, err)
-	require.True(t, snapshot.TotalDeposited.IsZero())
+	require.Zero(t, snapshot.TotalDeposited.Sign())
 	require.True(t, snapshot.ModuleBalance.IsZero())
 	require.True(t, snapshot.InvariantHolds)
 	requireExactDepositEvent(t, ctx, msg)
@@ -412,7 +412,7 @@ func TestDepositWithFunderMutationFailuresRollback(t *testing.T) {
 		requireNoCommittedDeposit(t, k, ctx, bankKeeper, actor, funder, 50, 3, baseMsg.NoteCommitment)
 		snapshot, snapshotErr := k.GetReserveSnapshot(ctx, "uclair")
 		require.NoError(t, snapshotErr)
-		require.True(t, snapshot.TotalDeposited.IsZero())
+		require.Zero(t, snapshot.TotalDeposited.Sign())
 		require.True(t, snapshot.InvariantHolds)
 		require.Equal(t, privacyBefore, collectStoreEntries(t, k.storeService, ctx))
 		require.Equal(t, bankBefore, collectStoreEntries(t, bankKeeper.storeService, ctx))
@@ -467,7 +467,7 @@ func TestDepositWithFunderMutationFailuresRollback(t *testing.T) {
 		requireNoCommittedDeposit(t, k, ctx, bankKeeper, actor, funder, 50, 20, baseMsg.NoteCommitment)
 		snapshot, snapshotErr := k.GetReserveSnapshot(ctx, "uclair")
 		require.NoError(t, snapshotErr)
-		require.True(t, snapshot.TotalDeposited.IsZero())
+		require.Zero(t, snapshot.TotalDeposited.Sign())
 		stored, getErr := store.Get(rootSnapshotKey)
 		require.NoError(t, getErr)
 		require.Equal(t, []byte{0xff}, stored)
@@ -494,7 +494,7 @@ func TestDepositWithFunderMutationFailuresRollback(t *testing.T) {
 		requireNoCommittedDeposit(t, k, ctx, bankKeeper, actor, funder, 50, 20, baseMsg.NoteCommitment)
 		snapshot, snapshotErr := k.GetReserveSnapshot(ctx, "uclair")
 		require.NoError(t, snapshotErr)
-		require.True(t, snapshot.TotalDeposited.IsZero())
+		require.Zero(t, snapshot.TotalDeposited.Sign())
 
 		for _, key := range [][]byte{
 			privacytypes.GetPrivacyScanSummaryKey(ctx.BlockHeight(), 1),
@@ -550,7 +550,7 @@ func TestDepositWithFunderOuterCacheRollback(t *testing.T) {
 	requireNoCommittedDeposit(t, k, parentCtx, bankKeeper, actor, funder, 50, 20, msg.NoteCommitment)
 	snapshot, err := k.GetReserveSnapshot(parentCtx, "uclair")
 	require.NoError(t, err)
-	require.True(t, snapshot.TotalDeposited.IsZero())
+	require.Zero(t, snapshot.TotalDeposited.Sign())
 	require.True(t, snapshot.ModuleBalance.IsZero())
 	require.True(t, snapshot.InvariantHolds)
 	require.Equal(t, privacyBefore, collectStoreEntries(t, k.storeService, parentCtx))

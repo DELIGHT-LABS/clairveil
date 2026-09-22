@@ -21,8 +21,8 @@ var (
 type ReserveSnapshot struct {
 	Denom                 string
 	ModuleBalance         sdkmath.Int
-	TotalDeposited        sdkmath.Int
-	TotalWithdrawn        sdkmath.Int
+	TotalDeposited        *big.Int
+	TotalWithdrawn        *big.Int
 	ExpectedModuleBalance sdkmath.Int
 	InvariantHolds        bool
 	Liability             sdkmath.Int
@@ -75,10 +75,14 @@ func (k Keeper) GetReserveSnapshot(ctx sdk.Context, denom string) (ReserveSnapsh
 		return ReserveSnapshot{}, fmt.Errorf("failed to load reserve withdrawals for %s: %w", denom, err)
 	}
 
-	if deposited.LT(withdrawn) {
+	liability := new(big.Int).Sub(deposited, withdrawn)
+	if liability.Sign() < 0 {
 		return ReserveSnapshot{}, fmt.Errorf("%w: deposits below withdrawals", ErrReserveStateInvalid)
 	}
-	expected := deposited.Sub(withdrawn)
+	if liability.BitLen() > 256 {
+		return ReserveSnapshot{}, fmt.Errorf("%w: liability overflow", ErrReserveStateInvalid)
+	}
+	expected := sdkmath.NewIntFromBigInt(liability)
 	moduleAddress := authtypes.NewModuleAddress(types.ModuleName)
 	moduleBalance := k.bankKeeper.GetBalance(ctx, moduleAddress, denom).Amount
 	if moduleBalance.IsNil() || moduleBalance.IsNegative() || moduleBalance.BigInt().BitLen() > 256 {
@@ -123,46 +127,32 @@ func (k Keeper) addReserveAmount(ctx sdk.Context, key []byte, amount sdkmath.Int
 	if amount.IsNil() || amount.IsNegative() {
 		return fmt.Errorf("%w: invalid increment", ErrReserveStateInvalid)
 	}
-	sum := new(big.Int).Add(current.BigInt(), amount.BigInt())
-	if sum.BitLen() > 256 {
-		return fmt.Errorf("%w: counter overflow", ErrReserveStateInvalid)
-	}
-	return k.setReserveAmount(ctx, key, sdkmath.NewIntFromBigInt(sum))
+	sum := new(big.Int).Add(current, amount.BigInt())
+	return k.setReserveAmount(ctx, key, sum)
 }
 
-func (k Keeper) getReserveAmount(ctx sdk.Context, key []byte) (sdkmath.Int, error) {
+func (k Keeper) getReserveAmount(ctx sdk.Context, key []byte) (*big.Int, error) {
 	store := k.storeService.OpenKVStore(ctx)
 	bz, err := store.Get(key)
 	if err != nil {
-		return sdkmath.Int{}, err
+		return nil, err
 	}
 	if bz == nil {
-		return sdkmath.ZeroInt(), nil
+		return new(big.Int), nil
 	}
-
-	if len(bz) == 0 {
-		return sdkmath.Int{}, fmt.Errorf("%w: empty counter", ErrReserveStateInvalid)
-	}
-	if string(bz) != "0" && (bz[0] < '1' || bz[0] > '9') {
-		return sdkmath.Int{}, fmt.Errorf("%w: noncanonical counter", ErrReserveStateInvalid)
-	}
-	if len(bz) > 78 {
-		return sdkmath.Int{}, fmt.Errorf("%w: counter overflow", ErrReserveStateInvalid)
-	}
-	for _, b := range bz {
-		if b < '0' || b > '9' {
-			return sdkmath.Int{}, fmt.Errorf("%w: noncanonical counter", ErrReserveStateInvalid)
-		}
-	}
-	amount, ok := new(big.Int).SetString(string(bz), 10)
-	if !ok || amount.BitLen() > 256 {
-		return sdkmath.Int{}, fmt.Errorf("%w: counter overflow", ErrReserveStateInvalid)
-	}
-	return sdkmath.NewIntFromBigInt(amount), nil
+	return parseReserveAmount(string(bz))
 }
 
-func (k Keeper) setReserveAmount(ctx sdk.Context, key []byte, amount sdkmath.Int) error {
-	if amount.IsNil() || amount.IsNegative() || amount.BigInt().BitLen() > 256 {
+func parseReserveAmount(raw string) (*big.Int, error) {
+	amount, ok := new(big.Int).SetString(raw, 10)
+	if !ok || amount.Sign() < 0 || amount.String() != raw {
+		return nil, fmt.Errorf("%w: noncanonical counter", ErrReserveStateInvalid)
+	}
+	return amount, nil
+}
+
+func (k Keeper) setReserveAmount(ctx sdk.Context, key []byte, amount *big.Int) error {
+	if amount == nil || amount.Sign() < 0 {
 		return fmt.Errorf("%w: invalid counter", ErrReserveStateInvalid)
 	}
 	store := k.storeService.OpenKVStore(ctx)

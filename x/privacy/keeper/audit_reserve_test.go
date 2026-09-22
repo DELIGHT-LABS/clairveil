@@ -12,13 +12,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestAuditReserveCanonicalUint256AndSurplus(t *testing.T) {
+func TestAuditReserveCanonicalCountersAndSurplus(t *testing.T) {
 	k, ctx, bank := setupMsgServerKeeper()
 	store := k.storeService.OpenKVStore(ctx)
 	key := pt.GetReserveDepositKey("uclair")
 	max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
 	overflow := new(big.Int).Add(max, big.NewInt(1))
-	for _, raw := range []string{"00", "01", "+1", "-1", " 1", "1 ", "1.0", overflow.String()} {
+	for _, raw := range []string{"", "00", "01", "+1", "-1", " 1", "1 ", "1.0", overflow.String()} {
 		require.NoError(t, store.Set(key, []byte(raw)))
 		_, err := k.GetReserveSnapshot(ctx, "uclair")
 		require.ErrorIs(t, err, ErrReserveStateInvalid)
@@ -29,10 +29,12 @@ func TestAuditReserveCanonicalUint256AndSurplus(t *testing.T) {
 	value, err := k.getReserveAmount(ctx, key)
 	require.NoError(t, err)
 	require.Equal(t, max.String(), value.String())
-	require.ErrorIs(t, k.addReserveAmount(ctx, key, sdkmath.OneInt()), ErrReserveStateInvalid)
+	require.NoError(t, k.addReserveAmount(ctx, key, sdkmath.OneInt()))
 	raw, err := store.Get(key)
 	require.NoError(t, err)
-	require.Equal(t, max.String(), string(raw))
+	require.Equal(t, overflow.String(), string(raw))
+	_, err = k.GetReserveSnapshot(ctx, "uclair")
+	require.ErrorIs(t, err, ErrReserveStateInvalid)
 	require.NoError(t, store.Set(key, []byte("10")))
 	require.NoError(t, store.Set(pt.GetReserveWithdrawKey("uclair"), []byte("3")))
 	for _, tc := range []struct {
@@ -56,4 +58,56 @@ func TestAuditReserveCanonicalUint256AndSurplus(t *testing.T) {
 	require.NoError(t, store.Set(pt.GetReserveWithdrawKey("uclair"), []byte("11")))
 	_, err = k.GetReserveSnapshot(ctx, "uclair")
 	require.ErrorIs(t, err, ErrReserveStateInvalid)
+}
+
+func TestAuditReserveUnboundedCountersAndCurrentLiability(t *testing.T) {
+	k, ctx, bank := setupMsgServerKeeper()
+	_, err := k.RegisterCanonicalAssetV1(ctx, "uclair")
+	require.NoError(t, err)
+	huge := new(big.Int).Exp(big.NewInt(10), big.NewInt(78), nil)
+	previous := new(big.Int).Sub(huge, big.NewInt(1))
+	require.NoError(t, k.InitGenesisReserveBalancesV1(ctx, []*pt.ReserveBalanceV1{{
+		CanonicalDenom: "uclair", TotalDeposited: previous.String(), TotalWithdrawn: previous.String(),
+	}}))
+	require.NoError(t, k.recordReserveDeposit(ctx, sdk.NewInt64Coin("uclair", 1)))
+	bank.moduleBalances = sdk.NewCoins(sdk.NewInt64Coin("uclair", 1))
+	snapshot, err := k.GetReserveSnapshot(ctx, "uclair")
+	require.NoError(t, err)
+	require.Equal(t, huge.String(), snapshot.TotalDeposited.String())
+	require.Equal(t, previous.String(), snapshot.TotalWithdrawn.String())
+	require.Equal(t, "1", snapshot.Liability.String())
+	require.True(t, snapshot.InvariantHolds)
+
+	require.NoError(t, k.recordReserveWithdraw(ctx, sdk.NewInt64Coin("uclair", 1)))
+	bank.moduleBalances = sdk.NewCoins()
+	response, err := k.Reserve(ctx, &pt.QueryReserveRequest{Denom: "uclair"})
+	require.NoError(t, err)
+	require.Equal(t, huge.String(), response.TotalDeposited)
+	require.Equal(t, huge.String(), response.TotalWithdrawn)
+	require.Equal(t, "0", response.Liability)
+	require.True(t, response.InvariantHolds)
+	balances, err := k.ExportGenesisReserveBalancesV1(ctx)
+	require.NoError(t, err)
+	require.Equal(t, huge.String(), balances[0].TotalDeposited)
+	require.Equal(t, huge.String(), balances[0].TotalWithdrawn)
+	restored, restoredCtx, _ := setupMsgServerKeeper()
+	_, err = restored.RegisterCanonicalAssetV1(restoredCtx, "uclair")
+	require.NoError(t, err)
+	require.NoError(t, restored.InitGenesisReserveBalancesV1(restoredCtx, balances))
+	restoredBalances, err := restored.ExportGenesisReserveBalancesV1(restoredCtx)
+	require.NoError(t, err)
+	require.Equal(t, balances, restoredBalances)
+
+	maxNote := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 128), big.NewInt(1))
+	for i := 0; i < 2; i++ {
+		require.NoError(t, k.recordReserveDeposit(ctx, sdk.NewCoin("uclair", sdkmath.NewIntFromBigInt(maxNote))))
+	}
+	twiceMax := new(big.Int).Mul(maxNote, big.NewInt(2))
+	bank.moduleBalances = sdk.NewCoins(sdk.NewCoin("uclair", sdkmath.NewIntFromBigInt(twiceMax)))
+	snapshot, err = k.GetReserveSnapshot(ctx, "uclair")
+	require.NoError(t, err)
+	require.Equal(t, twiceMax.String(), snapshot.Liability.String())
+	require.Equal(t, new(big.Int).Add(huge, twiceMax).String(), snapshot.TotalDeposited.String())
+	require.Equal(t, huge.String(), snapshot.TotalWithdrawn.String())
+	require.True(t, snapshot.InvariantHolds)
 }
