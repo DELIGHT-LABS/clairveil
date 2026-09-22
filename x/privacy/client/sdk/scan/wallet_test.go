@@ -2,6 +2,7 @@ package scan
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"math/big"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	privacyamount "github.com/DELIGHT-LABS/clairveil/x/privacy/amount"
+	privacycrypto "github.com/DELIGHT-LABS/clairveil/x/privacy/crypto"
 	"github.com/stretchr/testify/require"
 
 	privacytypes "github.com/DELIGHT-LABS/clairveil/x/privacy/types"
@@ -113,7 +115,20 @@ func TestWalletPersistsAndSummarizesTwoMaximumNotes(t *testing.T) {
 	legacy, _ := newScanServiceDepositTx(t, []byte("large-wallet"), big.NewInt(21), "uclair", 31)
 	note := mustSecretFoundNoteFromLegacy(t, FoundNote{Note: *legacy}).Note
 	note.Amount = value
-	wallet := LocalWalletData{Notes: []SecretFoundNote{{Note: note}, {Note: note}}}
+	second := note
+	second.Randomness = privacycrypto.FieldValueFromUint64(987654321)
+	require.NotEqual(t, note.Randomness, second.Randomness)
+	firstCommitment, err := note.CommitmentV1()
+	require.NoError(t, err)
+	secondCommitment, err := second.CommitmentV1()
+	require.NoError(t, err)
+	require.NotEqual(t, firstCommitment, secondCommitment)
+	firstNullifier, err := note.NullifierV1()
+	require.NoError(t, err)
+	secondNullifier, err := second.NullifierV1()
+	require.NoError(t, err)
+	require.NotEqual(t, firstNullifier, secondNullifier)
+	wallet := LocalWalletData{Notes: []SecretFoundNote{{Note: note, Commitment: walletTestFieldHex(firstCommitment), Nullifier: walletTestFieldHex(firstNullifier)}, {Note: second, Commitment: walletTestFieldHex(secondCommitment), Nullifier: walletTestFieldHex(secondNullifier)}}}
 	encoded, err := json.Marshal(wallet)
 	require.NoError(t, err)
 	require.Contains(t, string(encoded), `"version":3`)
@@ -125,4 +140,9 @@ func TestWalletPersistsAndSummarizesTwoMaximumNotes(t *testing.T) {
 	require.Equal(t, "680564733841876926926749214863536422910", total.String())
 	malformed := bytes.Replace(encoded, []byte(`"amount":"340282366920938463463374607431768211455"`), []byte(`"amount":1`), 1)
 	require.Error(t, json.Unmarshal(malformed, &restored))
+}
+
+func walletTestFieldHex(value privacycrypto.FieldValue) string {
+	raw := value.Bytes()
+	return hex.EncodeToString(raw[:])
 }

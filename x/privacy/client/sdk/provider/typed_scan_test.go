@@ -246,14 +246,14 @@ func typedZeroOutputSummary(height int64, sequence uint64) *privacytypes.Privacy
 func typedBatchOutput(effectID, txHash []byte, index uint32) *privacytypes.PrivacyScanOutputV2 {
 	commitment := make([]byte, 32)
 	commitment[31] = byte(index + 1)
-	// NotePlaintextV1 (350) + ECIES point/nonce/tag overhead (60).
-	ciphertext, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeTransferNoteV1, make([]byte, 410))
+	// Fixed plaintext + ECIES point/nonce/tag overhead (60).
+	ciphertext, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeTransferNoteV1, make([]byte, privacytypes.NotePlaintextV1Size+60))
 	if err != nil {
 		panic(err)
 	}
 	fullDigest := make([]byte, 32)
 	fullDigest[31] = byte(index + 1)
-	auditPayload, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeAuditDisclosureV1, make([]byte, 452))
+	auditPayload, err := privacytypes.WrapEncryptedEnvelopeV1(privacytypes.EnvelopeAuditDisclosureV1, make([]byte, privacytypes.DisclosurePlaintextV1Size+60))
 	if err != nil {
 		panic(err)
 	}

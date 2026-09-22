@@ -52,7 +52,7 @@ func TestJoinSplitOldAndNewProofIdentitiesAreMutuallyExclusive(t *testing.T) {
 	runtime.GC()
 
 	currentR1CS := readJoinSplitConstraintSystem(t, currentDir)
-	require.Equal(t, 99_775, currentR1CS.GetNbConstraints())
+	require.Equal(t, 100_160, currentR1CS.GetNbConstraints())
 	compiledCurrentR1CS, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &JoinSplitCircuit{})
 	require.NoError(t, err)
 	require.Equal(

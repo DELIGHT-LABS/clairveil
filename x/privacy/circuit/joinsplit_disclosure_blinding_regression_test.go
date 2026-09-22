@@ -33,8 +33,8 @@ func (c *joinSplitDisclosureBlindingLegacyControl) Define(api frontend.API) erro
 func TestJoinSplitCircuitEnforcesDisclosureBlindingSeparationV1(t *testing.T) {
 	legacyControlCCS := compileJoinSplitCircuitForFeasibility(t, &joinSplitDisclosureBlindingLegacyControl{})
 	productionCCS := compileJoinSplitCircuitForFeasibility(t, &JoinSplitCircuit{})
-	require.Equal(t, 99_765, legacyControlCCS.GetNbConstraints())
-	require.Equal(t, 99_775, productionCCS.GetNbConstraints())
+	require.Equal(t, 100_150, legacyControlCCS.GetNbConstraints())
+	require.Equal(t, 100_160, productionCCS.GetNbConstraints())
 	require.Equal(t, 10, productionCCS.GetNbConstraints()-legacyControlCCS.GetNbConstraints())
 	t.Logf(
 		"JOIN_SPLIT_DISCLOSURE_CONSTRAINT_DELTA legacy_control=%d production=%d delta=%d",
@@ -173,7 +173,7 @@ func TestJoinSplitDisclosureBlindingSeparationResourceGate(t *testing.T) {
 		BatchConstraints: 1_111_837,
 	}
 	require.Equal(t, 10, report.ConstraintDelta)
-	require.Equal(t, 99_775, report.Production.ConstraintCount)
+	require.Equal(t, 100_160, report.Production.ConstraintCount)
 	require.Equal(t, int64(164), report.LegacyControl.ProofBytes)
 	require.Equal(t, int64(164), report.Production.ProofBytes)
 
