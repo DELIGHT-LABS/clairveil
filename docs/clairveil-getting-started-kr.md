@@ -6,7 +6,7 @@ Clairveil은 검토된 고정 privacy verifier artifact를 사용합니다. Node
 
 ## 전제조건
 
-Go `1.25.12`, Git, Make, Bash와 네 개의 필수 verifier artifact가 들어 있는 검토된 directory가 필요합니다. Artifact directory는 실행 중인 node에만 제공하며 genesis에 복사하지 않습니다.
+Go `1.25.13`, Git, Make, Bash와 네 개의 필수 verifier artifact가 들어 있는 검토된 directory가 필요합니다. Artifact directory는 실행 중인 node에만 제공하며 genesis에 복사하지 않습니다.
 
 검토된 작은 V4 구성 파일을 준비합니다. JSON 필드는 `chain_id`, base64 `network_nonce32`, `initial_height`, `initial_audit_key`, `circuit_set_identity`입니다. `initial_audit_key`에는 public key와 proof of possession만 들어갑니다(`epoch`, base64 `key_id`, `suite`, base64 `public_key`, base64 `pop`). Circuit identity는 local artifact manifest와 정확히 일치해야 합니다.
 

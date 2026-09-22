@@ -46,7 +46,7 @@ English version: [README.md](README.md)
 
 ## 빠른 시작
 
-Git, Make, Go `1.25.12`, Bash가 필요하며 repository CI/example 검증에는 Node.js `22+`와 npm도 필요합니다. 검토된 verifier artifact를 사용하기 전에 [시작 가이드](docs/clairveil-getting-started-kr.md)를 확인합니다.
+Git, Make, Go `1.25.13`, Bash가 필요하며 repository CI/example 검증에는 Node.js `22+`와 npm도 필요합니다. 검토된 verifier artifact를 사용하기 전에 [시작 가이드](docs/clairveil-getting-started-kr.md)를 확인합니다.
 
 ```bash
 git clone https://github.com/DELIGHT-LABS/clairveil.git

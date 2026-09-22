@@ -46,7 +46,7 @@ Documentation describes the code at the same checkout. When integrating a tag or
 
 ## Quick Start
 
-Use Git, Make, Go `1.25.12`, and Bash; repository CI/example checks also need Node.js `22+` and npm. Read the [getting started guide](docs/clairveil-getting-started.md) before using the reviewed verifier artifacts.
+Use Git, Make, Go `1.25.13`, and Bash; repository CI/example checks also need Node.js `22+` and npm. Read the [getting started guide](docs/clairveil-getting-started.md) before using the reviewed verifier artifacts.
 
 ```bash
 git clone https://github.com/DELIGHT-LABS/clairveil.git

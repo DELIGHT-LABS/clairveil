@@ -30,6 +30,7 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 - `deposit`, `transfer`, `batch transfer`, `withdraw`에 proof-bound audit-field 검증과 원자적 적용을 추가했습니다. 거버넌스는 privacy 자산 거래를 실행할 수 없고 audit key 및 비상 관리 명령은 계속 실행할 수 있습니다.
 - 신뢰된 `Keeper.DepositWithFunderV2` surface를 추가했습니다. `MsgDeposit.Creator`는 proof-bound provenance principal로 유지하고 검증된 downstream funder만 차감하며 delegated audit 수집에 필요한 bounded canonical message를 event에 남깁니다.
+- Release toolchain을 Go `1.25.13`으로 올리고 grpc, x/text, webtransport, DTLS를 수정 버전으로 갱신했습니다. 이제 vulnerability gate에는 명시적으로 추적하는 downstream risk만 남습니다.
 
 ### Known Risk
 

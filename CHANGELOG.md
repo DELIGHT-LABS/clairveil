@@ -30,6 +30,7 @@ All notable changes to Clairveil are documented in this file.
 
 - Added proof-bound audit-field verification and atomic application for deposit, transfer, batch transfer, and withdraw, while governance cannot execute privacy asset transactions and may still execute audit-key and emergency-management operations.
 - Added the trusted `Keeper.DepositWithFunderV2` surface. It keeps `MsgDeposit.Creator` as the proof-bound provenance principal while debiting a validated downstream funder and emitting the bounded canonical message needed for delegated audit collection.
+- Raised the release toolchain to Go `1.25.13` and refreshed grpc, x/text, webtransport, and DTLS dependencies to their current fixed versions; the vulnerability gate now leaves only the explicitly tracked downstream risks.
 
 ### Known Risk
 

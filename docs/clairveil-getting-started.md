@@ -8,7 +8,7 @@ node initialization.
 
 ## Prerequisites
 
-Install Go `1.25.12`, Git, Make, Bash, and the reviewed directory containing
+Install Go `1.25.13`, Git, Make, Bash, and the reviewed directory containing
 the four required verifier artifacts. The artifact directory is supplied to a
 running node; it is never copied into genesis.
 
