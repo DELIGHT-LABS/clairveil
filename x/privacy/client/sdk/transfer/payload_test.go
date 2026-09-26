@@ -672,22 +672,6 @@ func transferIntentFromAssignment(assignment *circuit.JoinSplitCircuit) (*big.In
 	})
 }
 
-func TestParseDecimalFieldRequiresCanonicalShieldedAmount(t *testing.T) {
-	maxAmount := privacytypes.MaxShieldedAmount()
-	maxPlusOne := new(big.Int).Add(maxAmount, big.NewInt(1))
-
-	for _, value := range []string{"0", "1", maxAmount.String()} {
-		parsed, err := parseDecimalField(value, "input amount")
-		require.NoError(t, err)
-		require.Equal(t, value, parsed.String())
-	}
-
-	for _, value := range []string{"", "01", "+1", " 1", "1 ", "-1", maxPlusOne.String()} {
-		_, err := parseDecimalField(value, "input amount")
-		require.Error(t, err, value)
-	}
-}
-
 func TestPreparedTransferPayloadAndProofJSONRoundTrip(t *testing.T) {
 	input, merkleProvider, signer, artifacts, runner := testBuildTransferMessageDeps(t)
 

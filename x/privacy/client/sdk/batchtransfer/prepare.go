@@ -136,7 +136,6 @@ func validateBatchTransferPlanForPreparation(plan *BatchTransferPlan) error {
 		return fmt.Errorf("batch transfer plan totals are required")
 	}
 
-	inputTotal := new(big.Int)
 	var inputTotalNative privacyamount.Amount128
 	seenNullifiers := make(map[string]struct{}, len(plan.Inputs))
 	for i := range plan.Inputs {
@@ -160,14 +159,13 @@ func validateBatchTransferPlanForPreparation(plan *BatchTransferPlan) error {
 			return fmt.Errorf("duplicate input nullifier at index %d", i)
 		}
 		seenNullifiers[nullifier] = struct{}{}
-		nextTotal, err := inputTotalNative.Add(note.Amount)
+		inputTotalNative, err = inputTotalNative.Add(note.Amount)
 		if err != nil {
 			return fmt.Errorf("operation total exceeds uint128: %w", err)
 		}
-		inputTotalNative = nextTotal
-		inputTotal = privacytypes.Amount128BigInt(nextTotal)
 	}
 
+	inputTotal := privacytypes.Amount128BigInt(inputTotalNative)
 	ownerSpend := pointBytesFromNote(plan.Inputs[0].Note, true)
 	ownerView := pointBytesFromNote(plan.Inputs[0].Note, false)
 	paymentTotal := new(big.Int)

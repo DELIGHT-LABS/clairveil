@@ -317,8 +317,7 @@ func signingRequest(p *PreparedBatchTransferPayload, canonical []byte) (BatchTra
 	}
 	ns := make([][]byte, len(p.Inputs))
 	ins := make([]BatchTransferSigningInput, len(p.Inputs))
-	inputTotal := new(big.Int)
-	var inputTotalNative privacyamount.Amount128
+	var inputTotal privacyamount.Amount128
 	for i := range p.Inputs {
 		ns[i] = append([]byte(nil), p.Inputs[i].Nullifier...)
 		c, err := p.Inputs[i].Note.CommitmentV1()
@@ -334,16 +333,14 @@ func signingRequest(p *PreparedBatchTransferPayload, canonical []byte) (BatchTra
 			SpendPubKey: append([]byte(nil), spendBytes[:]...), ViewPubKey: append([]byte(nil), viewBytes[:]...),
 			Amount: p.Inputs[i].Note.Amount, AssetID: p.Inputs[i].Note.AssetID, Randomness: p.Inputs[i].Note.Randomness,
 		}
-		nextTotal, err := inputTotalNative.Add(p.Inputs[i].Note.Amount)
+		inputTotal, err = inputTotal.Add(p.Inputs[i].Note.Amount)
 		if err != nil {
 			return BatchTransferSigningRequest{}, fmt.Errorf("operation total exceeds uint128: %w", err)
 		}
-		inputTotalNative = nextTotal
-		inputTotal = privacytypes.Amount128BigInt(nextTotal)
 	}
 	ownerSpend, _ := fixedPoint(p.Inputs[0].Note.ReceiverSpendPubKeyX, p.Inputs[0].Note.ReceiverSpendPubKeyY)
 	ownerView, _ := fixedPoint(p.Inputs[0].Note.ReceiverViewPubKeyX, p.Inputs[0].Note.ReceiverViewPubKeyY)
 	ownerSpendBytes, ownerViewBytes := ownerSpend.Bytes(), ownerView.Bytes()
 	selfViewEnabled := len(p.MessageOutputs) > 0 && len(p.MessageOutputs[0].SelfViewDisclosurePayload) > 0
-	return BatchTransferSigningRequest{Version: p.Version, CircuitSetID: p.CircuitSetID, ChainID: p.ChainID, ExpiresAtUnix: p.ExpiresAtUnix, OrderedInputs: ins, OrderedInputNullifiers: ns, OrderedOutputs: outs, OwnerSpendPubKey: append([]byte(nil), ownerSpendBytes[:]...), OwnerViewPubKey: append([]byte(nil), ownerViewBytes[:]...), Root: append([]byte(nil), p.Root...), AssetID: new(big.Int).Set(p.AssetID), InputTotal: inputTotal, AuditKeyID: p.AuditKeyID, AuditKeyEpoch: p.AuditKeyEpoch, AuditDisclosureTargetPubKey: append([]byte(nil), p.AuditDisclosureTargetPubKey...), SelfViewEnabled: selfViewEnabled, NullifierRoot: new(big.Int).Set(p.NullifierRoot), CommitmentRoot: new(big.Int).Set(p.CommitmentRoot), UserDisclosureRoot: new(big.Int).Set(p.UserDisclosureRoot), FullDisclosureRoot: new(big.Int).Set(p.FullDisclosureRoot), CanonicalPayload: append([]byte(nil), canonical...), PayloadDigestHi: new(big.Int).Set(p.PayloadDigestHi), PayloadDigestLo: new(big.Int).Set(p.PayloadDigestLo), ExpectedIntent: new(big.Int).Set(p.ExpectedIntent), CanonicalEffect: p.effectMessage(nil, "")}, nil
+	return BatchTransferSigningRequest{Version: p.Version, CircuitSetID: p.CircuitSetID, ChainID: p.ChainID, ExpiresAtUnix: p.ExpiresAtUnix, OrderedInputs: ins, OrderedInputNullifiers: ns, OrderedOutputs: outs, OwnerSpendPubKey: append([]byte(nil), ownerSpendBytes[:]...), OwnerViewPubKey: append([]byte(nil), ownerViewBytes[:]...), Root: append([]byte(nil), p.Root...), AssetID: new(big.Int).Set(p.AssetID), InputTotal: privacytypes.Amount128BigInt(inputTotal), AuditKeyID: p.AuditKeyID, AuditKeyEpoch: p.AuditKeyEpoch, AuditDisclosureTargetPubKey: append([]byte(nil), p.AuditDisclosureTargetPubKey...), SelfViewEnabled: selfViewEnabled, NullifierRoot: new(big.Int).Set(p.NullifierRoot), CommitmentRoot: new(big.Int).Set(p.CommitmentRoot), UserDisclosureRoot: new(big.Int).Set(p.UserDisclosureRoot), FullDisclosureRoot: new(big.Int).Set(p.FullDisclosureRoot), CanonicalPayload: append([]byte(nil), canonical...), PayloadDigestHi: new(big.Int).Set(p.PayloadDigestHi), PayloadDigestLo: new(big.Int).Set(p.PayloadDigestLo), ExpectedIntent: new(big.Int).Set(p.ExpectedIntent), CanonicalEffect: p.effectMessage(nil, "")}, nil
 }

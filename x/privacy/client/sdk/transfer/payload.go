@@ -978,13 +978,9 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 
 	var inputTotal, outputTotal privacyamount.Amount128
 	for i, input := range payload.Inputs {
-		amount, err := parseDecimalField(input.Amount, "input amount")
+		nativeAmount, err := privacyamount.Parse(input.Amount)
 		if err != nil {
-			return nil, err
-		}
-		nativeAmount, err := privacytypes.Amount128FromBigInt(amount)
-		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("input amount: %w", err)
 		}
 		inputTotal, err = inputTotal.Add(nativeAmount)
 		if err != nil {
@@ -1042,13 +1038,9 @@ func buildJoinSplitAssignmentFromPreparedTransferPayload(payload PreparedTransfe
 	}
 
 	for i, output := range payload.Outputs {
-		amount, err := parseDecimalField(output.Amount, "output amount")
+		nativeAmount, err := privacyamount.Parse(output.Amount)
 		if err != nil {
-			return nil, err
-		}
-		nativeAmount, err := privacytypes.Amount128FromBigInt(amount)
-		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("output amount: %w", err)
 		}
 		outputTotal, err = outputTotal.Add(nativeAmount)
 		if err != nil {
@@ -1162,10 +1154,6 @@ func hexFromCanonicalBytes(bz []byte, fieldName string) (string, error) {
 		return "", fmt.Errorf("invalid %s: %w", fieldName, err)
 	}
 	return hex.EncodeToString(bz), nil
-}
-
-func parseDecimalField(value string, fieldName string) (*big.Int, error) {
-	return privacytypes.ParseCanonicalShieldedAmount(fieldName, value)
 }
 
 func decodeCanonicalHexBigInt(value, fieldName string) (*big.Int, error) {

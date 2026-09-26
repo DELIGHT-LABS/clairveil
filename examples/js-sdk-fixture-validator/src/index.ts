@@ -776,12 +776,6 @@ function validateProverExampleBundle(bundle: ProverExampleBundle): void {
   assertStartsWith(transferPayload.creator, "clair1", "transfer creator");
   assertHexLength(transferPayload.self_view_disclosure_digest_hex ?? "", 32, "transfer self-view disclosure digest");
   assertHexStringNonEmpty(transferPayload.self_view_disclosure_payload_hex ?? "", "transfer self-view disclosure payload");
-  transferPayload.inputs.forEach((input, index) => {
-    assertShieldedAmountString(input.amount, `transfer input ${index} amount`);
-  });
-  transferPayload.outputs.forEach((output, index) => {
-    assertShieldedAmountString(output.amount, `transfer output ${index} amount`);
-  });
   assertOperationAmounts(transferPayload.inputs.map((input) => input.amount), transferPayload.outputs.map((output) => output.amount));
   assertEqual(transferPayload.view_tag_hexes.length, 2, "transfer view tag count");
   transferPayload.view_tag_hexes.forEach((viewTag, index) => {

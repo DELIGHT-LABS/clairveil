@@ -36,7 +36,6 @@ func PlanBatchTransfer(input PlanBatchTransferInput) (*BatchTransferPlan, error)
 		return nil, err
 	}
 
-	inputTotal, paymentTotal := new(big.Int), new(big.Int)
 	var inputTotalNative privacyamount.Amount128
 	seen := make(map[string]struct{}, len(input.Inputs))
 	var asset privacycrypto.FieldValue
@@ -69,14 +68,13 @@ func PlanBatchTransfer(input PlanBatchTransferInput) (*BatchTransferPlan, error)
 			return nil, fmt.Errorf("duplicate input nullifier at index %d", i)
 		}
 		seen[nullifier] = struct{}{}
-		nextTotal, err := inputTotalNative.Add(note.Amount)
+		inputTotalNative, err = inputTotalNative.Add(note.Amount)
 		if err != nil {
 			return nil, fmt.Errorf("operation total exceeds uint128: %w", err)
 		}
-		inputTotalNative = nextTotal
-		inputTotal = privacytypes.Amount128BigInt(nextTotal)
 	}
 
+	inputTotal, paymentTotal := privacytypes.Amount128BigInt(inputTotalNative), new(big.Int)
 	outputs := make([]PlannedOutput, 0, 32)
 	for i, payment := range input.Payments {
 		if payment.Amount == nil || payment.Amount.Sign() <= 0 {

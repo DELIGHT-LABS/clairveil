@@ -94,9 +94,6 @@ func (s *batchPayrollPlanSearch) plan(input PayrollInput, available []TreasuryNo
 		}
 		for _, selection := range selectBatchTreasuryInputCandidates(available, paymentTotal) {
 			change := new(big.Int).Sub(selection.total, paymentTotal)
-			if change.Cmp(privacytypes.MaxShieldedAmount()) > 0 {
-				continue
-			}
 			if paymentCount == int(privacytypes.BatchJoinSplitV1MaxOutputs) && change.Sign() != 0 {
 				continue
 			}

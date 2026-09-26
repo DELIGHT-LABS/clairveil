@@ -619,15 +619,7 @@ func finalPayrollOutputsWithinBound(total *big.Int, target *big.Int) bool {
 	if total == nil || target == nil {
 		return false
 	}
-	maxOutputAmount := privacytypes.MaxShieldedAmount()
-	if target.Sign() <= 0 || target.Cmp(maxOutputAmount) > 0 {
-		return false
-	}
-	if total.Cmp(target) < 0 || total.Cmp(privacytypes.MaxShieldedAmount()) > 0 {
-		return false
-	}
-	change := new(big.Int).Sub(total, target)
-	return change.Cmp(maxOutputAmount) <= 0
+	return target.Sign() > 0 && total.Cmp(target) >= 0 && total.Cmp(privacytypes.MaxShieldedAmount()) <= 0
 }
 
 func operationID(companyID string, batchID string, payrollID string, itemID string, attempt int) string {

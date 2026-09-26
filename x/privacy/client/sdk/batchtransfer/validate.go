@@ -80,8 +80,7 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 	if err != nil {
 		return err
 	}
-	computedInputTotal := new(big.Int)
-	var computedInputTotalNative privacyamount.Amount128
+	var computedInputTotal privacyamount.Amount128
 	inputRandomness := make([]privacycrypto.FieldValue, len(req.OrderedInputs))
 	for i := range req.OrderedInputNullifiers {
 		input := req.OrderedInputs[i]
@@ -107,14 +106,12 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 			return fmt.Errorf("structured input %d nullifier recomputation mismatch", i)
 		}
 		inputRandomness[i] = input.Randomness
-		nextTotal, err := computedInputTotalNative.Add(input.Amount)
+		computedInputTotal, err = computedInputTotal.Add(input.Amount)
 		if err != nil {
 			return fmt.Errorf("operation total exceeds uint128: %w", err)
 		}
-		computedInputTotalNative = nextTotal
-		computedInputTotal = privacytypes.Amount128BigInt(nextTotal)
 	}
-	if computedInputTotal.Cmp(req.InputTotal) != 0 {
+	if privacytypes.Amount128BigInt(computedInputTotal).Cmp(req.InputTotal) != 0 {
 		return fmt.Errorf("structured input total mismatch")
 	}
 	outputSecrets := make([]batchTransferOutputSecrets, len(req.OrderedOutputs))
@@ -129,8 +126,7 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 	if err := validateBatchTransferGlobalSecretReuse(inputRandomness, outputSecrets); err != nil {
 		return err
 	}
-	computedOutputTotal := new(big.Int)
-	var computedOutputTotalNative privacyamount.Amount128
+	var computedOutputTotal privacyamount.Amount128
 	seenPayment := false
 	seenChange := false
 	seenPadding := false
@@ -206,12 +202,10 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 		default:
 			return fmt.Errorf("unsupported structured output kind %q", o.Kind)
 		}
-		nextTotal, err := computedOutputTotalNative.Add(o.Amount)
+		computedOutputTotal, err = computedOutputTotal.Add(o.Amount)
 		if err != nil {
 			return fmt.Errorf("operation total exceeds uint128: %w", err)
 		}
-		computedOutputTotalNative = nextTotal
-		computedOutputTotal = privacytypes.Amount128BigInt(nextTotal)
 		selfViewPresent := len(wire.SelfViewDisclosurePayload) > 0
 		if selfViewPresent != req.SelfViewEnabled {
 			return fmt.Errorf("structured self-view all-or-none mismatch at output %d", i)
@@ -220,7 +214,7 @@ func ValidateBatchTransferSigningRequest(req BatchTransferSigningRequest) error 
 	if !seenPayment {
 		return fmt.Errorf("structured batch must contain at least one payment output")
 	}
-	if computedOutputTotal.Cmp(computedInputTotal) != 0 {
+	if computedOutputTotal != computedInputTotal {
 		return fmt.Errorf("structured input/output conservation mismatch")
 	}
 	digest, err := privacytypes.ComputeMsgBatchTransferPayloadDigestV1(req.CanonicalEffect)
@@ -335,8 +329,7 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 			return err
 		}
 	}
-	inputTotal := new(big.Int)
-	var inputTotalNative privacyamount.Amount128
+	var inputTotal privacyamount.Amount128
 	inputRandomness := make([]privacycrypto.FieldValue, len(p.Inputs))
 	for i, in := range p.Inputs {
 		if err := in.Note.ValidateV1(); err != nil {
@@ -388,12 +381,10 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 		if i > 0 && (!sameOwner(p.Inputs[0].Note, in.Note)) {
 			return fmt.Errorf("input %d owner mismatch", i)
 		}
-		nextTotal, err := inputTotalNative.Add(in.Note.Amount)
+		inputTotal, err = inputTotal.Add(in.Note.Amount)
 		if err != nil {
 			return fmt.Errorf("operation total exceeds uint128: %w", err)
 		}
-		inputTotalNative = nextTotal
-		inputTotal = privacytypes.Amount128BigInt(nextTotal)
 		inputRandomness[i] = in.Note.Randomness
 	}
 	outputSecrets := make([]batchTransferOutputSecrets, len(p.Outputs))
@@ -408,8 +399,7 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 	if err := validateBatchTransferGlobalSecretReuse(inputRandomness, outputSecrets); err != nil {
 		return err
 	}
-	outputTotal := new(big.Int)
-	var outputTotalNative privacyamount.Amount128
+	var outputTotal privacyamount.Amount128
 	for i, out := range p.Outputs {
 		if err := out.Note.ValidateV1(); err != nil {
 			return fmt.Errorf("output %d: %w", i, err)
@@ -445,14 +435,12 @@ func ValidatePreparedBatchTransferPayloadMetadataAt(p *PreparedBatchTransferPayl
 		if out.DisclosureMode == privacytypes.UserDisclosureMode_USER_DISCLOSURE_MODE_PUBLIC && !bytes.Equal(userPlain, p.MessageOutputs[i].UserDisclosurePayload) {
 			return fmt.Errorf("output %d public disclosure plaintext mismatch", i)
 		}
-		nextTotal, err := outputTotalNative.Add(out.Note.Amount)
+		outputTotal, err = outputTotal.Add(out.Note.Amount)
 		if err != nil {
 			return fmt.Errorf("operation total exceeds uint128: %w", err)
 		}
-		outputTotalNative = nextTotal
-		outputTotal = privacytypes.Amount128BigInt(nextTotal)
 	}
-	if inputTotal.Cmp(outputTotal) != 0 {
+	if inputTotal != outputTotal {
 		return fmt.Errorf("prepared batch input/output conservation mismatch")
 	}
 	if err := privacytypes.ValidateMsgBatchTransferEffectsV1(p.effectMessage(nil, "")); err != nil {

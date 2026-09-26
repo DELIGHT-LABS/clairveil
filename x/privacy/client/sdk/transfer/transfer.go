@@ -181,15 +181,7 @@ func SelectInputs(notes []privacyscan.SecretFoundNote, targetDenom string, targe
 }
 
 func finalTransferOutputsWithinBound(total *big.Int, target *big.Int, maxOutputAmount *big.Int) bool {
-	if target.Sign() < 0 || target.Cmp(maxOutputAmount) > 0 {
-		return false
-	}
-	if total.Cmp(target) < 0 || total.Cmp(maxOutputAmount) > 0 {
-		return false
-	}
-
-	change := new(big.Int).Sub(total, target)
-	return change.Cmp(maxOutputAmount) <= 0
+	return target.Sign() >= 0 && total.Cmp(target) >= 0 && total.Cmp(maxOutputAmount) <= 0
 }
 
 type exactInputBatchState struct {
