@@ -4,6 +4,12 @@ All notable changes to Clairveil are documented in this file.
 
 [Release versioning rules](CONTRIBUTING.md#release-versioning-rules) are maintained with the repository instructions. Release contents and verification are defined by [the selected-path manifest](scripts/release-pack-paths.txt) and [the required-file manifest](scripts/release-pack-required-files.txt).
 
+## v0.5.2 - 2026-09-26
+
+### Added
+
+- Added `Keeper.WithAuditAssetSimulation` for trusted hosts to execute real asset validation and apply in disposable contexts without fabricating SDK flags or transaction bytes; documented temporary provenance and host-owned discard.
+
 ## v0.5.1 - 2026-09-22
 
 ### Fixed

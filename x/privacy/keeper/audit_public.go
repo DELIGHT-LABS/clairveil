@@ -32,7 +32,7 @@ func (k Keeper) buildAuditPublic(ctx sdk.Context, m types.ValidatedAuditMessage)
 	if halted {
 		return nil, fmt.Errorf("privacy is halted")
 	}
-	origin, err := k.auditExecutionOrigin(ctx)
+	origin, err := k.auditAssetExecutionOrigin(ctx)
 	if err != nil {
 		return nil, err
 	}

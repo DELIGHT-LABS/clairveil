@@ -65,8 +65,9 @@ func (k auditMsgServer) executeAuditWithDelegation(ctx sdk.Context, raw sdk.Msg,
 	}
 	// The four asset transactions must be tied to an original submitted tx so
 	// successful events can always identify the source message. Key lifecycle
-	// administration intentionally retains its block-origin path.
-	if len(ctx.TxBytes()) == 0 {
+	// administration intentionally retains its block-origin path. Trusted host
+	// asset simulations use disposable provenance instead.
+	if len(ctx.TxBytes()) == 0 && !isAuditAssetSimulation(ctx) {
 		return 0, fmt.Errorf("privacy transaction requires original tx execution context")
 	}
 	// Proposal execution uses the governance module account as the sole

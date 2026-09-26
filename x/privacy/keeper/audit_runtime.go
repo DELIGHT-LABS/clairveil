@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"github.com/DELIGHT-LABS/clairveil/internal/auditinit"
 	"github.com/cometbft/cometbft/crypto/tmhash"
@@ -112,3 +113,38 @@ func (k Keeper) auditExecutionOrigin(ctx sdk.Context) (auditOrigin, error) {
 
 // The apply marker belongs to one execution context, never the keeper singleton.
 type auditApplyContextKey struct{}
+
+// auditAssetSimulationContextKey is private to the trusted host API.
+type auditAssetSimulationContextKey struct{}
+
+// WithAuditAssetSimulation marks an already isolated, disposable host context
+// for real asset verification and execution without original transaction bytes.
+// It only adds a private marker: SDK flags, execution mode, stores, gas meters,
+// and events are preserved. It provides no isolation, rollback, or persistence
+// guarantee. The host must discard all state and events, and must never mark
+// real delivery or ordinary CheckTx/ReCheckTx contexts. Internal asset publish
+// remains visible to later Privacy calls and policy checks in this simulation.
+// The temporary origin anchor is not a transaction hash and must never be
+// published as persistent provenance. Governance/key lifecycle is unaffected.
+func (k Keeper) WithAuditAssetSimulation(ctx sdk.Context) sdk.Context {
+	return ctx.WithValue(auditAssetSimulationContextKey{}, true)
+}
+
+func isAuditAssetSimulation(ctx sdk.Context) bool {
+	marked, _ := ctx.Value(auditAssetSimulationContextKey{}).(bool)
+	return marked
+}
+
+// auditAssetExecutionOrigin is used only by asset build and apply.
+func (k Keeper) auditAssetExecutionOrigin(ctx sdk.Context) (auditOrigin, error) {
+	if !isAuditAssetSimulation(ctx) {
+		return k.auditExecutionOrigin(ctx)
+	}
+	if auditinit.Active(ctx) || k.audit == nil || ctx.BlockHeight() < int64(k.audit.initialHeight) {
+		return auditOrigin{}, fmt.Errorf("privacy transition is forbidden during initialization")
+	}
+	return auditOrigin{
+		Kind: 1, Height: uint64(ctx.BlockHeight()),
+		Anchor: sha256.Sum256([]byte("clairveil/audit-asset-simulation/v1")),
+	}, nil
+}

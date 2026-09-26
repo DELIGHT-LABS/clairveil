@@ -19,7 +19,7 @@ The recommended model separates responsibilities as follows.
 During early development, a local `replace` is fastest.
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.5.1
+require github.com/DELIGHT-LABS/clairveil v0.5.2
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```
@@ -277,6 +277,14 @@ The V2 core reuses the normal halt/epoch/gas/public-input/proof/reentrancy check
 Clairveil success publishes only into the caller's parent context. The downstream adapter must place caller-to-escrow value movement, `DepositWithFunderV2`, event emission, and later policy checks inside one outer SDK/EVM rollback boundary. Discarding that parent cache must remove balances, Clairveil state, and events. This repository does not assert that a particular EVM precompile implementation provides that event rollback; downstream wiring must test it.
 
 When the external auditor reads delegated events, the downstream must inject an `sdk.TxDecoder` that understands its EVM wrapper and a `VerifyDelegatedExecution` callback that authenticates wrapper/receipt success and the Creator/funder relationship. A Cosmos `Code == 0` result alone is insufficient because the internal EVM call may have reverted. `CosmosTxSource` fails closed with `AUDIT_INCOMPLETE` when the callback is absent or rejects the evidence. Multiple successful internal deposits at one wrapper message index are distinguished by `global_sequence` and `execution_id`; native top-level V2 messages still require their exact one-to-one event match. Standalone downstream EVM decoder and receipt wiring are outside Clairveil.
+
+### Trusted host asset simulation
+
+For `eth_call` / `eth_estimateGas`, a trusted in-process host can use `ctx = app.PrivacyKeeper.WithAuditAssetSimulation(ctx)` on an **already isolated context that will be discarded**. This only attaches a private marker; `TxBytes`, `IsCheckTx`/`IsReCheckTx`, `ExecMode`, `MultiStore`, gas meters, and `EventManager` stay unchanged. It creates no cache and guarantees neither rollback nor safe persistence. Never mark actual delivery or ordinary CheckTx/ReCheckTx contexts.
+
+Only asset execution accepts missing transaction bytes and uses a fixed, domain-separated 32-byte temporary anchor with origin Kind=1 and the current height. Build/apply must agree; runtime, initialization, height, governance, authorization, expiry, proof, principal, nullifier/tree, scan/event, and gas checks remain in force. Governance/key lifecycle origin rules are unchanged. Internal asset cache publication stays visible to subsequent Privacy calls and PCL after checks in the same host simulation. Event/scan `TxHash` stays 32 bytes, but this temporary anchor is **not an actual transaction hash**: discard all simulation state/events and never publish them as persistent provenance.
+
+Maroo should reuse its existing EthCall `commit=false`, EstimateGas candidate caches, and `simulate:true` boundary; the host owns final discard. No SDK flag or transaction-byte fabrication is needed. Downstream EVM/PCL wiring and rollback verification remain the host's responsibility.
 
 ## 6. V4 Audit Configuration And Key Epochs
 

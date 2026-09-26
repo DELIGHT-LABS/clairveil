@@ -17,7 +17,7 @@
 초기 개발 중에는 로컬 `replace`를 쓰면 빠릅니다.
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.5.1
+require github.com/DELIGHT-LABS/clairveil v0.5.2
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```
@@ -275,6 +275,14 @@ V2 core는 verified transition이 nested apply cache에 도달하기 전에 일�
 Clairveil success는 caller의 parent context에만 publish합니다. Downstream adapter는 caller-to-escrow value 이동, `DepositWithFunderV2`, event emission, 후속 policy check를 하나의 outer SDK/EVM rollback boundary 안에 둬야 합니다. Parent cache 폐기 시 balance, Clairveil state, event가 모두 사라져야 합니다. 이 repository는 특정 EVM precompile 구현이 event rollback을 제공한다고 주장하지 않으며 downstream wiring에서 별도로 검증해야 합니다.
 
 External auditor가 delegated event를 읽을 때 downstream은 EVM wrapper를 이해하는 `sdk.TxDecoder`와 wrapper/receipt 성공 및 Creator/funder 연결을 인증하는 `VerifyDelegatedExecution` callback을 주입해야 합니다. Cosmos `Code == 0`만으로는 internal EVM call이 revert하지 않았다고 단정할 수 없습니다. Callback이 없거나 evidence를 거부하면 `CosmosTxSource`는 `AUDIT_INCOMPLETE`로 fail closed합니다. Wrapper message index 하나에서 성공한 internal deposit 여러 개는 `global_sequence`와 `execution_id`로 구분하며 native top-level V2 message는 계속 정확한 one-to-one event match가 필요합니다. Standalone downstream EVM decoder와 receipt wiring은 Clairveil 범위 밖입니다.
+
+### Trusted host asset simulation
+
+`eth_call` / `eth_estimateGas`를 위해 trusted in-process host는 **이미 격리되어 최종 폐기될 context**에 `ctx = app.PrivacyKeeper.WithAuditAssetSimulation(ctx)`를 적용할 수 있습니다. Private marker만 추가하며 `TxBytes`, `IsCheckTx`/`IsReCheckTx`, `ExecMode`, `MultiStore`, gas meter, `EventManager`를 그대로 보존합니다. Cache를 만들지 않으며 rollback이나 안전한 영속화를 보장하지 않습니다. 실제 delivery와 일반 CheckTx/ReCheckTx에는 marker를 넣으면 안 됩니다.
+
+Asset 실행에만 빈 transaction bytes를 허용하고, 고정된 domain-separated 32-byte 임시 anchor와 Kind=1, 현재 높이를 사용합니다. Build/apply origin은 일치해야 하며 runtime, 초기화, 높이, governance, authorization, expiry, proof, principal, nullifier/tree, scan/event, gas 검사는 유지됩니다. Governance/key lifecycle origin 규칙은 바뀌지 않습니다. Asset 내부 cache publish는 같은 host simulation의 후속 Privacy 호출과 PCL after 검사에서 보입니다. Event/scan `TxHash`는 32 bytes를 유지하지만 임시 anchor는 **실제 transaction hash가 아닙니다**. Simulation state/event를 모두 폐기하고 영속 provenance로 게시하지 않아야 합니다.
+
+Maroo는 기존 EthCall `commit=false`, EstimateGas 후보 cache, `simulate:true` 경계를 재사용하며 최종 폐기는 host가 책임집니다. SDK flag나 transaction bytes 위조는 필요하지 않습니다. Downstream EVM/PCL 연결 및 rollback 검증은 host의 책임입니다.
 
 ## 6. V4 audit configuration과 key epoch
 

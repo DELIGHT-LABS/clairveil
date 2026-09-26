@@ -29,7 +29,7 @@ func (k Keeper) applyPrivacyTransition(ctx sdk.Context, v *verifiedAuditTransiti
 		return 0, fmt.Errorf("reentrant privacy apply is forbidden")
 	}
 	ctx = ctx.WithValue(auditApplyContextKey{}, k.audit)
-	origin, err := k.auditExecutionOrigin(ctx)
+	origin, err := k.auditAssetExecutionOrigin(ctx)
 	if err != nil {
 		return 0, err
 	}

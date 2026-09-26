@@ -4,6 +4,12 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 [Release versioning rules](CONTRIBUTING-kr.md#release-versioning-rules)는 repository maintainer instructions에서 관리합니다. Release 내용과 검증 범위는 [selected-path manifest](scripts/release-pack-paths.txt)와 [required-file manifest](scripts/release-pack-required-files.txt)가 정의합니다.
 
+## v0.5.2 - 2026-09-26
+
+### Added
+
+- SDK flag나 transaction bytes 위조 없이 폐기할 context에서 실제 asset 검증·실행을 수행하는 trusted host용 `Keeper.WithAuditAssetSimulation`을 추가하고 임시 provenance와 host의 폐기 책임을 문서화했습니다.
+
 ## v0.5.1 - 2026-09-22
 
 ### Fixed
