@@ -4,6 +4,29 @@ All notable changes to Clairveil are documented in this file.
 
 [Release versioning rules](CONTRIBUTING.md#release-versioning-rules) are maintained with the repository instructions. Release contents and verification are defined by [the selected-path manifest](scripts/release-pack-paths.txt) and [the required-file manifest](scripts/release-pack-required-files.txt).
 
+## v0.6.0 - 2026-09-26
+
+### Changed
+
+- Extended shielded note and disclosure amounts to unsigned 128-bit integers. Public deposits and withdrawals remain positive; each operation's input and output totals must fit `2^128-1` and conserve value.
+- Added checked `Amount128` arithmetic for native note amounts while retaining arbitrary-precision wallet, payroll, audit, and cumulative reserve totals. Only current pool liability and bank balances retain the existing 256-bit bound.
+- Changed note/disclosure amount encoding to 16-byte big-endian under `privacy-fixed-v2` and local wallet files to version `3` with decimal-string amounts. CLI note JSON also uses string amounts, and `list-notes` reports `spendable_by_asset`; `total_spendable` is present only for one spendable asset.
+- Replaced the audit circuit identity with `privacy-note-v1-u128-audit-field-v1` and four `*-audit-field-u128-v1` circuit IDs. The prover route `/v2/prover/audit-field`, envelope version `v1`, and PI23 order/count are unchanged; artifacts and public-input schema hashes change.
+
+### Fixed
+
+- Report note preparation requirements when sufficient payroll funds cannot form an input combination within the operation limit, and skip overflowing input candidates.
+- Aligned static fixture validation, prover benchmark manifest handling, CLI initialization guidance, and paired documentation with the current amount and artifact contracts.
+
+### Handoff Notes
+
+- Pin `github.com/DELIGHT-LABS/clairveil v0.6.0`, rebuild SDK consumers of former `uint64` amount fields for `Amount128`, and use decimal strings with JS `bigint`. Existing public `big.Int` inputs remain available.
+- Start from fresh genesis with the new circuit identity and matching regenerated artifacts. Discard earlier wallet/scan caches and prepared payload/proof jobs; old wallet/payload decoding and in-place migration are not supported.
+
+### Known Risk
+
+- Clairveil remains `PUBLICATION_READY_EXPERIMENTAL`. Audit-field artifacts are development-grade; formal trusted setup, external ZK/security audit, signed production artifact distribution, key custody, and downstream production validation remain outside this release. The documented dependency exceptions in [SECURITY.md](SECURITY.md) still apply.
+
 ## v0.5.1 - 2026-09-22
 
 ### Fixed

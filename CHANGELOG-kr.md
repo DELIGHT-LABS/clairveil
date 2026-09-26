@@ -4,6 +4,29 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 [Release versioning rules](CONTRIBUTING-kr.md#release-versioning-rules)는 repository maintainer instructions에서 관리합니다. Release 내용과 검증 범위는 [selected-path manifest](scripts/release-pack-paths.txt)와 [required-file manifest](scripts/release-pack-required-files.txt)가 정의합니다.
 
+## v0.6.0 - 2026-09-26
+
+### Changed
+
+- Shielded note와 disclosure 금액을 unsigned 128-bit 정수로 확장했습니다. 공개 deposit/withdraw의 양수 조건을 유지하며 각 operation의 입력·출력 합계는 `2^128-1` 이내이고 서로 같아야 합니다.
+- Native note 금액에 checked `Amount128` 연산을 적용하고 wallet·payroll·audit·누적 reserve 총액은 임의 정밀도를 유지합니다. 현재 pool liability와 bank 잔액에만 기존 256-bit 상한을 적용합니다.
+- Note/disclosure 금액 인코딩을 `privacy-fixed-v2`의 16-byte big-endian으로, local wallet 파일을 decimal string 금액의 version `3`으로 변경했습니다. CLI note JSON도 문자열 금액을 사용하며 `list-notes`는 `spendable_by_asset`을 제공합니다. `total_spendable`은 spendable 자산이 하나일 때만 표시합니다.
+- Audit circuit identity를 `privacy-note-v1-u128-audit-field-v1`과 네 `*-audit-field-u128-v1` circuit ID로 변경했습니다. Prover route `/v2/prover/audit-field`, envelope version `v1`, PI23 순서·개수는 유지하며 artifact와 public-input schema hash는 바뀝니다.
+
+### Fixed
+
+- Payroll 잔액이 충분해도 operation 상한 이내 입력 조합을 만들 수 없으면 note preparation 필요로 보고하고, 합계가 넘치는 입력 후보는 건너뜁니다.
+- Static fixture 검증, prover benchmark manifest 처리, CLI 초기화 안내와 양쪽 언어 문서를 현재 금액·artifact 계약에 맞췄습니다.
+
+### Handoff Notes
+
+- `github.com/DELIGHT-LABS/clairveil v0.6.0`을 고정하고 기존 `uint64` 금액 필드를 사용하던 SDK 코드를 `Amount128`에 맞춰 다시 빌드합니다. JS에서는 decimal string과 `bigint`를 사용합니다. 기존 공개 `big.Int` 입력은 유지합니다.
+- 새 circuit identity와 이에 맞춰 재생성한 artifact로 fresh genesis에서 시작합니다. 이전 wallet/scan cache와 prepared payload/proof job은 폐기해야 하며 구형 wallet/payload decoder나 in-place migration은 제공하지 않습니다.
+
+### Known Risk
+
+- Clairveil은 계속 `PUBLICATION_READY_EXPERIMENTAL`입니다. Audit-field artifact는 development-grade이며 formal trusted setup, 외부 ZK/security audit, signed production artifact 배포, 키 관리와 downstream production 검증은 이번 release 범위 밖입니다. [SECURITY-kr.md](SECURITY-kr.md)에 기록한 dependency exception도 유지합니다.
+
 ## v0.5.1 - 2026-09-22
 
 ### Fixed
