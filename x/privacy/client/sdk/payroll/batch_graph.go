@@ -172,7 +172,7 @@ func ConfirmBatchPayrollOperation(ctx context.Context, store privacyreservation.
 func payrollOutputRole(plan BatchPayrollOperationPlan, index int, output privacybatchtransfer.PreparedBatchTransferOutput) (privacyreservation.BatchOutputRole, *PayrollPlanItem, error) {
 	if index < len(plan.Items) {
 		item := &plan.Items[index]
-		if output.Kind != privacybatchtransfer.OutputPayment || item.Amount == nil || privacytypes.ValidateShieldedAmount("amount", item.Amount) != nil || privacytypes.Amount128BigInt(output.Note.Amount).Cmp(item.Amount) != 0 {
+		if output.Kind != privacybatchtransfer.OutputPayment || item.Amount == nil || privacytypes.Amount128BigInt(output.Note.Amount).Cmp(item.Amount) != 0 {
 			return "", nil, fmt.Errorf("prepared payment output %d does not match payroll item %s", index, item.ItemID)
 		}
 		bundle, err := privacytypes.DecodeShieldedAddressBundle(item.RecipientAddress)
@@ -199,7 +199,7 @@ func payrollOutputRole(plan BatchPayrollOperationPlan, index int, output privacy
 		return privacyreservation.BatchOutputRolePayment, item, nil
 	}
 	if index == len(plan.Items) && plan.HasChange {
-		if output.Kind != privacybatchtransfer.OutputChange || plan.Change == nil || privacytypes.ValidateShieldedAmount("amount", plan.Change) != nil || privacytypes.Amount128BigInt(output.Note.Amount).Cmp(plan.Change) != 0 {
+		if output.Kind != privacybatchtransfer.OutputChange || plan.Change == nil || privacytypes.Amount128BigInt(output.Note.Amount).Cmp(plan.Change) != 0 {
 			return "", nil, fmt.Errorf("prepared change output does not match payroll plan")
 		}
 		return privacyreservation.BatchOutputRoleChange, nil, nil
@@ -229,7 +229,7 @@ func validateBatchPayrollPlanBinding(plan BatchPayrollOperationPlan, payload *pr
 	inputTotal := new(big.Int)
 	ownerKeyID := plan.InputNotes[0].OwnerKeyID
 	for i, note := range plan.InputNotes {
-		if strings.TrimSpace(ownerKeyID) == "" || note.OwnerKeyID != ownerKeyID || note.Denom != denom || note.Amount == nil || privacytypes.ValidateShieldedAmount("amount", note.Amount) != nil || privacytypes.Amount128BigInt(payload.Inputs[i].Note.Amount).Cmp(note.Amount) != 0 || !payload.Inputs[i].Note.AssetID.Equal(payloadAssetID) {
+		if strings.TrimSpace(ownerKeyID) == "" || note.OwnerKeyID != ownerKeyID || note.Denom != denom || note.Amount == nil || privacytypes.Amount128BigInt(payload.Inputs[i].Note.Amount).Cmp(note.Amount) != 0 || !payload.Inputs[i].Note.AssetID.Equal(payloadAssetID) {
 			return fmt.Errorf("prepared input %d does not match the reserved treasury note", i)
 		}
 		inputTotal.Add(inputTotal, note.Amount)
