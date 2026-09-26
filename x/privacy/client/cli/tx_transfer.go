@@ -151,7 +151,7 @@ Use the single latest shielded transfer flow.
 	cmd.Flags().String(flagTransferDisclosureMode, transferDisclosureModeNone, "User disclosure mode: none|public|recipient-encrypted")
 	cmd.Flags().String(flagTransferDisclosurePubKey, "", "Recipient disclosure public key hex for recipient-encrypted mode")
 	cmd.Flags().Bool(flagTransferNoSelfView, false, "Disable sender self-view disclosure for this transfer")
-	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a preparatory deposit when a single-note split requires it")
+	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a self batch transfer using a spendable positive note of the same denom when a single-note split requires it")
 	cmd.Flags().Int64(flagTransferExpiresIn, int64(defaultPreparedWithdrawExpiry/time.Second), "owner intent validity window in seconds")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before planner note selection")
 	addAuditV2Flags(cmd)

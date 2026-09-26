@@ -882,7 +882,7 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 	}
 	cmd.Flags().String("recipient", "", "recipient public address (default: sender address)")
 	cmd.Flags().Bool(flagWithdrawAutoPlan, true, "Automatically create an exact-match note with a preparatory shielded self-transfer when needed")
-	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a preparatory deposit when the planner needs it")
+	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a self batch transfer using a spendable positive note of the same denom when the planner needs it")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before exact-match note selection")
 	addAuditV2Flags(cmd)
 	flags.AddTxFlagsToCmd(cmd)
@@ -986,7 +986,7 @@ If you want exact-match-only behavior without the planner, run with --auto-plan=
 	cmd.Flags().String("out", "", "output file path for prepared payload")
 	cmd.Flags().Int64("expires-in", int64(defaultPreparedWithdrawExpiry/time.Second), "prepared payload validity window in seconds")
 	cmd.Flags().Bool(flagWithdrawAutoPlan, true, "Automatically create an exact-match note with a preparatory shielded self-transfer when needed")
-	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a preparatory deposit when the planner needs it")
+	cmd.Flags().Bool(flagAutoDummy, true, "Automatically create a zero-value dummy note with a self batch transfer using a spendable positive note of the same denom when the planner needs it")
 	cmd.Flags().Bool(flagRescanWallet, false, "reset the local privacy wallet cache and rescan from genesis before exact-match note selection")
 	addAuditV2Flags(cmd)
 	flags.AddTxFlagsToCmd(cmd)

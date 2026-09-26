@@ -130,8 +130,8 @@ clairveild tx privacy deposit 10uclair \
 
 주의:
 
-- `0uclair` deposit은 dummy note를 준비할 때 사용할 수 있습니다.
-- dummy note는 2-input transfer planner가 single large note를 split해야 할 때 필요할 수 있습니다.
+- V2 deposit은 양수 금액만 허용하며 `0uclair`는 거절합니다.
+- 2-input transfer planner가 큰 note 하나를 분할할 때 zero-value dummy note가 필요할 수 있습니다. `--auto-dummy=true`이면 CLI는 같은 denom의 기존 spendable 양수 note를 사용해 자기 자신에게 1입력·2출력 batch transfer를 실행합니다. Shielded 금액을 유지하면서 0 금액 출력을 추가하며, 거래 수수료는 발생합니다.
 - 기록된 development deposit은 `2,868,008` gas를 사용했습니다. `2500000`은 out-of-gas(`code 11`)였으므로 예제는 `3500000`을 사용합니다. Downstream chain은 측정한 실행 결과로 자체 gas policy를 정해야 합니다.
 
 ## 4. Note scan
@@ -342,7 +342,7 @@ Proof 전에 CLI가 current `chain id`와 absolute `spend intent expires at unix
 | ----------------- | -------------- | ----------------------------------------------------- |
 | `--recipient`     | sender address | transparent recipient                                 |
 | `--auto-plan`     | `true`         | exact-match note가 없을 때 planner 실행               |
-| `--auto-dummy`    | `true`         | planner가 필요로 하는 zero-value dummy note 자동 준비 |
+| `--auto-dummy`    | `true`         | 같은 denom의 spendable 양수 note를 사용한 self batch transfer로 zero-value dummy 생성 |
 | `--rescan-wallet` | `false`        | note 선택 전 local cache reset 후 rescan              |
 
 ## 8. Relayed withdraw
@@ -382,7 +382,7 @@ clairveild tx privacy relay-withdraw out/withdraw-payload.json \
 | `--out`        | empty          | prepared payload file path         |
 | `--expires-in` | default expiry | payload validity window in seconds |
 | `--auto-plan`  | `true`         | exact-match note 자동 준비         |
-| `--auto-dummy` | `true`         | dummy note 자동 준비               |
+| `--auto-dummy` | `true`         | 같은 denom의 spendable 양수 note를 사용한 self batch transfer로 zero-value dummy 생성 |
 
 Summary가 resolved absolute expiry와 chain ID를 출력하고 JSON도 같은 `expires_at_unix`를 사용합니다. 해당 second 이상에서는 제출이 실패하고 relayer는 연장할 수 없습니다. Prepared payload/proof JSON은 privacy-sensitive하며 output/recipient/chain/expiry를 바꿀 수 없어도 prover payload에는 private note witness가 남습니다. Production wallet은 암호화 저장과 만료/삭제 정책을 가져야 합니다.
 

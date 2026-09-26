@@ -42,12 +42,12 @@ func printWithdrawCommandSummary(cmd *cobra.Command, title string, recipient str
 	)
 }
 
-func printAutoDummyPreparationSummary(cmd *cobra.Command, denom string, deposit string) {
+func printAutoDummyPreparationSummary(cmd *cobra.Command, denom string, preparation string) {
 	printCommandSection(
 		cmd,
 		"Auto dummy note",
 		fmt.Sprintf("denom: %s", denom),
-		fmt.Sprintf("deposit: %s", deposit),
+		fmt.Sprintf("self batch transfer: %s", preparation),
 		"why: the current two-input transfer path needs a same-denom zero note to split one larger note",
 	)
 }

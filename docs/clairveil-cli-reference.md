@@ -132,8 +132,8 @@ Behavior:
 
 Notes:
 
-- `0uclair` deposit can be used to prepare a dummy note.
-- A dummy note may be needed when the 2-input transfer planner has to split one large note.
+- V2 deposit requires a positive amount; `0uclair` is rejected.
+- A zero-value dummy note may be needed when the 2-input transfer planner splits one large note. With `--auto-dummy=true`, the CLI creates it through a one-input/two-output self batch transfer using an existing spendable positive note of the same denom. This preserves the shielded amount and adds a zero-value output; transaction fees still apply.
 - The recorded development deposit used `2,868,008` gas. `2500000` ran out of gas (`code 11`), so this example uses `3500000`; downstream chains must set their own gas policy from measured execution.
 
 ## 4. Note Scan
@@ -344,7 +344,7 @@ Main flags:
 | --- | --- | --- |
 | `--recipient` | sender address | transparent recipient |
 | `--auto-plan` | `true` | create an exact-match note when missing |
-| `--auto-dummy` | `true` | prepare a zero-value dummy note when the planner needs it |
+| `--auto-dummy` | `true` | create a zero-value dummy via self batch transfer; requires a spendable positive note of the same denom |
 | `--rescan-wallet` | `false` | reset local cache and rescan before note selection |
 
 ## 8. Relayed Withdraw
@@ -384,7 +384,7 @@ clairveild tx privacy relay-withdraw out/withdraw-payload.json \
 | `--out` | empty | prepared payload file path |
 | `--expires-in` | default expiry | payload validity window in seconds |
 | `--auto-plan` | `true` | create an exact-match note automatically |
-| `--auto-dummy` | `true` | prepare a dummy note automatically |
+| `--auto-dummy` | `true` | create a zero-value dummy via self batch transfer; requires a spendable positive note of the same denom |
 
 The summary prints the resolved absolute expiry and chain ID, and JSON uses the same `expires_at_unix`. Submission at or after that second fails; the relayer cannot extend it. Prepared payload/proof JSON is privacy-sensitive, and the prover payload still contains private note witness even though output/recipient/chain/expiry cannot be changed. Production wallets need encrypted storage and expiry/deletion policy.
 

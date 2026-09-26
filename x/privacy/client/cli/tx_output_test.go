@@ -40,11 +40,11 @@ func TestPrintWithdrawCommandSummary(t *testing.T) {
 func TestPrintAutoDummyPreparationSummary(t *testing.T) {
 	cmd, out := newOutputTestCommand()
 
-	printAutoDummyPreparationSummary(cmd, "uclair", "0uclair")
+	printAutoDummyPreparationSummary(cmd, "uclair", "self 7uclair + one active zero padding output")
 
 	require.Equal(
 		t,
-		"Auto dummy note\n- denom: uclair\n- deposit: 0uclair\n- why: the current two-input transfer path needs a same-denom zero note to split one larger note\n",
+		"Auto dummy note\n- denom: uclair\n- self batch transfer: self 7uclair + one active zero padding output\n- why: the current two-input transfer path needs a same-denom zero note to split one larger note\n",
 		out.String(),
 	)
 }
