@@ -535,6 +535,7 @@ func (s *noteAllocationState) selectPositivePair(target *big.Int) ([]TreasuryNot
 	right := s.lastAvailablePositive()
 	bestLeft := -1
 	bestRight := -1
+	exceedsOperationLimit := false
 	for left < right {
 		total := new(big.Int).Add(s.notes[left].Amount, s.notes[right].Amount)
 		switch {
@@ -546,6 +547,7 @@ func (s *noteAllocationState) selectPositivePair(target *big.Int) ([]TreasuryNot
 			bestRight = right
 			right = s.findPrev(right - 1)
 		default:
+			exceedsOperationLimit = true
 			right = s.findPrev(right - 1)
 		}
 	}
@@ -554,6 +556,9 @@ func (s *noteAllocationState) selectPositivePair(target *big.Int) ([]TreasuryNot
 		s.remove(bestLeft)
 		s.remove(bestRight)
 		return cloneTreasuryNotes(selected), nil
+	}
+	if exceedsOperationLimit {
+		return nil, fmt.Errorf("note preparation required: no input pair fits the 128-bit operation limit")
 	}
 	return nil, ErrInsufficientNotes
 }

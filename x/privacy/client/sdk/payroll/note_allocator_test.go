@@ -293,6 +293,28 @@ func TestNoteAllocatorRejectsInsufficientNotes(t *testing.T) {
 	require.ErrorIs(t, err, ErrInsufficientNotes)
 }
 
+func TestNoteAllocatorRequiresPreparationForUint128Overflow(t *testing.T) {
+	input := testPayrollInput()
+	input.Items[0].Amount = privacytypes.MaxShieldedAmount()
+	half := new(big.Int).Lsh(big.NewInt(1), 127)
+	notes := []TreasuryNote{
+		testTreasuryNoteBig("left", "uclair", half, false, ""),
+		testTreasuryNoteBig("right", "uclair", half, false, ""),
+	}
+
+	items, err := NoteAllocator{}.Allocate(input, notes)
+	require.Nil(t, items)
+	require.ErrorContains(t, err, "note preparation required")
+	require.NotErrorIs(t, err, ErrInsufficientNotes)
+
+	notes[1].Amount.Sub(notes[1].Amount, big.NewInt(1))
+	items, err = NoteAllocator{}.Allocate(input, notes)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Len(t, items[0].InputNotes, 2)
+	require.Equal(t, input.Items[0].Amount, new(big.Int).Add(items[0].InputNotes[0].Amount, items[0].InputNotes[1].Amount))
+}
+
 func TestNoteAllocatorRejectsPairThatWouldOverflowChangeOutput(t *testing.T) {
 	input := testPayrollInput()
 	input.Items[0].Amount = big.NewInt(1)
@@ -303,7 +325,7 @@ func TestNoteAllocatorRejectsPairThatWouldOverflowChangeOutput(t *testing.T) {
 	}
 
 	_, err := NoteAllocator{}.Allocate(input, notes)
-	require.ErrorIs(t, err, ErrInsufficientNotes)
+	require.ErrorContains(t, err, "note preparation required")
 }
 
 func TestNoteAllocatorAllocatesLargeZeroDummyPayroll(t *testing.T) {
