@@ -403,7 +403,7 @@ func (r *auditRecord) validateTransparentEffect() error {
 		return nil
 	}
 	effect := r.transparent
-	if effect.Kind != r.kind || len(effect.From) == 0 || len(effect.From) > 255 || len(effect.To) == 0 || len(effect.To) > 255 || sdk.ValidateDenom(effect.Denom) != nil || sdk.VerifyAddressFormat(effect.From) != nil || sdk.VerifyAddressFormat(effect.To) != nil || effect.Amount == 0 || r.publicInputs[15] != auditfield.Field32FromUint64(effect.Amount) || r.publicInputs[16].IsZero() {
+	if effect.Kind != r.kind || len(effect.From) == 0 || len(effect.From) > 255 || len(effect.To) == 0 || len(effect.To) > 255 || sdk.ValidateDenom(effect.Denom) != nil || sdk.VerifyAddressFormat(effect.From) != nil || sdk.VerifyAddressFormat(effect.To) != nil || (r.kind == auditfield.KindWithdraw && effect.Amount == 0) || r.publicInputs[15] != auditfield.Field32FromUint64(effect.Amount) || r.publicInputs[16].IsZero() {
 		return fmt.Errorf("invalid audit transition transparent effect")
 	}
 	module := authtypes.NewModuleAddress(privacytypes.ModuleName)

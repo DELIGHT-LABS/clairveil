@@ -731,7 +731,7 @@ func (o scanNotesObserver) OnNotesFound(txHash string, count int) {
 func CmdDeposit() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deposit [amount]",
-		Short: "Deposit",
+		Short: "Deposit a canonical nonnegative amount (zero creates a note without moving funds)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
@@ -748,8 +748,8 @@ func CmdDeposit() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if !coin.IsPositive() {
-				return fmt.Errorf("deposit requires a positive canonical amount")
+			if coin.IsNegative() || coin.String() != args[0] || coin.Amount.BigInt().BitLen() > 64 {
+				return fmt.Errorf("deposit requires a canonical uint64 amount")
 			}
 			runtime, err := resolveAuditV2Runtime(cmd, clientCtx)
 			if err != nil {

@@ -41,8 +41,8 @@ func PrepareAuditV2FromNormalNote(snapshot privacyaudit.Snapshot, creator, amoun
 		return nil, err
 	}
 	coin, err := sdk.ParseCoinNormalized(amount)
-	if err != nil || !coin.IsPositive() || coin.String() != amount {
-		return nil, fmt.Errorf("deposit amount must be a positive canonical coin")
+	if err != nil || coin.IsNegative() || coin.String() != amount || coin.Amount.BigInt().BitLen() > 64 {
+		return nil, fmt.Errorf("deposit amount must be a canonical uint64 coin")
 	}
 	expectedAsset := privacytypes.ComputeAssetIDV1(coin.Denom).FillBytes(make([]byte, 32))
 	noteAsset := note.AssetID.Bytes()

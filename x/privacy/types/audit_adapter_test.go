@@ -40,3 +40,23 @@ func TestAuditGeneratedAdapterOwnsBytesAndUsesLeafCodec(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestAuditAdapterAllowsZeroDepositOnly(t *testing.T) {
+	creator := sdk.AccAddress(bytes.Repeat([]byte{1}, 20)).String()
+	auth := &v2.AuditAuthorization{KeyId: make([]byte, 32), Epoch: 1, Envelope: make([]byte, 336)}
+	deposit := &v2.MsgDeposit{Creator: creator, Amount: "0uclair", Output: &v2.OutputEffect{Commitment: af.Field32FromUint64(7).Bytes(), Ciphertext: validEnvelopeBytes(t, EnvelopeDepositNoteV1)}, Proof: make([]byte, 164), ExpiresAtUnix: 1, Audit: auth}
+	validated, err := ValidateAuditMessage(deposit)
+	require.NoError(t, err)
+	require.True(t, validated.Coin().IsZero())
+	for _, amount := range []string{"00uclair", "-1uclair", "0.0uclair", "18446744073709551616uclair", "0x"} {
+		deposit.Amount = amount
+		_, err := ValidateAuditMessage(deposit)
+		require.Error(t, err, amount)
+	}
+	size, err := af.KindWithdraw.EnvelopeSize()
+	require.NoError(t, err)
+	auth.Envelope = make([]byte, size)
+	withdraw := &v2.MsgWithdraw{Creator: creator, Recipient: creator, Amount: "0uclair", Root: af.Field32FromUint64(9).Bytes(), Nullifier: af.Field32FromUint64(8).Bytes(), Proof: make([]byte, 164), ExpiresAtUnix: 1, Audit: auth}
+	_, err = ValidateAuditMessage(withdraw)
+	require.ErrorContains(t, err, "withdraw must be positive")
+}

@@ -102,6 +102,8 @@ clairveil-auditor \
 
 Keyring은 lowercase 32-byte hex `{key_id, secret_key}` 쌍을 담은 `0600` version-1 JSON file이어야 합니다. Configuration, nonce, initial height, public key history, circuit identity는 자동 query합니다. Report는 `collection_complete`와 `provenance_complete`를 분리하고 `last_processed_block`과 마지막 privacy execution 위치를 각각 표시합니다. Block/result, 실행 event, epoch key, 복호화 가능한 envelope, deposit root 중 하나라도 없으면 `AUDIT_INCOMPLETE`이며 empty lineage나 balance 0으로 표시하지 않습니다. 같은 cache를 다시 사용하면 empty block을 포함해 마지막 atomic 저장 block 다음부터 재개합니다.
 
+Report의 `RootDeposits`는 0 금액 입력까지 포함한 note 연결 이력을 유지합니다. `FundingRootDeposits`는 양수 입력으로 전달된 자금 출처를 별도로 표시합니다. 예를 들어 10인 A와 0인 B를 소비한 양수 출력의 연결 root는 A/B이고 자금 출처는 A뿐입니다. 0 금액 출력에는 funding root가 없습니다. `DepositFunder`는 deposit endpoint 정보이므로 0 deposit의 주소를 실제 원금 제공자로 해석하면 안 됩니다. 0 금액 deposit/입력 기록이 누락되어도 `AUDIT_INCOMPLETE`이며, 빈 funding root가 누락 이력을 정당화하지 않습니다.
+
 Collector는 선택한 CometBFT RPC endpoint를 block/result source로 신뢰하며 light client가 아닙니다. 독립적으로 인증한 block history가 필요한 deployment는 이 작은 collector 바깥에서 trust boundary를 제공해야 합니다. Replay input, runtime archive, persistent audit server는 만들지 않습니다.
 
 기본 `clairveil-auditor`에는 EVM wrapper용 `sdk.TxDecoder`와 `VerifyDelegatedExecution` 연결이 없으므로 delegated V2 deposit을 자체적으로 인증할 수 없습니다. Downstream integration이 wrapper decoding과 receipt-success verification을 모두 제공해야 합니다. [Downstream Cosmos Integration Guide §5.1](clairveil-downstream-cosmos-integration-guide-kr.md#51-trusted-deposit-funding)을 참고하세요.
@@ -130,7 +132,7 @@ clairveild tx privacy deposit 10uclair \
 
 주의:
 
-- V2 deposit은 양수 금액만 허용하며 `0uclair`는 거절합니다.
+- Native V2 deposit과 `DepositWithFunderV2`는 `0uclair` 직접 deposit을 허용합니다. 0 금액은 실제 bank 송금만 생략하며 funding endpoint 검증, gas/수수료, proof 검증, note 생성과 scan은 유지합니다. Withdraw 금액은 계속 양수여야 합니다.
 - 2-input transfer planner가 큰 note 하나를 분할할 때 zero-value dummy note가 필요할 수 있습니다. `--auto-dummy=true`이면 CLI는 같은 denom의 기존 spendable 양수 note를 사용해 자기 자신에게 1입력·2출력 batch transfer를 실행합니다. Shielded 금액을 유지하면서 0 금액 출력을 추가하며, 거래 수수료는 발생합니다.
 - 기록된 development deposit은 `2,868,008` gas를 사용했습니다. `2500000`은 out-of-gas(`code 11`)였으므로 예제는 `3500000`을 사용합니다. Downstream chain은 측정한 실행 결과로 자체 gas policy를 정해야 합니다.
 

@@ -12,27 +12,31 @@ import (
 // LineageNode is one C node in the auditor-only graph.  RootDeposits contains
 // deposit transition sequences rather than a claimed unique human source:
 // fungible merges may legitimately have more than one public funder.
+// FundingRootDeposits tracks only positive-value ancestry; zero-value notes
+// retain their graph ancestry in RootDeposits but have no funding roots.
 type LineageNode struct {
 	AuditNote
-	CreatedSequence uint64
-	CreatedHeight   uint64
-	CreatedSlot     uint8
-	RootDeposits    []uint64
-	DepositFunder   []byte // set only on deposit roots
-	SpentSequence   uint64
-	SpentNullifier  auditfield.Field32
+	CreatedSequence     uint64
+	CreatedHeight       uint64
+	CreatedSlot         uint8
+	RootDeposits        []uint64
+	FundingRootDeposits []uint64
+	DepositFunder       []byte // deposit endpoint metadata; zero deposits supply no principal
+	SpentSequence       uint64
+	SpentNullifier      auditfield.Field32
 }
 
 // LineageWithdrawal is a terminal public recipient effect.  It is never
 // represented as a synthetic note or as a future nullifier prediction.
 type LineageWithdrawal struct {
-	Sequence        uint64
-	Height          uint64
-	InputCommitment auditfield.Field32
-	Recipient       []byte
-	Denom           string
-	Amount          uint64
-	RootDeposits    []uint64
+	Sequence            uint64
+	Height              uint64
+	InputCommitment     auditfield.Field32
+	Recipient           []byte
+	Denom               string
+	Amount              uint64
+	RootDeposits        []uint64
+	FundingRootDeposits []uint64
 }
 
 type LineageReport struct {
@@ -80,7 +84,7 @@ func BuildLineageReport(records []DecryptedAuditRecord) (LineageReport, error) {
 			if !ok || effect.Kind != auditfield.KindDeposit || decrypted.output[0].Amount != effect.Amount {
 				return LineageReport{}, fmt.Errorf("AUDIT_INCOMPLETE: invalid deposit public effect")
 			}
-			if err := addOutputs(record, decrypted.output, []uint64{record.Sequence()}, effect.From, nodes); err != nil {
+			if err := addOutputs(record, decrypted.output, []uint64{record.Sequence()}, []uint64{record.Sequence()}, effect.From, nodes); err != nil {
 				return LineageReport{}, err
 			}
 		case auditfield.KindWithdraw:
@@ -91,7 +95,7 @@ func BuildLineageReport(records []DecryptedAuditRecord) (LineageReport, error) {
 			if !ok || effect.Kind != auditfield.KindWithdraw || inputNodes[0].Asset != decrypted.asset || inputNodes[0].Amount != effect.Amount {
 				return LineageReport{}, fmt.Errorf("AUDIT_INCOMPLETE: withdraw asset or amount mismatch")
 			}
-			withdrawals = append(withdrawals, LineageWithdrawal{Sequence: record.Sequence(), Height: record.Height(), InputCommitment: inputNodes[0].Commitment, Recipient: bytes.Clone(effect.To), Denom: effect.Denom, Amount: effect.Amount, RootDeposits: append([]uint64(nil), inputNodes[0].RootDeposits...)})
+			withdrawals = append(withdrawals, LineageWithdrawal{Sequence: record.Sequence(), Height: record.Height(), InputCommitment: inputNodes[0].Commitment, Recipient: bytes.Clone(effect.To), Denom: effect.Denom, Amount: effect.Amount, RootDeposits: append([]uint64(nil), inputNodes[0].RootDeposits...), FundingRootDeposits: append([]uint64(nil), inputNodes[0].FundingRootDeposits...)})
 		case auditfield.KindTransfer2x2, auditfield.KindBatch16x32:
 			if len(inputNodes) == 0 || len(inputNodes) != len(decrypted.inputs) || len(decrypted.output) == 0 {
 				return LineageReport{}, fmt.Errorf("AUDIT_INCOMPLETE: invalid private lineage shape")
@@ -99,7 +103,8 @@ func BuildLineageReport(records []DecryptedAuditRecord) (LineageReport, error) {
 			if err := validatePrivateConservation(decrypted.asset, inputNodes, decrypted.output); err != nil {
 				return LineageReport{}, err
 			}
-			if err := addOutputs(record, decrypted.output, unionRoots(inputNodes), nil, nodes); err != nil {
+			roots, fundingRoots := unionRoots(inputNodes)
+			if err := addOutputs(record, decrypted.output, roots, fundingRoots, nil, nodes); err != nil {
 				return LineageReport{}, err
 			}
 		default:
@@ -174,7 +179,7 @@ func validatePrivateConservation(asset auditfield.Field32, inputs []*mutableLine
 	return nil
 }
 
-func addOutputs(record VerifiedAuditRecord, outputs []AuditNote, roots []uint64, funder []byte, nodes map[auditfield.Field32]*mutableLineageNode) error {
+func addOutputs(record VerifiedAuditRecord, outputs []AuditNote, roots, fundingRoots []uint64, funder []byte, nodes map[auditfield.Field32]*mutableLineageNode) error {
 	recordOutputs := record.Outputs()
 	if len(outputs) != len(recordOutputs) || len(roots) == 0 {
 		return fmt.Errorf("AUDIT_INCOMPLETE: output/provenance cardinality mismatch")
@@ -183,18 +188,31 @@ func addOutputs(record VerifiedAuditRecord, outputs []AuditNote, roots []uint64,
 		if output.Commitment.IsZero() || nodes[output.Commitment] != nil || output.Commitment != recordOutputs[slot].Commitment {
 			return fmt.Errorf("AUDIT_INCOMPLETE: duplicate, zero, or mismatched output commitment")
 		}
-		nodes[output.Commitment] = &mutableLineageNode{LineageNode: LineageNode{AuditNote: output, CreatedSequence: record.Sequence(), CreatedHeight: record.Height(), CreatedSlot: uint8(slot), RootDeposits: append([]uint64(nil), roots...), DepositFunder: bytes.Clone(funder)}}
+		var outputFundingRoots []uint64
+		if output.Amount > 0 {
+			outputFundingRoots = append([]uint64(nil), fundingRoots...)
+		}
+		nodes[output.Commitment] = &mutableLineageNode{LineageNode: LineageNode{AuditNote: output, CreatedSequence: record.Sequence(), CreatedHeight: record.Height(), CreatedSlot: uint8(slot), RootDeposits: append([]uint64(nil), roots...), FundingRootDeposits: outputFundingRoots, DepositFunder: bytes.Clone(funder)}}
 	}
 	return nil
 }
 
-func unionRoots(inputs []*mutableLineageNode) []uint64 {
-	seen := map[uint64]bool{}
+func unionRoots(inputs []*mutableLineageNode) ([]uint64, []uint64) {
+	seen, fundingSeen := map[uint64]bool{}, map[uint64]bool{}
 	for _, input := range inputs {
 		for _, root := range input.RootDeposits {
 			seen[root] = true
 		}
+		if input.Amount > 0 {
+			for _, root := range input.FundingRootDeposits {
+				fundingSeen[root] = true
+			}
+		}
 	}
+	return sortedRoots(seen), sortedRoots(fundingSeen)
+}
+
+func sortedRoots(seen map[uint64]bool) []uint64 {
 	roots := make([]uint64, 0, len(seen))
 	for root := range seen {
 		roots = append(roots, root)
@@ -204,6 +222,7 @@ func unionRoots(inputs []*mutableLineageNode) []uint64 {
 }
 
 func cloneLineageNode(node LineageNode) LineageNode {
+	node.FundingRootDeposits = append([]uint64(nil), node.FundingRootDeposits...)
 	node.RootDeposits, node.DepositFunder = append([]uint64(nil), node.RootDeposits...), bytes.Clone(node.DepositFunder)
 	return node
 }

@@ -51,6 +51,8 @@ Domain label 파생과 정확한 argument 순서는 [BatchJoinSplit16x32 계약]
 
 `DepositCircuit`은 deposit에 사용됩니다. Keeper가 privacy module account에 lock하는 transparent amount/asset과 Merkle tree에 append되는 shielded commitment가 같은 note data에 묶였음을 증명합니다.
 
+현재 V2 `DepositAuditFieldV1`은 0 금액도 허용하며 withdraw의 양수 제약은 유지합니다. 0 deposit도 endpoint와 proof를 검증하고 commitment, event, scan 기록을 생성하며 실제 bank 송금만 생략합니다. Deposit audit 회로의 non-zero 제약 제거는 R1CS와 key 호환성을 바꾸므로 기존 deposit R1CS/PK/VK를 재사용할 수 없습니다. [운영 가이드](clairveil-operations-guide-kr.md)의 setup/manifest/identity 절차로 새 bundle을 생성해야 합니다.
+
 ### Public input
 
 | 입력         | 의미                                      |

@@ -136,7 +136,11 @@ func (k Keeper) applyAuditPrincipal(ctx sdk.Context, m types.ValidatedAuditMessa
 		return fmt.Errorf("principal balance overflow or insufficiency")
 	}
 	if deposit {
-		err = k.audit.principal.Lock(ctx, address, coin)
+		// A zero deposit still validates endpoints, balances and reserve state.
+		// Only the actual bank transfer is unnecessary.
+		if !coin.IsZero() {
+			err = k.audit.principal.Lock(ctx, address, coin)
+		}
 	} else {
 		err = k.audit.principal.Release(ctx, address, coin)
 	}

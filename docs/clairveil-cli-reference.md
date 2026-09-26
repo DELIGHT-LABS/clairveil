@@ -104,6 +104,8 @@ clairveil-auditor \
 
 The keyring must be a `0600` version-1 JSON file containing `{key_id, secret_key}` lowercase 32-byte hex pairs. Configuration, nonce, initial height, public key history, and circuit identity are queried automatically. The report separates `collection_complete` from `provenance_complete`, and reports both `last_processed_block` and the last privacy execution position. A missing block/result, execution event, epoch key, decryptable envelope, or deposit root is `AUDIT_INCOMPLETE`; it is never emitted as an empty lineage or zero balance. Reusing the same cache resumes after the last atomically stored block, including empty blocks.
 
+The report retains note linkage through `RootDeposits`, including zero-value inputs. `FundingRootDeposits` separately identifies funding origins propagated through positive inputs. For example, a positive output consuming A worth 10 and B worth 0 has linkage roots A/B but funding root A only. Zero-value outputs have no funding roots. `DepositFunder` retains deposit endpoint metadata, so an address on a zero deposit is not a principal provider. Missing zero-value deposit/input records still produce `AUDIT_INCOMPLETE`; an empty funding-root set does not excuse missing history.
+
 The collector trusts the selected CometBFT RPC endpoint as its block/result source; it is not a light client. Deployments that need independently authenticated block history must provide that trust boundary outside this small collector. No replay input, runtime archive, or persistent audit server is created.
 
 The stock `clairveil-auditor` does not wire an EVM-wrapper `sdk.TxDecoder` or `VerifyDelegatedExecution`, so it cannot authenticate delegated V2 deposits by itself. A downstream integration must supply both wrapper decoding and receipt-success verification; see [Downstream Cosmos Integration Guide §5.1](clairveil-downstream-cosmos-integration-guide.md#51-trusted-deposit-funding).
@@ -132,7 +134,7 @@ Behavior:
 
 Notes:
 
-- V2 deposit requires a positive amount; `0uclair` is rejected.
+- Native V2 deposits and `DepositWithFunderV2` allow direct `0uclair` deposits. Zero skips only the actual bank transfer; funding endpoint validation, gas/fees, proof verification, note creation, and scanning remain required. Withdraw amounts must remain positive.
 - A zero-value dummy note may be needed when the 2-input transfer planner splits one large note. With `--auto-dummy=true`, the CLI creates it through a one-input/two-output self batch transfer using an existing spendable positive note of the same denom. This preserves the shielded amount and adds a zero-value output; transaction fees still apply.
 - The recorded development deposit used `2,868,008` gas. `2500000` ran out of gas (`code 11`), so this example uses `3500000`; downstream chains must set their own gas policy from measured execution.
 

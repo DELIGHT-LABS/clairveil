@@ -117,7 +117,7 @@ func decodeAuditPlain(record VerifiedAuditRecord, fields []auditfield.Field32) (
 			return auditfield.Field32{}, nil, nil, fmt.Errorf("invalid decrypted deposit plaintext")
 		}
 		amount, err := fieldUint64(fields[1])
-		if err != nil || amount == 0 || public[15] != auditfield.Field32FromUint64(amount) {
+		if err != nil || public[15] != auditfield.Field32FromUint64(amount) {
 			return auditfield.Field32{}, nil, nil, fmt.Errorf("deposit plaintext amount does not match PI")
 		}
 		note, err := newOutput(1, record.record.outputs[0].Commitment)

@@ -57,7 +57,6 @@ func (p *AuditPublic) constrain(api frontend.API, kind auditfield.Kind) {
 		api.AssertIsEqual(p.NullifierRoot, 0)
 		api.AssertIsEqual(p.UserDisclosureRoot, 0)
 		api.AssertIsEqual(p.SelfViewRoot, 0)
-		api.AssertIsDifferent(p.PublicAmount, 0)
 	case auditfield.KindWithdraw:
 		api.AssertIsEqual(p.InputCount, 1)
 		api.AssertIsEqual(p.OutputCount, 0)

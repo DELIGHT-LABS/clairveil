@@ -82,3 +82,15 @@ func testEnvelope(t *testing.T, kind privacytypes.EncryptedEnvelopeKindV1) []byt
 	require.NoError(t, err)
 	return result
 }
+
+func TestAuditCoinAllowsZeroOnlyForDeposit(t *testing.T) {
+	amount, err := parseAuditCoin("0uclair", auditfield.KindDeposit)
+	require.NoError(t, err)
+	require.Zero(t, amount)
+	_, err = parseAuditCoin("0uclair", auditfield.KindWithdraw)
+	require.Error(t, err)
+	for _, value := range []string{"00uclair", "-1uclair", "0.0uclair", "18446744073709551616uclair", "0x"} {
+		_, err := parseAuditCoin(value, auditfield.KindDeposit)
+		require.Error(t, err, value)
+	}
+}

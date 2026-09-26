@@ -53,6 +53,8 @@ All shielded amounts are constrained as non-negative 64-bit integers. Keeper, SD
 
 `DepositCircuit` is used for deposit. It proves that the on-chain commitment being appended is for the same amount and asset denom that the keeper locks in the privacy module account.
 
+The current V2 `DepositAuditFieldV1` also accepts zero amounts; withdrawals retain their positive-amount constraint. A zero deposit still validates endpoints and its proof and creates commitment, event, and scan records; only the actual bank transfer is skipped. Removing the deposit audit circuit’s non-zero constraint changes R1CS/key compatibility: existing deposit R1CS/PK/VK artifacts cannot be reused. Generate a new bundle through the setup/manifest/identity procedure in the [operations guide](clairveil-operations-guide.md).
+
 ### Public Input
 
 | Input | Meaning |

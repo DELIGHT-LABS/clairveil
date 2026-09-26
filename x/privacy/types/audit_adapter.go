@@ -145,8 +145,8 @@ func ValidateAuditMessage(raw sdk.Msg) (ValidatedAuditMessage, error) {
 		if err != nil {
 			return fail(err)
 		}
-		if !coin.IsPositive() || coin.String() != amount || coin.Amount.BigInt().BitLen() > 64 {
-			return fail(fmt.Errorf("audit amount must be canonical positive uint64 coin"))
+		if coin.IsNegative() || (m.kind == auditfield.KindWithdraw && coin.IsZero()) || coin.String() != amount || coin.Amount.BigInt().BitLen() > 64 {
+			return fail(fmt.Errorf("audit amount must be canonical uint64 coin; withdraw must be positive"))
 		}
 		m.coin = coin
 	}

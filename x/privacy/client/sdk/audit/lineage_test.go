@@ -55,3 +55,46 @@ func testDecryptedRecord(sequence uint64, kind auditfield.Kind, inputs []auditfi
 	}
 	return DecryptedAuditRecord{record: &record, plain: plain, asset: asset, inputs: inputs, output: outputs}
 }
+
+func TestBuildLineageReportSeparatesZeroDepositFunding(t *testing.T) {
+	asset := auditfield.Field32FromUint64(9)
+	field := auditfield.Field32FromUint64
+	positive := testDecryptedRecord(1, auditfield.KindDeposit, nil, []AuditNote{{Commitment: field(11), Asset: asset, Amount: 10}}, nil, &TransparentAuditEffect{Kind: auditfield.KindDeposit, From: []byte{1}, Amount: 10})
+	zero := testDecryptedRecord(2, auditfield.KindDeposit, nil, []AuditNote{{Commitment: field(12), Asset: asset}}, nil, &TransparentAuditEffect{Kind: auditfield.KindDeposit, From: []byte{2}})
+	transfer := testDecryptedRecord(3, auditfield.KindTransfer2x2, []auditfield.Field32{field(11), field(12)},
+		[]AuditNote{{Commitment: field(21), Asset: asset, Amount: 10}, {Commitment: field(22), Asset: asset}}, []auditfield.Field32{field(31), field(32)}, nil)
+	withdraw := testDecryptedRecord(4, auditfield.KindWithdraw, []auditfield.Field32{field(21)}, nil, []auditfield.Field32{field(33)}, &TransparentAuditEffect{Kind: auditfield.KindWithdraw, To: []byte{3}, Amount: 10})
+
+	report, err := BuildLineageReport([]DecryptedAuditRecord{positive, zero, transfer, withdraw})
+	require.NoError(t, err)
+	require.Len(t, report.Nodes, 4)
+	require.Equal(t, []uint64{1}, report.Nodes[0].FundingRootDeposits)
+	require.Equal(t, []uint64{2}, report.Nodes[1].RootDeposits)
+	require.Empty(t, report.Nodes[1].FundingRootDeposits)
+	require.Equal(t, []uint64{1, 2}, report.Nodes[2].RootDeposits)
+	require.Equal(t, []uint64{1}, report.Nodes[2].FundingRootDeposits)
+	require.Equal(t, []uint64{1, 2}, report.Nodes[3].RootDeposits)
+	require.Empty(t, report.Nodes[3].FundingRootDeposits)
+	require.Equal(t, []uint64{1, 2}, report.Withdrawals[0].RootDeposits)
+	require.Equal(t, []uint64{1}, report.Withdrawals[0].FundingRootDeposits)
+	require.Len(t, report.Unspent, 1)
+	require.Empty(t, report.Unspent[0].FundingRootDeposits)
+
+	t.Run("missing zero deposit remains incomplete", func(t *testing.T) {
+		_, err := BuildLineageReport([]DecryptedAuditRecord{positive, transfer, withdraw})
+		require.ErrorContains(t, err, "AUDIT_INCOMPLETE: Cin has no earlier unspent C")
+	})
+
+	t.Run("derived zero does not transfer funding ancestry", func(t *testing.T) {
+		second := testDecryptedRecord(4, auditfield.KindDeposit, nil, []AuditNote{{Commitment: field(41), Asset: asset, Amount: 4}}, nil, &TransparentAuditEffect{Kind: auditfield.KindDeposit, From: []byte{4}, Amount: 4})
+		merge := testDecryptedRecord(5, auditfield.KindTransfer2x2, []auditfield.Field32{field(41), field(22)},
+			[]AuditNote{{Commitment: field(51), Asset: asset, Amount: 4}, {Commitment: field(52), Asset: asset}}, []auditfield.Field32{field(61), field(62)}, nil)
+		report, err := BuildLineageReport([]DecryptedAuditRecord{positive, zero, transfer, second, merge})
+		require.NoError(t, err)
+		require.Len(t, report.Nodes, 7)
+		require.Equal(t, []uint64{1, 2, 4}, report.Nodes[5].RootDeposits)
+		require.Equal(t, []uint64{4}, report.Nodes[5].FundingRootDeposits)
+		require.Equal(t, []uint64{1, 2, 4}, report.Nodes[6].RootDeposits)
+		require.Empty(t, report.Nodes[6].FundingRootDeposits)
+	})
+}

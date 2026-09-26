@@ -191,7 +191,7 @@ func buildPublicInputs(input PrepareInput, inputs, outputs []auditfield.Field32,
 		return pi, err
 	}
 	if input.Kind == auditfield.KindDeposit || input.Kind == auditfield.KindWithdraw {
-		coin, err := parsePositiveCoin(input.Amount)
+		coin, err := parseAuditCoin(input.Amount, input.Kind)
 		if err != nil {
 			return pi, err
 		}
@@ -211,13 +211,13 @@ func buildPublicInputs(input PrepareInput, inputs, outputs []auditfield.Field32,
 	return pi, nil
 }
 
-func parsePositiveCoin(value string) (uint64, error) {
+func parseAuditCoin(value string, kind auditfield.Kind) (uint64, error) {
 	coin, err := sdk.ParseCoinNormalized(value)
 	if err != nil {
 		return 0, err
 	}
-	if !coin.IsPositive() || coin.String() != value || coin.Amount.BigInt().BitLen() > 64 {
-		return 0, fmt.Errorf("audit amount must be canonical positive uint64 coin")
+	if coin.IsNegative() || (kind == auditfield.KindWithdraw && coin.IsZero()) || coin.String() != value || coin.Amount.BigInt().BitLen() > 64 {
+		return 0, fmt.Errorf("audit amount must be canonical uint64 coin; withdraw must be positive")
 	}
 	return coin.Amount.Uint64(), nil
 }
