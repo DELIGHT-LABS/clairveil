@@ -4,6 +4,19 @@ Clairveil의 주요 변경 사항은 이 파일에 기록합니다.
 
 [Release versioning rules](CONTRIBUTING-kr.md#release-versioning-rules)는 repository maintainer instructions에서 관리합니다. Release 내용과 검증 범위는 [selected-path manifest](scripts/release-pack-paths.txt)와 [required-file manifest](scripts/release-pack-required-files.txt)가 정의합니다.
 
+## v0.5.3 - 2026-09-27
+
+### Fixed
+
+- Native V2 deposit과 `Keeper.DepositWithFunderV2`의 0 입금을 복원했습니다. 실제 bank 송금만 생략하고 proof·audit payload 검증, endpoint·reserve 검사, gas 부과, note·scan 생성과 실패 시 원자적 롤백은 유지합니다. Withdraw는 계속 양수 금액을 요구합니다.
+- Auditor의 note·withdrawal 결과에 `FundingRootDeposits`를 추가해 양수 가치의 출처와 전체 `RootDeposits` 연결 이력을 구분합니다. 0 note는 원금 출처로 표시하지 않으면서 이력과 기록 누락 검사를 유지합니다.
+- 기존 자동 self batch transfer 방식을 유지하면서 CLI dummy note 안내를 수정했습니다.
+
+### Handoff Notes
+
+- v0.5.2 기반 유지보수 릴리즈이며 v0.6.0 변경은 포함하지 않습니다. Downstream은 `github.com/DELIGHT-LABS/clairveil v0.5.3`을 고정해야 합니다. Transaction wire와 persisted state schema는 유지되며 감사 보고서에는 `FundingRootDeposits` 필드가 추가됩니다.
+- **ZK artifacts:** deposit 감사 회로의 non-zero 제약 제거로 R1CS/PK/VK 호환성이 바뀝니다. [운영 가이드](docs/clairveil-operations-guide-kr.md)에 따라 이 source에서 새 묶음을 생성하고 fresh genesis에 manifest identity를 연결해야 합니다. 기존 deposit artifact로는 0 입금을 증명할 수 없으며 in-place 회로 migration은 제공하지 않습니다. 개발용 artifact 사용 조건과 `PUBLICATION_READY_EXPERIMENTAL` 릴리즈 상태는 유지됩니다.
+
 ## v0.5.2 - 2026-09-26
 
 ### Added

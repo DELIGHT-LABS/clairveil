@@ -4,6 +4,19 @@ All notable changes to Clairveil are documented in this file.
 
 [Release versioning rules](CONTRIBUTING.md#release-versioning-rules) are maintained with the repository instructions. Release contents and verification are defined by [the selected-path manifest](scripts/release-pack-paths.txt) and [the required-file manifest](scripts/release-pack-required-files.txt).
 
+## v0.5.3 - 2026-09-27
+
+### Fixed
+
+- Restored zero-value native V2 deposits and `Keeper.DepositWithFunderV2`. Zero deposits skip only the bank transfer while retaining proof and audit-payload verification, endpoint and reserve checks, gas charging, note/scan creation, and atomic rollback. Withdrawals still require a positive amount.
+- Added `FundingRootDeposits` to auditor note and withdrawal results to distinguish positive-value ancestry from full `RootDeposits` linkage. Zero-value notes retain their history and missing-record checks without being reported as funding origins.
+- Corrected CLI dummy-note guidance while retaining the existing automatic self batch transfer workflow.
+
+### Handoff Notes
+
+- This maintenance release builds on v0.5.2 and does not include v0.6.0 changes. Downstreams should pin `github.com/DELIGHT-LABS/clairveil v0.5.3`; the transaction wire and persisted state schemas are unchanged, while audit reports gain the additive `FundingRootDeposits` field.
+- **ZK artifacts:** removing the deposit audit circuit's non-zero constraint changes R1CS/PK/VK compatibility. Generate a new bundle from this source and bind its manifest identity at fresh genesis as described in the [operations guide](docs/clairveil-operations-guide.md). Old deposit artifacts cannot prove zero deposits; this release provides no in-place circuit migration. Development artifacts and the `PUBLICATION_READY_EXPERIMENTAL` release status remain unchanged.
+
 ## v0.5.2 - 2026-09-26
 
 ### Added

@@ -17,7 +17,7 @@
 초기 개발 중에는 로컬 `replace`를 쓰면 빠릅니다.
 
 ```go
-require github.com/DELIGHT-LABS/clairveil v0.5.2
+require github.com/DELIGHT-LABS/clairveil v0.5.3
 
 replace github.com/DELIGHT-LABS/clairveil => ../clairveil
 ```
