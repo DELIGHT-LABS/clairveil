@@ -148,7 +148,7 @@ make release-pack
 make release-pack-verify
 ```
 
-Reference prover image는 `make docker-proverd-build`로 build합니다. Release note에는 proto/fixture/schema/CLI/prover contract impact, ZK artifact impact, accepted vulnerability, downstream action, artifact checksum/provenance policy, circuit-set/public-witness/gas/scan-schema version(`privacy-note-v1`, `BatchGasModelV1`, `privacy-sequence-v1`, `privacy-scan-v2`)을 포함합니다.
+Reference prover image는 `make docker-proverd-build`로 build합니다. Release note에는 proto/fixture/schema/CLI/prover contract impact, ZK artifact impact, accepted vulnerability, downstream action, artifact checksum/provenance policy, circuit-set/public-witness/gas/scan-schema version(`privacy-note-v1-u128-audit-field-v1`, PI23, `AuditGasModelV1`, `privacy-sequence-v1`, `privacy-scan-v2`)을 포함합니다.
 
 ## 12. Incident 대응 기준
 

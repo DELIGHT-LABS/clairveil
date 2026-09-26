@@ -124,6 +124,9 @@ report_args=(
   -run-profile "$run_profile"
   -claim-steady-state-seconds "$claim_steady_state_seconds"
 )
+if [[ "$profile" == "audit_field_only" ]]; then
+  report_args+=(-active-set-id "privacy-note-v1-u128-audit-field-v1")
+fi
 if [[ -n "$claim_types" ]]; then
   report_args+=(-claim-types "$claim_types")
 fi

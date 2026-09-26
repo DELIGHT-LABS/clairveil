@@ -51,12 +51,13 @@ Use Git, Make, Go `1.25.13`, and Bash; repository CI/example checks also need No
 ```bash
 git clone https://github.com/DELIGHT-LABS/clairveil.git
 cd clairveil
+make build
 export CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR=/absolute/path/to/audit-field-artifacts
 export CLAIRVEIL_HOME=${CLAIRVEIL_HOME:-"$HOME/.clairveil"}
-clairveild --home "$CLAIRVEIL_HOME" init node-1 \
+./clairveild --home "$CLAIRVEIL_HOME" init node-1 \
   --chain-id reviewed-chain-1 \
   --audit-config /absolute/path/to/audit-config.json
-clairveild --home "$CLAIRVEIL_HOME" start \
+./clairveild --home "$CLAIRVEIL_HOME" start \
   --audit-config /absolute/path/to/audit-config.json \
   --audit-artifacts "$CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR"
 ```

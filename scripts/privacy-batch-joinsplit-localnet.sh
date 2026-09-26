@@ -15,6 +15,7 @@ fi
 # a node and is not V2 runtime evidence.
 python3 - "$fixture" <<'PY'
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -35,7 +36,9 @@ for case in cases.values():
     assert 1 <= len(case["input_amounts"]) <= 16
     assert 1 <= len(case["expected_output_roles"]) <= 32
     assert len(case["expected_output_roles"]) == len(case["disclosure_modes"])
-    assert sum(case["payment_amounts"]) <= sum(case["input_amounts"])
+    assert all(isinstance(value, str) and re.fullmatch(r"0|[1-9][0-9]*", value)
+               for value in case["input_amounts"] + case["payment_amounts"])
+    assert sum(map(int, case["payment_amounts"])) <= sum(map(int, case["input_amounts"]))
 assert cases["three-input-four-output-mixed-disclosure"]["disclosure_modes"] == ["none", "public", "recipient-encrypted", "none"]
 assert cases["thirty-one-payments-plus-change"]["expected_output_roles"].count("payment") == 31
 assert cases["exact-thirty-two-payments"]["expected_output_roles"].count("payment") == 32

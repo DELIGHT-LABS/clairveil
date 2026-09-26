@@ -184,6 +184,25 @@ func AuditFieldManifestFromChecksums(outDir, generatedAt string, checksums map[s
 	return manifest, nil
 }
 
+// LoadAuditFieldArtifactManifest reads the explicit development-only audit set.
+func LoadAuditFieldArtifactManifest(path string) (*RuntimeArtifactManifest, error) {
+	bz, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var manifest RuntimeArtifactManifest
+	if err := decodeRuntimeArtifactManifest(bz, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to decode audit-field artifact manifest: %w", err)
+	}
+	if !manifest.DevelopmentOnly {
+		return nil, fmt.Errorf("audit-field development bundle marker is required")
+	}
+	if err := ValidateAuditFieldArtifactManifest(&manifest); err != nil {
+		return nil, err
+	}
+	return &manifest, nil
+}
+
 func LoadArtifactManifest(path string) (*RuntimeArtifactManifest, error) {
 	bz, err := os.ReadFile(path)
 	if err != nil {

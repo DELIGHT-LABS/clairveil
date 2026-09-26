@@ -569,7 +569,7 @@ func main() {
 	}
 	rep.SourceFileSHA256, rep.SourceFileIssues = hashSourceFiles(rep.SourceFiles)
 
-	resolvedManifest := resolveManifestPath(manifestPath)
+	resolvedManifest := resolveManifestPath(manifestPath, activeSetID)
 	if resolvedManifest != "" {
 		checksum, err := fileSHA256(resolvedManifest)
 		if err != nil {
@@ -3766,7 +3766,7 @@ func commandOutput(name string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func resolveManifestPath(explicit string) string {
+func resolveManifestPath(explicit, activeSetID string) string {
 	candidates := []string{}
 	if strings.TrimSpace(explicit) != "" {
 		candidates = append(candidates, strings.TrimSpace(explicit))
@@ -3774,7 +3774,11 @@ func resolveManifestPath(explicit string) string {
 	if dir := strings.TrimSpace(os.Getenv(privacyzk.ZKArtifactDirEnv)); dir != "" {
 		candidates = append(candidates, filepath.Join(dir, privacyzk.ArtifactManifestFile))
 	}
-	candidates = append(candidates, filepath.Join("artifacts", "privacy", privacyzk.ArtifactManifestFile))
+	defaultDir := "privacy"
+	if activeSetID == privacyzk.AuditFieldCircuitSetID {
+		defaultDir = "audit-field"
+	}
+	candidates = append(candidates, filepath.Join("artifacts", defaultDir, privacyzk.ArtifactManifestFile))
 
 	for _, candidate := range candidates {
 		if _, err := os.Stat(candidate); err == nil {
@@ -3785,7 +3789,13 @@ func resolveManifestPath(explicit string) string {
 }
 
 func loadArtifactSet(path, activeSetID, manifestSHA256 string) (artifactSet, error) {
-	manifest, err := privacyzk.LoadArtifactManifest(path)
+	loadManifest := privacyzk.LoadArtifactManifest
+	expected := privacyzk.DefaultArtifactDescriptors()
+	if activeSetID == privacyzk.AuditFieldCircuitSetID {
+		loadManifest = privacyzk.LoadAuditFieldArtifactManifest
+		expected = privacyzk.AuditFieldArtifactDescriptors()
+	}
+	manifest, err := loadManifest(path)
 	if err != nil {
 		return artifactSet{}, err
 	}
@@ -3808,14 +3818,14 @@ func loadArtifactSet(path, activeSetID, manifestSHA256 string) (artifactSet, err
 			result.ArtifactSHA256ByFile[reportDescriptor.Filename] = reportDescriptor.SHA256
 		}
 	}
-	result.DescriptorIssues = artifactDescriptorIssues(manifest.Artifacts)
+	result.DescriptorIssues = artifactDescriptorIssues(manifest.Artifacts, expected)
 	result.DescriptorComplete = len(result.DescriptorIssues) == 0
 	result.ArtifactFileIssues = artifactFileIssues(filepath.Dir(path), manifest.Artifacts)
 	result.ArtifactFilesVerified = len(result.ArtifactFileIssues) == 0 && len(manifest.Artifacts) > 0
 	return result, nil
 }
 
-func artifactDescriptorIssues(descriptors []privacyzk.ArtifactDescriptor) []string {
+func artifactDescriptorIssues(descriptors, expectedDescriptors []privacyzk.ArtifactDescriptor) []string {
 	type descriptorKey struct {
 		circuitID    string
 		artifactType string
@@ -3832,7 +3842,7 @@ func artifactDescriptorIssues(descriptors []privacyzk.ArtifactDescriptor) []stri
 	}
 
 	var issues []string
-	for _, expected := range privacyzk.DefaultArtifactDescriptors() {
+	for _, expected := range expectedDescriptors {
 		key := descriptorKey{
 			circuitID:    expected.CircuitID,
 			artifactType: expected.ArtifactType,

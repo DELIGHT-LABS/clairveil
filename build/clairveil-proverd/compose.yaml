@@ -8,8 +8,8 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
+      # Audit artifact preflight is mandatory; startup fails if artifacts are not ready.
       CLAIRVEIL_PRIVACY_ZK_ARTIFACT_DIR: /artifacts
-      CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE: ${CLAIRVEIL_PRIVACY_ZK_PREFLIGHT_MODE:-warn}
       CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN: ${CLAIRVEIL_PRIVACY_PROVER_BEARER_TOKEN:-}
     volumes:
       - ${CLAIRVEIL_PRIVACY_ZK_ARTIFACT_HOST_DIR:-./artifacts}:/artifacts:ro

@@ -148,7 +148,7 @@ make release-pack
 make release-pack-verify
 ```
 
-Build the reference prover image with `make docker-proverd-build`. Release notes must cover proto/fixture/schema/CLI/prover contract impact, ZK artifact impact, accepted vulnerabilities, downstream action, artifact checksum/provenance policy, and circuit-set/public-witness/gas/scan-schema versions (`privacy-note-v1`, `BatchGasModelV1`, `privacy-sequence-v1`, `privacy-scan-v2`).
+Build the reference prover image with `make docker-proverd-build`. Release notes must cover proto/fixture/schema/CLI/prover contract impact, ZK artifact impact, accepted vulnerabilities, downstream action, artifact checksum/provenance policy, and circuit-set/public-witness/gas/scan-schema versions (`privacy-note-v1-u128-audit-field-v1`, PI23, `AuditGasModelV1`, `privacy-sequence-v1`, `privacy-scan-v2`).
 
 ## 12. Incident Response Criteria
 

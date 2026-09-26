@@ -25,6 +25,6 @@
 - `privacy-benchmark-report.sh`: current default family를 합쳐 `benchmarks/clairveil-benchmark-results-report-kr.md`를 생성합니다. Historical report는 `SUMMARY_REPORTS`를 명시해서만 확인합니다.
 - `release-pack.sh`: caller umask와 무관한 deterministic Git-derived file mode와 canonical directory/metadata mode로 downstream handoff tarball과 외부 sha256 파일을 `dist/` 아래 생성합니다. Final release는 packed commit의 annotated exact-SemVer tag를 요구하고 untagged clean commit은 CI용 non-publishable `snapshot-<full-sha>` identity를 사용합니다.
 - `release-pack-verify.sh`: tag-or-snapshot commit binding, release tag의 paired changelog heading, canonical/safe raw tar member, exact selected Git file set, canonical manifest, checksum, 필수 파일, 모든 packed Git blob과 raw/extracted Git-derived exact permission mode를 검증합니다. Default verify는 clean tree를 요구하고 기존 archive/checksum pair를 재사용합니다. Explicit input은 미리 존재해야 하고 재생성되지 않으며 exact lowercase 40-character `RELEASE_PACK_EXPECTED_COMMIT`이 필요합니다.
-- `prepare-joinsplit-artifact-rotation-evidence.sh`: Clean tree에서 source-bound rotation evidence용 previous/current JoinSplit artifact directory를 repository 밖에 준비합니다.
-- `validate-joinsplit-artifact-rotation-evidence.sh`: 제공하거나 새로 준비한 artifact set으로 exact JoinSplit artifact rotation, fresh-genesis, regression evidence gate를 실행합니다.
+- `prepare-joinsplit-artifact-rotation-evidence.sh`: 과거 JoinSplit rotation 증적 도구입니다. Legacy setup flag는 현재 checkout에서 지원하지 않으므로 해당 historical source에서만 재현합니다.
+- `validate-joinsplit-artifact-rotation-evidence.sh`: 과거 JoinSplit artifact rotation, fresh-genesis, regression gate입니다. 현재 setup 명령으로 artifact를 준비할 수 없으며 현재 audit-field circuit set 검증에도 사용하지 않습니다.
 - `docker-proverd-build.sh`: prover compose file을 검증하고 reference prover Docker image를 build/inspect합니다.

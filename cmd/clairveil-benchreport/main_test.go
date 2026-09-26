@@ -866,12 +866,12 @@ func TestArtifactDescriptorIssuesRequireCompleteChecksums(t *testing.T) {
 	for i := range descriptors {
 		descriptors[i].SHA256 = strings.Repeat("a", 64)
 	}
-	if issues := artifactDescriptorIssues(descriptors); len(issues) != 0 {
+	if issues := artifactDescriptorIssues(descriptors, privacyzk.DefaultArtifactDescriptors()); len(issues) != 0 {
 		t.Fatalf("expected complete descriptors, got %v", issues)
 	}
 
 	descriptors[0].SHA256 = ""
-	issues := artifactDescriptorIssues(descriptors)
+	issues := artifactDescriptorIssues(descriptors, privacyzk.DefaultArtifactDescriptors())
 	if !containsString(issues, "missing sha256 for privacy_deposit_r1cs.bin") {
 		t.Fatalf("expected missing sha issue, got %v", issues)
 	}

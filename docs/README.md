@@ -11,7 +11,7 @@ Read documentation from the same tag or commit as the code. Start with the [repo
 | Set up and run privacy/batch flows | [Getting started](clairveil-getting-started.md) | [시작 가이드](clairveil-getting-started-kr.md) |
 | Understand components and data flow | [Architecture](clairveil-architecture.md) | [아키텍처](clairveil-architecture-kr.md) |
 | Understand each circuit’s proof boundary | [Circuits](clairveil-circuits.md) | [회로](clairveil-circuits-kr.md) |
-| Implement exact NoteV1 and 16x32 encodings | [Protocol contract](clairveil-batch-joinsplit-16x32.md) | [프로토콜 계약](clairveil-batch-joinsplit-16x32-kr.md) |
+| Consult historical NoteV1 and 16x32 encodings | [Legacy protocol contract](clairveil-batch-joinsplit-16x32.md) | [과거 프로토콜 계약](clairveil-batch-joinsplit-16x32-kr.md) |
 | Look up commands, flags and output | [CLI reference](clairveil-cli-reference.md) | [CLI 참조](clairveil-cli-reference-kr.md) |
 | Wire a downstream Cosmos app | [Cosmos integration](clairveil-downstream-cosmos-integration-guide.md) | [Cosmos 통합](clairveil-downstream-cosmos-integration-guide-kr.md) |
 | Implement an SDK or wallet | [JS/TS SDK guide](clairveil-js-sdk-handoff.md) | [JS/TS SDK 가이드](clairveil-js-sdk-handoff-kr.md) |

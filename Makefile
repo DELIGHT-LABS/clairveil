@@ -25,7 +25,7 @@ install: build
 
 .PHONY: init
 init: install
-	@echo "Use 'clairveild init --audit-config <path> --chain-id <id>' to initialize a node."
+	@echo "Use 'clairveild init <moniker> --audit-config <path> --chain-id <id>' to initialize a node."
 
 .PHONY: proto
 proto:

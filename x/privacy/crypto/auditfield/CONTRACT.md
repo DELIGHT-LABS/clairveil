@@ -36,7 +36,7 @@ PI23 순서와 개수를 유지하며 `PublicAmount`는 uint128, `KeyEpoch`와 `
 
 `zk.AuditFieldArtifactDescriptors()`는 위 circuit 순서로 각각 R1CS, proving key, verifying key의 총 12개 descriptor를 반환한다. 파일 이름은 `privacy_` 뒤에 circuit ID의 hyphen을 underscore로 치환한 값과 `_r1cs.bin`, `_pk.bin`, `_vk.bin`을 붙인다. Checksum 변수 이름은 `CLAIRVEIL_` 뒤에 같은 stem과 suffix를 대문자로 치환하고 `_SHA256`을 붙인다.
 
-`ValidateAuditFieldArtifactManifest`는 기존 manifest 구조의 version/curve/set, 정확한 descriptor 순서와 수, canonical lowercase SHA256, VK/schema identity 일치를 검사한다. 파일 읽기와 setup 신뢰 검증은 수행하지 않는다. 실제 artifact hash는 canonical serializer로 만든 bytes에서 구해야 한다. 개발 키나 가짜 hash를 제공하지 않는다. 기본 registry는 기존 set을 유지하며 새 manifest를 수용하지 않는다. 새 회로·handler·state·SDK를 완성한 release에서 활성화한다.
+`ValidateAuditFieldArtifactManifest`는 기존 manifest 구조의 version/curve/set, 정확한 descriptor 순서와 수, canonical lowercase SHA256, VK/schema identity 일치를 검사한다. 파일 읽기와 setup 신뢰 검증은 수행하지 않는다. 실제 artifact hash는 canonical serializer로 만든 bytes에서 구해야 한다. 현재 node와 prover는 `AuditFieldCircuitSetID`를 명시한 registry를 사용한다. `clairveil-setup --development`로 생성한 artifact는 development 전용이며 production trusted setup을 제공하지 않는다.
 
 ## 고정 공개 상수
 

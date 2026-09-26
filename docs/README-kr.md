@@ -11,7 +11,7 @@
 | 설치와 privacy/batch 실행 | [Getting started](clairveil-getting-started.md) | [시작 가이드](clairveil-getting-started-kr.md) |
 | 구성 요소와 데이터 흐름 | [Architecture](clairveil-architecture.md) | [아키텍처](clairveil-architecture-kr.md) |
 | 회로별 증명 범위 | [Circuits](clairveil-circuits.md) | [회로](clairveil-circuits-kr.md) |
-| NoteV1과 16x32의 정확한 규격 구현 | [Protocol contract](clairveil-batch-joinsplit-16x32.md) | [프로토콜 계약](clairveil-batch-joinsplit-16x32-kr.md) |
+| 과거 NoteV1과 16x32 규격 참조 | [Legacy protocol contract](clairveil-batch-joinsplit-16x32.md) | [과거 프로토콜 계약](clairveil-batch-joinsplit-16x32-kr.md) |
 | 명령·flag·출력 조회 | [CLI reference](clairveil-cli-reference.md) | [CLI 참조](clairveil-cli-reference-kr.md) |
 | Downstream Cosmos app 연결 | [Cosmos integration](clairveil-downstream-cosmos-integration-guide.md) | [Cosmos 통합](clairveil-downstream-cosmos-integration-guide-kr.md) |
 | SDK 또는 wallet 구현 | [JS/TS SDK guide](clairveil-js-sdk-handoff.md) | [JS/TS SDK 가이드](clairveil-js-sdk-handoff-kr.md) |
